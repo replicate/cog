@@ -310,6 +310,16 @@ input[type="file"]::file-selector-button {
   font-size: 12px;
   margin-top: 4px;
 }
+.field-errors {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--red);
+  font-size: 12px;
+}
+.validation-summary {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
 
 .file-widget {
   display: flex;
@@ -374,8 +384,7 @@ input[type="file"]::file-selector-button {
   opacity: 0;
   transition: opacity 0.12s ease;
 }
-.json-editor:hover .editor-copy,
-.code-viewer:hover .editor-copy {
+.json-editor:hover .editor-copy {
   opacity: 0.95;
 }
 .editor-copy:focus-visible {
@@ -386,8 +395,7 @@ input[type="file"]::file-selector-button {
   background: var(--surface-hover);
 }
 .response-editor {
-  height: 60vh;
-  min-height: 280px;
+  min-height: 80px;
 }
 .json-input {
   height: min(55vh, 520px);
@@ -399,40 +407,11 @@ input[type="file"]::file-selector-button {
 .viewer-timeline {
   margin-top: 6px;
 }
-.viewer-inspector > pre {
-  min-height: 80px;
-  max-height: 320px;
-}
-.viewer-timeline > pre {
-  min-height: 80px;
-  max-height: 240px;
-}
 .json-field {
   height: 140px;
 }
 .structured-output {
   min-height: 120px;
-}
-.code-viewer {
-  position: relative;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  width: 100%;
-  overflow: hidden;
-}
-.code-viewer pre {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  color: var(--text);
-  font-family: "SF Mono", Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 .metrics-table {
   border-collapse: collapse;
@@ -588,6 +567,9 @@ input[type="file"]::file-selector-button {
   font-weight: 600;
 }
 .trace-timeline {
+  --trace-background: color-mix(in srgb, var(--accent) 12%, transparent);
+  --trace-color: var(--accent);
+
   position: relative;
   margin: 0;
   padding: 2px 0 2px 92px;
@@ -616,7 +598,7 @@ input[type="file"]::file-selector-button {
   left: -26px;
   width: 9px;
   height: 9px;
-  background: var(--accent);
+  background: var(--trace-color);
   border: 2px solid var(--bg);
   border-radius: 50%;
   box-shadow: 0 0 0 1px var(--border);
@@ -636,9 +618,9 @@ input[type="file"]::file-selector-button {
   width: fit-content;
   height: fit-content;
   padding: 1px 5px;
-  background: var(--color-kumo-fill);
+  background: var(--trace-background);
   border-radius: 4px;
-  color: var(--text-muted);
+  color: var(--trace-color);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -656,11 +638,25 @@ input[type="file"]::file-selector-button {
   cursor: pointer;
   font-size: 11px;
 }
-.trace-error::before {
-  background: var(--red) !important;
+.trace-request {
+  --trace-background: var(--color-kumo-info-tint);
+  --trace-color: var(--text-color-kumo-info);
 }
-.trace-response::before {
-  background: var(--green) !important;
+.trace-response {
+  --trace-background: var(--color-kumo-success-tint);
+  --trace-color: var(--green);
+}
+.trace-webhook {
+  --trace-background: var(--color-kumo-warning-tint);
+  --trace-color: var(--yellow);
+}
+.trace-cancel {
+  --trace-background: var(--surface-hover);
+  --trace-color: var(--text-muted);
+}
+.trace-error {
+  --trace-background: var(--color-kumo-danger-tint);
+  --trace-color: var(--red);
 }
 
 @media (max-width: 600px) {

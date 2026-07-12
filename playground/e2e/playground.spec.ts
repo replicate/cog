@@ -1,5 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFile } from "node:fs/promises";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -12,7 +11,7 @@ test.beforeEach(async ({ page }) => {
 
 test("keeps Form and CodeMirror JSON input synchronized", async ({ page }) => {
   const run = page.getByRole("button", { name: "Run" });
-  await expect(run).toBeDisabled();
+  await expect(run).toBeEnabled();
   await page.getByRole("textbox", { name: "text" }).fill("from form");
   await page.getByRole("tab", { name: "JSON" }).click();
 
@@ -27,7 +26,7 @@ test("keeps Form and CodeMirror JSON input synchronized", async ({ page }) => {
   await expect(run).toBeEnabled();
 
   await replaceEditor(page, "Prediction input JSON", "{");
-  await expect(run).toBeDisabled();
+  await expect(run).toBeEnabled();
   await page.getByRole("tab", { name: "Form" }).click();
   await expect(page.getByRole("textbox", { name: "text" })).toHaveValue("from json");
 
@@ -38,19 +37,50 @@ test("keeps Form and CodeMirror JSON input synchronized", async ({ page }) => {
   await expect(run).toBeEnabled();
 });
 
+test("validates Form and JSON input against OpenAPI before running", async ({ page }) => {
+  const run = page.getByRole("button", { name: "Run" });
+  const text = page.getByRole("textbox", { name: "text" });
+  await text.fill("123");
+  await expect(run).toBeEnabled();
+  await expect(text).not.toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Does not match the required pattern.")).toHaveCount(0);
+
+  await run.click();
+  await expect(text).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Does not match the required pattern.").first()).toBeVisible();
+
+  await text.fill("valid input");
+  await expect(run).toBeEnabled();
+  await expect(text).not.toHaveAttribute("aria-invalid", "true");
+
+  await page.getByRole("tab", { name: "JSON" }).click();
+  const editor = page.getByRole("textbox", { name: "Prediction input JSON" });
+  await replaceEditor(page, "Prediction input JSON", '{"text":42}');
+  await expect(run).toBeEnabled();
+  await expect(editor).not.toHaveAttribute("aria-invalid", "true");
+
+  await run.click();
+  await expect(editor).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Input does not match the OpenAPI schema.")).toBeVisible();
+
+  await replaceEditor(page, "Prediction input JSON", '{"text":"valid"}');
+  await expect(run).toBeEnabled();
+  await expect(editor).not.toHaveAttribute("aria-invalid", "true");
+});
+
 test("runs a synchronous prediction and inspects its response", async ({ page }) => {
   await page.getByRole("textbox", { name: "text" }).fill("sync");
-  await page.getByRole("tab", { name: "Sync", exact: true }).click();
+  await page.getByRole("button", { name: "Sync", exact: true }).click();
   await page.getByRole("button", { name: "Run" }).click();
 
   await expectPredictionStatus(page, "succeeded");
-  await expect(page.getByRole("log")).toContainText("hello sync");
+  await expect(predictionOutput(page)).toContainText("hello sync");
 
-  await page.getByRole("tab", { name: "Response", exact: true }).click();
-  const response = page.getByRole("textbox", { name: "Prediction response" });
-  await expect(response).toHaveAttribute("aria-readonly", "true");
-  await expect(response).toHaveAttribute("contenteditable", "false");
-  await expect(response).toContainText('"status": "succeeded"');
+  await page.getByRole("tab", { name: "Raw", exact: true }).click();
+  const raw = page.getByRole("textbox", { name: "Raw prediction response" });
+  await expect(raw).toHaveAttribute("aria-readonly", "true");
+  await expect(raw).toHaveAttribute("contenteditable", "false");
+  await expect(raw).toContainText('"status": "succeeded"');
   await expect(page.locator(".response-editor .cm-content span").first()).toBeVisible();
 
   await page.getByRole("tab", { name: "Timeline" }).click();
@@ -62,14 +92,12 @@ test("runs a synchronous prediction and inspects its response", async ({ page })
 
 test("shows progressive streaming output before completion", async ({ page }) => {
   await page.getByRole("textbox", { name: "text" }).fill("slow");
-  await page.getByRole("tab", { name: "Stream", exact: true }).click();
+  await page.getByRole("button", { name: "Stream", exact: true }).click();
   await page.getByRole("button", { name: "Run" }).click();
 
-  const output = page.getByRole("log");
+  const output = predictionOutput(page);
   await expect(output).toHaveAttribute("aria-busy", "true");
-  await expect(
-    page.locator("#output-panel").getByRole("status").filter({ hasText: "processing" }),
-  ).toBeVisible();
+  await expectPredictionStatus(page, "processing");
   await expect(output).toContainText("hello", { timeout: 30_000 });
   await expect(output).not.toContainText("slow");
 
@@ -81,10 +109,10 @@ test("shows progressive streaming output before completion", async ({ page }) =>
 test("stops a running prediction", async ({ page }) => {
   await page.getByRole("textbox", { name: "text" }).fill("slow");
   await page.getByRole("textbox", { name: "Prediction ID" }).fill("playground-stop-id");
-  await page.getByRole("tab", { name: "Stream", exact: true }).click();
+  await page.getByRole("button", { name: "Stream", exact: true }).click();
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByRole("button", { name: "Stop" })).toBeEnabled();
-  await expect(page.getByRole("log")).toContainText("hello", { timeout: 30_000 });
+  await expect(predictionOutput(page)).toContainText("hello", { timeout: 30_000 });
 
   const cancelResponse = page.waitForResponse(
     (response) =>
@@ -103,7 +131,7 @@ test("stops a running prediction", async ({ page }) => {
 
 test("configures and receives an asynchronous webhook prediction", async ({ page }) => {
   await page.getByRole("textbox", { name: "text" }).fill("webhook");
-  await page.getByRole("tab", { name: "Async", exact: true }).click();
+  await page.getByRole("button", { name: "Async", exact: true }).click();
   await expect(page.getByText(/Webhook: .*\/webhook\/\.\.\./)).toBeVisible();
   await page.getByRole("checkbox", { name: "output" }).click();
   await page.getByRole("checkbox", { name: "logs" }).click();
@@ -114,15 +142,15 @@ test("configures and receives an asynchronous webhook prediction", async ({ page
   await page.getByRole("button", { name: "Run" }).click();
 
   await expectPredictionStatus(page, "succeeded");
-  await expect(page.getByRole("log")).toContainText("hello webhook");
+  await expect(predictionOutput(page)).toContainText("hello webhook");
   await page.getByRole("tab", { name: "Request" }).click();
-  const requestBody = page.getByLabel("Request body");
+  const requestBody = page.getByLabel("Request body", { exact: true });
   await expect(requestBody).toContainText("start");
   await expect(requestBody).toContainText("completed");
   await expect(requestBody).not.toContainText('"logs"');
 });
 
-test("reconnects and downloads the loaded schema", async ({ page }) => {
+test("reconnects and opens the loaded schema", async ({ page }) => {
   const target = page.getByRole("textbox", { name: "Target" });
   const targetURL = await target.inputValue();
   await target.fill(" ");
@@ -135,13 +163,13 @@ test("reconnects and downloads the loaded schema", async ({ page }) => {
   expect((await schemaResponse).ok()).toBe(true);
   await expect(page.getByRole("status").filter({ hasText: "ready" })).toBeVisible();
 
-  const downloadPromise = page.waitForEvent("download");
+  const popupPromise = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Schema" }).click();
-  const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe("openapi.json");
-  const downloadPath = await download.path();
-  if (!downloadPath) throw new Error("Schema download has no local path");
-  const schema = JSON.parse(await readFile(downloadPath, "utf8")) as { openapi?: string };
+  const popup = await popupPromise;
+  await popup.waitForLoadState();
+  const schema = JSON.parse((await popup.locator("body").textContent()) ?? "") as {
+    openapi?: string;
+  };
   expect(schema.openapi).toMatch(/^3\./);
 });
 
@@ -157,7 +185,7 @@ test("toggles the color theme", async ({ page }) => {
 test("uses a custom prediction ID and resets the playground", async ({ page }) => {
   await page.getByRole("textbox", { name: "text" }).fill("identified");
   await page.getByRole("textbox", { name: "Prediction ID" }).fill("playground-e2e-id");
-  await page.getByRole("tab", { name: "Sync", exact: true }).click();
+  await page.getByRole("button", { name: "Sync", exact: true }).click();
   const predictionRequest = page.waitForRequest(
     (request) =>
       request.method() === "PUT" &&
@@ -166,7 +194,7 @@ test("uses a custom prediction ID and resets the playground", async ({ page }) =
   await page.getByRole("button", { name: "Run" }).click();
   await predictionRequest;
   await expectPredictionStatus(page, "succeeded");
-  await expect(page.getByRole("log")).toContainText("hello identified");
+  await expect(predictionOutput(page)).toContainText("hello identified");
 
   await page.getByRole("button", { name: "Reset" }).click();
   await expect(page.getByRole("textbox", { name: "text" })).toHaveValue("");
@@ -195,7 +223,12 @@ async function replaceEditor(page: Page, label: string, value: string): Promise<
 }
 
 async function expectPredictionStatus(page: Page, status: string): Promise<void> {
-  await expect(
-    page.locator("#output-panel").getByRole("status").filter({ hasText: status }),
-  ).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("#output-panel .response-title").getByRole("status")).toHaveText(
+    status,
+    { timeout: 60_000 },
+  );
+}
+
+function predictionOutput(page: Page) {
+  return page.getByRole("region", { name: "Prediction output" });
 }

@@ -23,6 +23,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -213,7 +214,7 @@ func (s *playgroundServer) routes(uiFS fs.FS) http.Handler {
 // deliveries are the only requests exempt from the browser-origin checks.
 func protectPlayground(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		setPlaygroundSecurityHeaders(w)
+		setPlaygroundSecurityHeaders(w, r.URL.Path)
 		if strings.HasPrefix(r.URL.Path, "/webhook/") {
 			next.ServeHTTP(w, r)
 			return
@@ -226,8 +227,14 @@ func protectPlayground(next http.Handler) http.Handler {
 	})
 }
 
-func setPlaygroundSecurityHeaders(w http.ResponseWriter) {
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data: http: https:; media-src 'self' data: http: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+func setPlaygroundSecurityHeaders(w http.ResponseWriter, path string) {
+	csp := "default-src 'self'; connect-src 'self'; img-src 'self' data: http: https:; media-src 'self' data: http: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+	if strings.HasPrefix(path, "/assets/validation.worker-") && strings.HasSuffix(path, ".js") {
+		// Ajv compiles dynamic model schemas. Confine the required code generation
+		// to this network-isolated worker rather than relaxing the page policy.
+		csp = "default-src 'none'; script-src 'self' 'unsafe-eval'; connect-src 'none'; base-uri 'none'; form-action 'none'"
+	}
+	w.Header().Set("Content-Security-Policy", csp)
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
@@ -274,6 +281,7 @@ func (s *playgroundServer) handleConfig(w http.ResponseWriter, _ *http.Request) 
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"target":      s.defaultTarget,
 		"webhookBase": s.webhookBase,
+		"cogVersion":  global.Version,
 	})
 }
 

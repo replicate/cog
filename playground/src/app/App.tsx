@@ -1,69 +1,68 @@
 import { Button } from "@cloudflare/kumo/components/button";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { CogApi } from "@/api/cog";
-import { SegmentedTabs, tabId, tabPanelId } from "@/components/SegmentedTabs";
+import { CogApi } from "@/services/cog";
 import { StatusBadge } from "@/components/StatusBadge";
-import { defaultInput } from "@/domain/schema";
-import { WEBHOOK_EVENTS, type InputMode, type RunMode, type WebhookEvent } from "@/domain/types";
-import { LazyJsonEditor } from "@/editor/LazyJsonEditor";
-import { ConnectionBar } from "@/features/connection/ConnectionBar";
-import { SetupPanel } from "@/features/connection/SetupPanel";
-import { useConnection } from "@/features/connection/useConnection";
-import { InputForm } from "@/features/inputs/InputForm";
-import { OutputPanel } from "@/features/predictions/OutputPanel";
-import { RunToolbar } from "@/features/predictions/RunToolbar";
-import { usePrediction } from "@/features/predictions/usePrediction";
-import { WebhookOptions } from "@/features/predictions/WebhookOptions";
-import { currentTheme, setTheme, type ThemeMode } from "@/theme";
+import { ConnectionBar, SetupPanel, useConnection } from "@/features/connection";
+import { InputPanel, usePlaygroundInput } from "@/features/inputs";
+import {
+  OutputPanel,
+  type RunMode,
+  RunToolbar,
+  usePrediction,
+  WEBHOOK_EVENTS,
+  type WebhookEvent,
+  WebhookOptions,
+} from "@/features/predictions";
+import { currentTheme, setTheme, type ThemeMode } from "@/config/theme";
 
 export function App() {
   const api = useMemo(() => new CogApi(), []);
   const connection = useConnection(api);
   const prediction = usePrediction(api);
-  const [input, setInput] = useState<Record<string, unknown>>({});
-  const [jsonInput, setJsonInput] = useState("{}");
-  const [jsonError, setJsonError] = useState("");
-  const [inputMode, setInputMode] = useState<InputMode>("form");
+  const input = usePlaygroundInput({
+    target: connection.target,
+    document: connection.schema,
+    capabilities: connection.capabilities,
+  });
   const [runMode, setRunMode] = useState<RunMode>("sync");
   const [predictionId, setPredictionId] = useState("");
-  const [formBusy, setFormBusy] = useState(false);
-  const [formValid, setFormValid] = useState(true);
-  const [formRevision, setFormRevision] = useState(0);
   const [theme, setThemeState] = useState<ThemeMode>(currentTheme());
   const [webhookEvents, setWebhookEvents] = useState<WebhookEvent[]>([...WEBHOOK_EVENTS]);
-  const { schema, capabilities } = connection;
+  const schemaURL = useRef<string | undefined>(undefined);
   const resetPrediction = prediction.reset;
 
-  useEffect(() => {
-    if (!schema || !capabilities) return;
-    const defaults = defaultInput(schema, capabilities.input);
-    setInput(defaults);
-    setJsonInput(JSON.stringify(defaults, null, 2));
-    setJsonError("");
-    setFormBusy(false);
-    setFormValid(true);
-    setFormRevision((current) => current + 1);
-    setRunMode(capabilities.streaming ? "stream" : "sync");
-    resetPrediction();
-  }, [capabilities, resetPrediction, schema]);
+  useEffect(
+    () => () => {
+      if (schemaURL.current) URL.revokeObjectURL(schemaURL.current);
+    },
+    [],
+  );
 
-  const run = () => {
-    if (!connection.capabilities) return;
-    let nextInput = input;
-    if (inputMode === "json") {
-      try {
-        nextInput = parseInputObject(jsonInput);
-        setJsonError("");
-      } catch (error) {
-        setJsonError(errorMessage(error));
-        return;
-      }
+  useEffect(() => {
+    if (connection.capabilities) {
+      setRunMode(connection.capabilities.streaming ? "stream" : "sync");
     }
+    resetPrediction();
+  }, [connection.capabilities, resetPrediction]);
+
+  const run = async () => {
+    if (
+      !connection.capabilities ||
+      prediction.running ||
+      input.validating ||
+      input.formBusy ||
+      (runMode === "async" && !connection.webhookBase)
+    ) {
+      return;
+    }
+    const validated = await input.validateForRun();
+    if (!validated) return;
+
     void prediction.run({
       endpoint: connection.capabilities.endpoint,
       predictionId: predictionId.trim() || undefined,
-      input: nextInput,
+      input: validated.input,
       mode: runMode,
       webhookBase: connection.webhookBase,
       webhookEvents,
@@ -72,61 +71,9 @@ export function App() {
 
   const reset = () => {
     if (!connection.schema || !connection.capabilities) return;
-    const defaults = defaultInput(connection.schema, connection.capabilities.input);
-    setInput(defaults);
-    setJsonInput(JSON.stringify(defaults, null, 2));
+    input.reset();
     setPredictionId("");
-    setJsonError("");
-    setFormBusy(false);
-    setFormValid(true);
-    setFormRevision((current) => current + 1);
     prediction.reset();
-  };
-
-  const changeJsonInput = (next: string) => {
-    setJsonInput(next);
-    try {
-      const parsed = parseInputObject(next);
-      setInput(parsed);
-      setJsonError("");
-    } catch (error) {
-      setJsonError(errorMessage(error));
-    }
-  };
-
-  const changeFormInput = (next: Record<string, unknown>) => {
-    setInput(next);
-    setJsonInput(JSON.stringify(next, null, 2));
-    setJsonError("");
-  };
-
-  const changeInputMode = (next: InputMode) => {
-    if (next === inputMode) return;
-    if (next === "json") {
-      setJsonInput(JSON.stringify(input, null, 2));
-      setJsonError("");
-      setInputMode("json");
-      return;
-    }
-    try {
-      setInput(parseInputObject(jsonInput));
-      setJsonError("");
-    } catch {
-      setJsonInput(JSON.stringify(input, null, 2));
-      setJsonError("");
-    }
-    setInputMode("form");
-  };
-
-  const formatJsonInput = () => {
-    try {
-      const parsed = parseInputObject(jsonInput);
-      setInput(parsed);
-      setJsonInput(JSON.stringify(parsed, null, 2));
-      setJsonError("");
-    } catch (error) {
-      setJsonError(errorMessage(error));
-    }
   };
 
   const toggleTheme = () => {
@@ -135,28 +82,31 @@ export function App() {
     setThemeState(next);
   };
 
-  const downloadSchema = () => {
+  const openSchema = () => {
     if (!connection.schema) return;
+    if (schemaURL.current) URL.revokeObjectURL(schemaURL.current);
     const href = URL.createObjectURL(
       new Blob([JSON.stringify(connection.schema, null, 2)], { type: "application/json" }),
     );
-    const link = document.createElement("a");
-    link.href = href;
-    link.download = "openapi.json";
-    link.click();
-    URL.revokeObjectURL(href);
+    schemaURL.current = href;
+    window.open(href, "_blank", "noopener,noreferrer");
   };
 
   const version = [
+    connection.cogVersion && `cog ${connection.cogVersion}`,
     connection.health.version?.coglet && `coglet ${connection.health.version.coglet}`,
-    connection.health.version?.python_sdk && `cog ${connection.health.version.python_sdk}`,
+    connection.health.version?.python_sdk && `sdk ${connection.health.version.python_sdk}`,
     connection.health.version?.python && `py ${connection.health.version.python}`,
   ]
     .filter(Boolean)
     .join(" · ");
-  const activeInputValid = inputMode === "json" ? !jsonError : !formBusy && formValid;
   const runnable = Boolean(
-    connection.schema && connection.capabilities && activeInputValid && !prediction.running,
+    connection.schema &&
+    connection.capabilities &&
+    !input.formBusy &&
+    !input.validating &&
+    !prediction.running &&
+    (runMode !== "async" || connection.webhookBase),
   );
 
   return (
@@ -169,7 +119,7 @@ export function App() {
         <Button size="sm" variant="ghost" onClick={toggleTheme}>
           {theme === "dark" ? "Light" : "Dark"}
         </Button>
-        <Button size="sm" variant="ghost" disabled={!connection.schema} onClick={downloadSchema}>
+        <Button size="sm" variant="ghost" disabled={!connection.schema} onClick={openSchema}>
           Schema
         </Button>
       </header>
@@ -177,7 +127,7 @@ export function App() {
       <ConnectionBar
         draft={connection.targetDraft}
         status={connection.health.user_healthcheck_error}
-        disabled={prediction.running}
+        disabled={prediction.running || input.validating}
         onDraftChange={connection.setTargetDraft}
         onConnect={connection.connect}
       />
@@ -187,6 +137,7 @@ export function App() {
         streaming={connection.capabilities?.streaming ?? false}
         async={connection.capabilities?.async ?? false}
         running={prediction.running}
+        validating={input.validating}
         runnable={runnable}
         schemaLoaded={Boolean(connection.schema)}
         onRunModeChange={setRunMode}
@@ -199,68 +150,19 @@ export function App() {
         <WebhookOptions
           value={webhookEvents}
           webhookBase={connection.webhookBase}
+          disabled={prediction.running || input.validating}
           onChange={setWebhookEvents}
         />
       )}
       <SetupPanel setup={connection.health.setup} />
 
       <main>
-        <section id="input-panel">
-          <div className="panel-head">
-            <h2>Input</h2>
-            <SegmentedTabs
-              id="input-mode"
-              label="Input editor mode"
-              items={[
-                { value: "form", label: "Form" },
-                { value: "json", label: "JSON" },
-              ]}
-              value={inputMode}
-              onChange={changeInputMode}
-            />
-          </div>
-          {connection.schemaError && (
-            <output className="notice visible">{connection.schemaError}</output>
-          )}
-          <div
-            id={tabPanelId("input-mode", inputMode)}
-            role="tabpanel"
-            aria-labelledby={tabId("input-mode", inputMode)}
-            tabIndex={0}
-          >
-            {connection.schema && connection.capabilities && inputMode === "form" && (
-              <InputForm
-                key={formRevision}
-                document={connection.schema}
-                schema={connection.capabilities.input}
-                value={input}
-                onChange={changeFormInput}
-                onBusyChange={setFormBusy}
-                onValidityChange={setFormValid}
-              />
-            )}
-            {inputMode === "json" && (
-              <div id="json-container">
-                <LazyJsonEditor
-                  value={jsonInput}
-                  label="Prediction input JSON"
-                  className="json-input"
-                  describedBy={jsonError ? "json-input-error" : undefined}
-                  invalid={Boolean(jsonError)}
-                  onChange={changeJsonInput}
-                />
-                {jsonError && (
-                  <small id="json-input-error" className="field-error" role="alert">
-                    {jsonError}
-                  </small>
-                )}
-                <Button size="sm" variant="ghost" onClick={formatJsonInput}>
-                  Format
-                </Button>
-              </div>
-            )}
-          </div>
-        </section>
+        <InputPanel
+          document={connection.schema}
+          schema={connection.capabilities?.input}
+          schemaError={connection.schemaError}
+          state={input}
+        />
         <OutputPanel
           envelope={prediction.envelope}
           error={prediction.error}
@@ -274,20 +176,4 @@ export function App() {
       </main>
     </>
   );
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function parseInputObject(value: string): Record<string, unknown> {
-  const parsed: unknown = JSON.parse(value);
-  if (!isInputObject(parsed)) {
-    throw new Error("Input must be a JSON object");
-  }
-  return parsed;
-}
-
-function isInputObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { SegmentedTabs } from "./SegmentedTabs";
+import { SegmentedTabs } from "@/components/SegmentedTabs";
 
 describe("SegmentedTabs", () => {
   it("reports the selected Kumo tab", () => {

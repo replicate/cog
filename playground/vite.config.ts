@@ -5,6 +5,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
+import { workerLicensePlugin } from "./scripts/worker-license-plugin";
+
 const root = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
@@ -18,5 +20,11 @@ export default defineConfig({
     outDir: path.resolve(root, "../pkg/cli/playground"),
     emptyOutDir: true,
     license: { fileName: "THIRD_PARTY_LICENSES.md" },
+  },
+  worker: {
+    plugins: () => [workerLicensePlugin()],
+    rollupOptions: {
+      output: { entryFileNames: "assets/validation.worker-[hash].js" },
+    },
   },
 });

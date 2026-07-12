@@ -2,10 +2,15 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createInputValidator } from "@/features/inputs/validation/inputValidation";
+import type { ValidationIssue } from "@/features/inputs/validation/inputValidation";
+import { deferred } from "@/test/deferred";
+
 const run = vi.fn();
 const reset = vi.fn();
+const { mockValidateInput } = vi.hoisted(() => ({ mockValidateInput: vi.fn() }));
 
-vi.mock("@/features/connection/useConnection", () => {
+vi.mock("@/features/connection/hooks/useConnection", () => {
   const connection = {
     target: "http://localhost:8393",
     targetDraft: "http://localhost:8393",
@@ -18,7 +23,9 @@ vi.mock("@/features/connection/useConnection", () => {
           Input: {
             type: "object",
             required: ["prompt"],
-            properties: { prompt: { type: "string" } },
+            properties: {
+              prompt: { type: "string" },
+            },
           },
           Output: { type: "string" },
         },
@@ -27,12 +34,15 @@ vi.mock("@/features/connection/useConnection", () => {
     },
     schemaError: "",
     webhookBase: "",
+    cogVersion: "0.21.1-dev+g0db4bffa",
     capabilities: {
       endpoint: "/predictions",
       input: {
         type: "object",
         required: ["prompt"],
-        properties: { prompt: { type: "string" } },
+        properties: {
+          prompt: { type: "string" },
+        },
       },
       output: { type: "string" },
       streaming: false,
@@ -42,7 +52,7 @@ vi.mock("@/features/connection/useConnection", () => {
   return { useConnection: () => connection };
 });
 
-vi.mock("@/features/predictions/usePrediction", () => ({
+vi.mock("@/features/predictions/hooks/usePrediction", () => ({
   usePrediction: () => ({
     running: false,
     envelope: undefined,
@@ -56,7 +66,9 @@ vi.mock("@/features/predictions/usePrediction", () => ({
   }),
 }));
 
-vi.mock("@/features/inputs/InputForm", () => ({
+vi.mock("@/features/inputs/validation/validateInput", () => ({ validateInput: mockValidateInput }));
+
+vi.mock("@/features/inputs/components/InputForm", () => ({
   InputForm: ({
     onChange,
     onValidityChange,
@@ -67,7 +79,7 @@ vi.mock("@/features/inputs/InputForm", () => ({
     value: Record<string, unknown>;
   }) => {
     const prompt = String(value.prompt ?? "");
-    useEffect(() => onValidityChange(prompt.length > 0), [onValidityChange, prompt]);
+    useEffect(() => onValidityChange(true), [onValidityChange]);
     return (
       <textarea
         aria-label="Form prompt"
@@ -78,7 +90,7 @@ vi.mock("@/features/inputs/InputForm", () => ({
   },
 }));
 
-vi.mock("@/editor/LazyJsonEditor", () => ({
+vi.mock("@/components/editor/LazyJsonEditor", () => ({
   LazyJsonEditor: ({
     label,
     onChange,
@@ -96,20 +108,28 @@ vi.mock("@/editor/LazyJsonEditor", () => ({
   ),
 }));
 
-import { App } from "./App";
+import { App } from "@/app/App";
 
 describe("App", () => {
   beforeEach(() => {
     run.mockReset();
     reset.mockReset();
+    mockValidateInput.mockReset();
+    mockValidateInput.mockImplementation(
+      async (
+        document: Parameters<typeof createInputValidator>[0],
+        schema: Parameters<typeof createInputValidator>[1],
+        value: unknown,
+      ) => createInputValidator(document, schema)(value),
+    );
     document.documentElement.dataset.mode = "dark";
     localStorage.clear();
   });
 
-  it("uses JSON validity instead of stale Form validity in JSON mode", async () => {
+  it("runs valid JSON after validating it on demand", async () => {
     render(<App />);
     const runButton = screen.getByRole("button", { name: "Run" });
-    await waitFor(() => expect(runButton).toBeDisabled());
+    expect(runButton).toBeEnabled();
     expect(screen.getByRole("tablist", { name: "Input editor mode" })).toBeVisible();
     expect(screen.getByRole("tabpanel", { name: "Form" })).toHaveAttribute(
       "aria-labelledby",
@@ -123,12 +143,14 @@ describe("App", () => {
 
     expect(runButton).toBeEnabled();
     fireEvent.click(runButton);
-    expect(run).toHaveBeenCalledWith(
-      expect.objectContaining({ input: { prompt: "hello" }, mode: "sync" }),
+    await waitFor(() =>
+      expect(run).toHaveBeenCalledWith(
+        expect.objectContaining({ input: { prompt: "hello" }, mode: "sync" }),
+      ),
     );
   });
 
-  it("does not enable Run when formatting non-object JSON", async () => {
+  it("does not run non-object JSON", () => {
     render(<App />);
     const runButton = screen.getByRole("button", { name: "Run" });
     fireEvent.click(screen.getByRole("tab", { name: "JSON" }));
@@ -136,11 +158,62 @@ describe("App", () => {
       target: { value: "[]" },
     });
 
-    expect(runButton).toBeDisabled();
+    expect(runButton).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Format" }));
 
-    expect(runButton).toBeDisabled();
+    fireEvent.click(runButton);
+    expect(run).not.toHaveBeenCalled();
     expect(screen.getByText("Input must be a JSON object")).toBeVisible();
+  });
+
+  it("does not run input that fails the OpenAPI schema", async () => {
+    render(<App />);
+    const runButton = screen.getByRole("button", { name: "Run" });
+    fireEvent.click(screen.getByRole("tab", { name: "JSON" }));
+    fireEvent.change(screen.getByLabelText("Prediction input JSON"), {
+      target: { value: '{"prompt":42}' },
+    });
+
+    expect(runButton).toBeEnabled();
+    expect(screen.queryByText("Input does not match the OpenAPI schema.")).not.toBeInTheDocument();
+
+    fireEvent.click(runButton);
+    const heading = await screen.findByText("Input does not match the OpenAPI schema.");
+    const summary = heading.parentElement;
+    expect(summary).toBeVisible();
+    expect(summary).toHaveTextContent(/prompt.*string/i);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("prevents reconnecting while input validation is pending", async () => {
+    const validation = deferred<ValidationIssue[]>();
+    mockValidateInput.mockReturnValueOnce(validation.promise);
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(mockValidateInput).toHaveBeenCalled());
+    expect(screen.getByRole("textbox", { name: "Target" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
+
+    validation.resolve([]);
+    await waitFor(() => expect(run).toHaveBeenCalled());
+    expect(screen.getByRole("textbox", { name: "Target" })).toBeEnabled();
+  });
+
+  it("cancels pending validation when input changes", async () => {
+    const validation = deferred<ValidationIssue[]>();
+    mockValidateInput.mockReturnValueOnce(validation.promise);
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    await waitFor(() => expect(mockValidateInput).toHaveBeenCalled());
+    const signal = mockValidateInput.mock.calls[0][3] as AbortSignal;
+
+    fireEvent.change(screen.getByLabelText("Form prompt"), { target: { value: "changed" } });
+    expect(signal.aborted).toBe(true);
+    validation.resolve([]);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Run" })).toBeEnabled());
+    expect(run).not.toHaveBeenCalled();
   });
 
   it("keeps Form and JSON input synchronized", async () => {
@@ -166,7 +239,7 @@ describe("App", () => {
     const editor = screen.getByLabelText("Prediction input JSON");
     fireEvent.change(editor, { target: { value: '{"prompt":"last valid"}' } });
     fireEvent.change(editor, { target: { value: "{" } });
-    expect(screen.getByRole("button", { name: "Run" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run" })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("tab", { name: "Form" }));
     expect(screen.getByLabelText("Form prompt")).toHaveValue("last valid");
@@ -214,23 +287,29 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Dark" })).toBeVisible();
   });
 
-  it("downloads the loaded OpenAPI schema", () => {
+  it("opens the loaded OpenAPI schema in a new tab", () => {
+    const originalURL = URL;
     const createObjectURL = vi.fn(() => "blob:schema");
     const revokeObjectURL = vi.fn();
-    const click = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(() => undefined);
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
     try {
-      render(<App />);
+      const { unmount } = render(<App />);
       fireEvent.click(screen.getByRole("button", { name: "Schema" }));
 
       expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
-      expect(click).toHaveBeenCalled();
+      expect(open).toHaveBeenCalledWith("blob:schema", "_blank", "noopener,noreferrer");
+      unmount();
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:schema");
     } finally {
-      click.mockRestore();
-      vi.unstubAllGlobals();
+      open.mockRestore();
+      vi.stubGlobal("URL", originalURL);
     }
+  });
+
+  it("shows the complete Cog development version", () => {
+    render(<App />);
+
+    expect(screen.getByText(/cog 0\.21\.1-dev\+g0db4bffa/)).toBeVisible();
   });
 });

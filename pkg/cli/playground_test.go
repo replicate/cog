@@ -19,6 +19,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/global"
 )
 
 func newTestPlayground(t *testing.T) *httptest.Server {
@@ -127,6 +129,7 @@ func TestPlaygroundConfig(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&config))
 	assert.Equal(t, "http://wh.example/cb", config["webhookBase"])
 	assert.Equal(t, "http://localhost:8393", config["target"])
+	assert.Equal(t, global.Version, config["cogVersion"])
 }
 
 func TestPlaygroundRejectsRemoteUIAndProxyRequests(t *testing.T) {
@@ -324,8 +327,18 @@ func TestPlaygroundSetsBrowserSecurityHeaders(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'")
+	assert.NotContains(t, resp.Header.Get("Content-Security-Policy"), "'unsafe-eval'")
 	assert.Equal(t, "no-referrer", resp.Header.Get("Referrer-Policy"))
 	assert.Equal(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/assets/validation.worker-test.js", nil)
+	request.RemoteAddr = "127.0.0.1:1234"
+	request.Host = "127.0.0.1"
+	protectPlayground(http.NotFoundHandler()).ServeHTTP(recorder, request)
+	workerCSP := recorder.Header().Get("Content-Security-Policy")
+	assert.Contains(t, workerCSP, "script-src 'self' 'unsafe-eval'")
+	assert.Contains(t, workerCSP, "connect-src 'none'")
 }
 
 func TestPlaygroundProxyUnreachableTarget(t *testing.T) {
