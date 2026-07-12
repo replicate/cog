@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -101,7 +102,7 @@ func cmdPlayground(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("loading playground assets: %w", err)
 	}
 
-	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", playgroundHost, playgroundPort))
+	ln, err := net.Listen("tcp", playgroundAddress(playgroundHost, playgroundPort))
 	if err != nil {
 		return fmt.Errorf("starting playground server: %w", err)
 	}
@@ -109,7 +110,7 @@ func cmdPlayground(cmd *cobra.Command, _ []string) error {
 
 	srvState := &playgroundServer{
 		hub:           newEventHub(),
-		webhookBase:   fmt.Sprintf("http://%s:%d", playgroundWebhookHost, port),
+		webhookBase:   "http://" + playgroundAddress(playgroundWebhookHost, port),
 		defaultTarget: playgroundTarget,
 		eventSlots:    make(chan struct{}, maxConcurrentEventStreams),
 		webhookSlots:  make(chan struct{}, maxConcurrentWebhooks),
@@ -117,11 +118,8 @@ func cmdPlayground(cmd *cobra.Command, _ []string) error {
 
 	mux := srvState.routes(uiFS)
 
-	browserHost := playgroundHost
-	if browserHost == "0.0.0.0" || browserHost == "" {
-		browserHost = "127.0.0.1"
-	}
-	uiURL := fmt.Sprintf("http://%s:%d/", browserHost, port)
+	browserHost := playgroundBrowserHost(playgroundHost)
+	uiURL := "http://" + playgroundAddress(browserHost, port) + "/"
 	console.Infof("Cog playground running at %s", uiURL)
 	console.Info("Press Ctrl+C to stop.")
 	if !playgroundNoOpen {
@@ -148,6 +146,32 @@ func cmdPlayground(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	return nil
+}
+
+func playgroundAddress(host string, port int) string {
+	return net.JoinHostPort(normalizePlaygroundHost(host), strconv.Itoa(port))
+}
+
+func playgroundBrowserHost(host string) string {
+	host = normalizePlaygroundHost(host)
+	if host == "" {
+		return "127.0.0.1"
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsUnspecified() {
+		return host
+	}
+	if ip.To4() == nil {
+		return "::1"
+	}
+	return "127.0.0.1"
+}
+
+func normalizePlaygroundHost(host string) string {
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		return host[1 : len(host)-1]
+	}
+	return host
 }
 
 // routes builds the HTTP handler: static UI, the reverse proxy, and the webhook

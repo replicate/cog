@@ -239,6 +239,17 @@ func TestPlaygroundRecognizesIPv6Loopback(t *testing.T) {
 	assert.False(t, isLoopbackHost("playground.example:8080"))
 }
 
+func TestPlaygroundFormatsIPv6Address(t *testing.T) {
+	assert.Equal(t, "[::1]:8080", playgroundAddress("::1", 8080))
+	assert.Equal(t, "[::1]:8080", playgroundAddress("[::1]", 8080))
+}
+
+func TestPlaygroundUsesLoopbackBrowserHostForWildcard(t *testing.T) {
+	assert.Equal(t, "127.0.0.1", playgroundBrowserHost("0.0.0.0"))
+	assert.Equal(t, "::1", playgroundBrowserHost("::"))
+	assert.Equal(t, "::1", playgroundBrowserHost("[::]"))
+}
+
 func TestPlaygroundRejectsCrossSiteBrowserRequests(t *testing.T) {
 	ts := newTestPlayground(t)
 

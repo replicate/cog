@@ -464,10 +464,11 @@ function requestHeaders(mode: RunMode): Record<string, string> {
 
 function eventSourceReady(events: EventSource, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(
-      () => reject(new Error("Webhook event connection timed out")),
-      5000,
-    );
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      events.close();
+      reject(new Error("Webhook event connection timed out"));
+    }, 5000);
     const cleanup = () => {
       clearTimeout(timeout);
       signal.removeEventListener("abort", abort);

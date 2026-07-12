@@ -249,6 +249,47 @@ describe("usePrediction", () => {
       webhook_events_filter: ["start", "completed"],
     });
   });
+
+  it("closes an asynchronous event stream when connecting times out", async () => {
+    vi.useFakeTimers();
+    const sources: MockEventSource[] = [];
+    const addAbortListener = vi.spyOn(AbortSignal.prototype, "addEventListener");
+    const removeAbortListener = vi.spyOn(AbortSignal.prototype, "removeEventListener");
+    vi.stubGlobal(
+      "EventSource",
+      class extends MockEventSource {
+        constructor(url: string) {
+          super(url);
+          sources.push(this);
+        }
+      },
+    );
+    const api = fakeApi({ submit: vi.fn() });
+    const { result } = renderHook(() => usePrediction(api));
+
+    try {
+      await act(async () => {
+        const run = result.current.run({ ...options, mode: "async" });
+        await vi.advanceTimersByTimeAsync(5000);
+        await run;
+      });
+
+      expect(sources[0].close).toHaveBeenCalled();
+      const abortListener = addAbortListener.mock.calls.find(([type]) => type === "abort")?.[1];
+      expect(abortListener).toBeDefined();
+      expect(removeAbortListener).toHaveBeenCalledWith("abort", abortListener);
+      expect(api.submit).not.toHaveBeenCalled();
+      expect(result.current).toMatchObject({
+        running: false,
+        error: "Webhook event connection timed out",
+        envelope: { status: "failed" },
+      });
+    } finally {
+      addAbortListener.mockRestore();
+      removeAbortListener.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 });
 
 function fakeApi(overrides: Partial<Record<"submit" | "stream" | "cancel", unknown>>): CogApi {
@@ -278,5 +319,5 @@ class MockEventSource {
 
   constructor(readonly url: string) {}
 
-  close(): void {}
+  readonly close = vi.fn();
 }
