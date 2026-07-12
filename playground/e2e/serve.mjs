@@ -108,7 +108,12 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 }
 
 try {
-  const modelFailure = start("model", ["serve", "--port", String(modelPort)], fixture);
+  // Enable Cog's host-gateway mapping so webhooks reach the host on Linux CI.
+  const modelFailure = start(
+    "model",
+    ["serve", "--port", String(modelPort), "--upload-url", "http://unused/"],
+    fixture,
+  );
   await Promise.race([waitForModel(12 * 60_000), modelFailure]);
   const playgroundFailure = start(
     "playground",
