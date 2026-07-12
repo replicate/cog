@@ -7,6 +7,7 @@ const JsonEditor = lazy(async () => ({
   default: (await import("@/components/editor/JsonEditor")).JsonEditor,
 }));
 
+/** Keeps CodeMirror out of the initial bundle until an editor is first displayed. */
 export function LazyJsonEditor(props: JsonEditorProps) {
   return (
     <Suspense

@@ -22,6 +22,7 @@ type TraceStart = {
   mode: RunMode;
 };
 
+/** Applies event and aggregate payload limits while rejecting mutations from stale run tokens. */
 export function usePredictionTrace<T extends TraceRun>(activeRun: RefObject<T | undefined>) {
   const [trace, setTrace] = useState<RequestTrace>();
   const traceToken = useRef<string | undefined>(undefined);

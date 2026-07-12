@@ -13,6 +13,7 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 
+/** Builds the shared JSON language, editing, highlighting, and theme extensions. */
 export function jsonEditorExtensions(): Extension[] {
   return [
     lineNumbers(),
@@ -30,6 +31,7 @@ export function jsonEditorExtensions(): Extension[] {
   ];
 }
 
+/** Maps editor mode and accessibility state into reconfigurable CodeMirror extensions. */
 export function editorBehavior(
   readOnly: boolean,
   disabled: boolean,

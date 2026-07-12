@@ -17,6 +17,10 @@ type ValidatedInput = {
   input: Record<string, unknown>;
 };
 
+/**
+ * Keeps form and JSON input synchronized with schema defaults and exposes an abortable,
+ * stale-result-safe validation lifecycle for prediction runs.
+ */
 export function usePlaygroundInput({ target, document, capabilities }: Options) {
   const [input, setInput] = useState<Record<string, unknown>>({});
   const [jsonInput, setJsonInput] = useState("{}");

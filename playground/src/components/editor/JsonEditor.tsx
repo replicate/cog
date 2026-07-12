@@ -17,6 +17,10 @@ export type JsonEditorProps = {
   autoHeight?: boolean;
 };
 
+/**
+ * Renders a controlled CodeMirror JSON editor with accessible read-only and disabled modes,
+ * copying, optional content-based sizing, and live-output tail following.
+ */
 export function JsonEditor({
   value,
   onChange,

@@ -24,6 +24,7 @@ type Props = {
   trace?: RequestTrace;
 };
 
+/** Resets to Output for each run and exposes Logs only when the response contains them. */
 export function OutputPanel({
   envelope,
   error,

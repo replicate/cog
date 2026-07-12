@@ -36,6 +36,10 @@ type RunOptions = {
 
 type PredictionApi = Pick<CogApi, "cancel" | "stream" | "submit">;
 
+/**
+ * Enforces one active prediction, bounds retained transport data, and ignores late updates from
+ * superseded synchronous, streaming, or webhook runs.
+ */
 export function usePrediction(api: PredictionApi) {
   const [running, setRunning] = useState(false);
   const [envelope, setEnvelope] = useState<PredictionEnvelope>();

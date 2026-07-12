@@ -3,6 +3,7 @@ import { useState } from "react";
 import { LazyJsonEditor } from "@/components/editor/LazyJsonEditor";
 import type { PredictionEnvelope, RequestTrace } from "@/types/prediction";
 
+/** Shows client and server timings with bodies expanded and headers collapsed by default. */
 export function RequestDetails({
   trace,
   envelope,

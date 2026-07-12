@@ -11,6 +11,7 @@ export const MAX_METRICS = 100;
 
 const MAX_RAW_EVENTS = 1000;
 
+/** Retains the newest text items within both character and item-count limits. */
 export function boundedTextItems(items: string[], maxLength: number): string[] {
   const retained: string[] = [];
   let length = 0;
@@ -26,11 +27,13 @@ export function boundedTextItems(items: string[], maxLength: number): string[] {
   return retained.reverse();
 }
 
+/** Concatenates text while preserving only the newest characters under the limit. */
 export function appendBoundedText(current: string, addition: string, maxLength: number): string {
   const combined = current + addition;
   return combined.length > maxLength ? combined.slice(-maxLength) : combined;
 }
 
+/** Removes terminal output and bounds retained logs and metric count. */
 export function boundedTerminalEnvelope(next: PredictionEnvelope): PredictionEnvelope {
   const { output: _output, logs, metrics, ...rest } = next;
   return {
@@ -42,6 +45,7 @@ export function boundedTerminalEnvelope(next: PredictionEnvelope): PredictionEnv
   };
 }
 
+/** Estimates an arbitrary value's serialized character length without throwing. */
 export function valueLength(value: unknown): number {
   if (typeof value === "string") return value.length;
   try {
@@ -51,6 +55,7 @@ export function valueLength(value: unknown): number {
   }
 }
 
+/** Returns the trace-visible request headers implied by a prediction mode. */
 export function requestHeaders(mode: RunMode): Record<string, string> {
   return {
     "Content-Type": "application/json",
@@ -59,6 +64,7 @@ export function requestHeaders(mode: RunMode): Record<string, string> {
   };
 }
 
+/** Waits for an EventSource to open, closing it on timeout, abort, or connection failure. */
 export function eventSourceReady(events: EventSource, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => {
@@ -88,6 +94,7 @@ export function eventSourceReady(events: EventSource, signal: AbortSignal): Prom
   });
 }
 
+/** Formats structured HTTP validation details or falls back to a normal error message. */
 export function predictionErrorMessage(error: unknown): string {
   if (error instanceof HttpError && error.detail) {
     return error.detail.map((item) => JSON.stringify(item)).join("\n");

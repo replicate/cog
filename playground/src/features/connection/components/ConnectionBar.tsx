@@ -9,6 +9,7 @@ type Props = {
   onConnect: () => void;
 };
 
+/** Submits the target on Enter as well as button activation without owning connection state. */
 export function ConnectionBar({ draft, status, disabled, onDraftChange, onConnect }: Props) {
   return (
     <div id="target-bar">

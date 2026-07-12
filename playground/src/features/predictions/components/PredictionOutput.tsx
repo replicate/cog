@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
 
+/** Concatenates text chunks, recognizes media/URL strings, and follows live output until scrolled. */
 export function PredictionOutput({
   metrics,
   running,

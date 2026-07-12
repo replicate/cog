@@ -22,6 +22,7 @@ export default defineConfig({
     license: { fileName: "THIRD_PARTY_LICENSES.md" },
   },
   worker: {
+    /** Creates a fresh license collector for each worker build. */
     plugins: () => [workerLicensePlugin()],
     rollupOptions: {
       output: { entryFileNames: "assets/validation.worker-[hash].js" },

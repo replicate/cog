@@ -9,9 +9,11 @@ type PackageLicense = {
   version: string;
 };
 
+/** Creates a Vite plugin that emits license notices for dependencies bundled into workers. */
 export function workerLicensePlugin(): Plugin {
   return {
     name: "worker-license-file",
+    /** Scans emitted worker chunks and writes a sorted Markdown license asset. */
     generateBundle(_options, bundle) {
       const packages = new Map<string, PackageLicense>();
       for (const output of Object.values(bundle)) {

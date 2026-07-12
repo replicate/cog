@@ -23,6 +23,7 @@ export type InputFieldProps = {
 
 export type InputControlProps = InputFieldProps & { disabled: boolean };
 
+/** Keeps omitted optional fields inert and delegates included values to a schema-specific control. */
 export function InputField(props: InputFieldProps) {
   const { schema, name, required, included } = props;
   const description = [schema.description, constraintText(schema)].filter(Boolean).join(" · ");

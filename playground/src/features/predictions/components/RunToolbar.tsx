@@ -20,6 +20,7 @@ type Props = {
   onReset: () => void;
 };
 
+/** Shows supported transport modes and locks mode and ID controls while running or validating. */
 export function RunToolbar(props: Props) {
   const controlsDisabled = props.running || props.validating;
   const availableModes = RUN_MODES.filter(

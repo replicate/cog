@@ -3,6 +3,7 @@ import type { ValidationIssue } from "@/features/inputs/validation/inputValidati
 
 const VALIDATION_TIMEOUT_MS = 10_000;
 
+/** Validates input in a disposable worker with abort, timeout, and schema-error handling. */
 export function validateInput(
   document: OpenAPIDocument,
   schema: OpenAPISchema,

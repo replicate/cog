@@ -1,6 +1,7 @@
 import { LazyJsonEditor } from "@/components/editor/LazyJsonEditor";
 import type { PredictionEnvelope } from "@/types/prediction";
 
+/** Shows exact live transport frames or a pretty-printed synchronous terminal response. */
 export function RawResponse({
   envelope,
   live,

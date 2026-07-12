@@ -8,10 +8,12 @@ const MAX_TRACE_COLLECTION_ITEMS = 100;
 const MAX_TRACE_DEPTH = 10;
 const OMITTED_PAYLOAD = "[payload omitted: trace budget exceeded]";
 
+/** Recursively bounds trace strings, data URIs, collections, depth, and circular references. */
 export function boundedTraceData(data: unknown): unknown {
   return boundValue(data, new WeakSet<object>(), 0);
 }
 
+/** Enforces one aggregate payload budget across request, response, and event data. */
 export function enforceTraceBudget(trace: RequestTrace): RequestTrace {
   let remaining = MAX_TRACE_TOTAL_TEXT;
   const retain = (value: unknown): unknown => {
@@ -39,6 +41,7 @@ export function enforceTraceBudget(trace: RequestTrace): RequestTrace {
   return { ...trace, requestBody, responseBody, events };
 }
 
+/** Measures serialized trace payload fields for budget assertions. */
 export function tracePayloadLength(trace: RequestTrace): number {
   return (
     serialize(trace.requestBody).length +

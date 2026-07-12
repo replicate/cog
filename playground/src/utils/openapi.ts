@@ -2,11 +2,13 @@ import type { OpenAPIDocument, OpenAPISchema } from "@/types/openapi";
 
 const REF_PREFIX = "#/components/schemas/";
 
+/** Resolves a local component-schema reference, leaving unsupported references unchanged. */
 export function resolveRef(root: OpenAPIDocument, value: OpenAPISchema): OpenAPISchema {
   if (!value.$ref?.startsWith(REF_PREFIX)) return value;
   return root.components?.schemas?.[value.$ref.slice(REF_PREFIX.length)] ?? value;
 }
 
+/** Resolves local references and unwraps a nullable `anyOf` with one non-null branch. */
 export function effectiveSchema(root: OpenAPIDocument, value: OpenAPISchema): OpenAPISchema {
   let schema = resolveRef(root, value);
   if (!schema.anyOf) return schema;
@@ -19,6 +21,7 @@ export function effectiveSchema(root: OpenAPIDocument, value: OpenAPISchema): Op
   return merged;
 }
 
+/** Finds enum choices declared directly or through a referenced `allOf` branch. */
 export function enumValues(root: OpenAPIDocument, value: OpenAPISchema): unknown[] | undefined {
   const schema = effectiveSchema(root, value);
   if (schema.enum) return schema.enum;
@@ -29,6 +32,7 @@ export function enumValues(root: OpenAPIDocument, value: OpenAPISchema): unknown
   return undefined;
 }
 
+/** Builds initial input from explicit defaults and required enum or Boolean properties. */
 export function defaultInput(
   root: OpenAPIDocument,
   schema: OpenAPISchema,
@@ -49,6 +53,7 @@ export function defaultInput(
   return result;
 }
 
+/** Orders object properties by Cog's `x-order` extension, with unspecified entries last. */
 export function orderedProperties(schema: OpenAPISchema): [string, OpenAPISchema][] {
   return Object.entries(schema.properties ?? {}).sort(([, left], [, right]) => {
     const leftOrder = typeof left["x-order"] === "number" ? left["x-order"] : 999;
@@ -57,6 +62,7 @@ export function orderedProperties(schema: OpenAPISchema): [string, OpenAPISchema
   });
 }
 
+/** Formats supported numeric, length, and pattern constraints as field guidance. */
 export function constraintText(schema: OpenAPISchema): string {
   const parts: string[] = [];
   if (schema.minimum !== undefined) parts.push(`min ${schema.minimum}`);
@@ -75,6 +81,7 @@ export type PlaygroundSchemas = {
   async: boolean;
 };
 
+/** Derives the model endpoint, schemas, streaming support, and cancellation capability. */
 export function inputAndOutputSchemas(document: OpenAPIDocument): PlaygroundSchemas {
   const schemas = document.components?.schemas ?? {};
   const training = Boolean(document.paths?.["/trainings"]);

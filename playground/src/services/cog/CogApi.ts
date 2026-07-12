@@ -19,13 +19,16 @@ type SubmitOptions = {
 
 type StreamOptions = Pick<SubmitOptions, "endpoint" | "id" | "input" | "signal" | "onResponse">;
 
+/** Routes model requests through the same-origin proxy rather than exposing cross-origin access. */
 export class CogApi {
   #target = "";
 
+  /** Stores a trailing-slash-free target for the proxy's `X-Cog-Target` header. */
   setTarget(target: string): void {
     this.#target = target.trim().replace(/\/+$/, "");
   }
 
+  /** Loads the playground's optional target, webhook, and version configuration. */
   async config(
     signal?: AbortSignal,
   ): Promise<{ target?: string; webhookBase?: string; cogVersion?: string }> {
@@ -36,14 +39,17 @@ export class CogApi {
     );
   }
 
+  /** Reads size-limited health JSON from the configured target. */
   async health(signal?: AbortSignal): Promise<HealthResponse> {
     return this.#jsonRequest<HealthResponse>("/health-check", signal);
   }
 
+  /** Reads the size-limited OpenAPI document from the configured target. */
   async schema(signal?: AbortSignal): Promise<OpenAPIDocument> {
     return this.#jsonRequest<OpenAPIDocument>("/openapi.json", signal);
   }
 
+  /** Uses PUT for caller-supplied IDs and adds `Prefer: respond-async` for async submissions. */
   async submit(options: SubmitOptions): Promise<PredictionEnvelope> {
     const headers = this.#headers({ "Content-Type": "application/json" });
     if (options.async) headers.set("Prefer", "respond-async");
@@ -58,6 +64,7 @@ export class CogApi {
     return parsePredictionResponse(response);
   }
 
+  /** Requests SSE and exposes each frame only after bounded incremental parsing. */
   async *stream(options: StreamOptions): AsyncGenerator<StreamEvent> {
     const response = await fetch(this.#url(options.endpoint, options.id), {
       method: options.id ? "PUT" : "POST",
@@ -70,6 +77,7 @@ export class CogApi {
     yield* readSSE(response);
   }
 
+  /** URL-encodes the run ID before posting to its cancellation endpoint. */
   async cancel(endpoint: string, id: string, signal?: AbortSignal): Promise<void> {
     const response = await fetch(`${PROXY_PREFIX}${endpoint}/${encodeURIComponent(id)}/cancel`, {
       method: "POST",

@@ -10,6 +10,7 @@ type Props = {
   envelope?: PredictionEnvelope;
 };
 
+/** Handles missing trace/log data before delegating to the selected inspector view. */
 export function RequestInspector({ view, trace, envelope }: Props) {
   if (view === "logs") return <Logs logs={envelope?.logs} />;
   if (!trace) {

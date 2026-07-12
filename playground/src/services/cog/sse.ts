@@ -4,6 +4,7 @@ import type { StreamEvent } from "@/types/prediction";
 
 const MAX_SSE_FRAME_LENGTH = 1024 * 1024;
 
+/** Incrementally yields size-bounded SSE frames and always releases the response reader. */
 export async function* readSSE(response: Response): AsyncGenerator<StreamEvent> {
   if (!response.ok) throw await responseError(response);
   if (!response.body) throw new Error("Streaming response has no body");
@@ -39,6 +40,7 @@ export async function* readSSE(response: Response): AsyncGenerator<StreamEvent> 
   }
 }
 
+/** Parses one raw SSE frame, preserving its exact text and ignoring frames without an event type. */
 export function parseSSE(raw: string): StreamEvent | undefined {
   let type = "";
   const data: string[] = [];

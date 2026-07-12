@@ -14,14 +14,17 @@ type Props<Value extends string> = {
   onChange: (value: Value) => void;
 };
 
+/** Generates the ID referenced by a matching panel's `aria-labelledby`. */
 export function tabId(id: string, value: string): string {
   return `${id}-tab-${value}`;
 }
 
+/** Generates the panel ID referenced by a matching tab's `aria-controls`. */
 export function tabPanelId(id: string, value: string): string {
   return `${id}-panel-${value}`;
 }
 
+/** Adds stable ARIA tab/panel relationships around Kumo's controlled tabs. */
 export function SegmentedTabs<Value extends string>({
   id,
   label,

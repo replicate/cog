@@ -17,6 +17,7 @@ type StreamBuffer = {
   frame?: number;
 };
 
+/** Batches stream rendering by animation frame and rejects writes from stale run tokens. */
 export function usePredictionOutputState<T extends TraceRun>(activeRun: RefObject<T | undefined>) {
   const [output, setOutput] = useState<unknown>();
   const [rawEvents, setRawEvents] = useState<string[]>([]);

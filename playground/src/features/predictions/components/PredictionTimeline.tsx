@@ -3,6 +3,7 @@ import { useState } from "react";
 import { LazyJsonEditor } from "@/components/editor/LazyJsonEditor";
 import type { RequestTrace, TraceEvent } from "@/types/prediction";
 
+/** Compacts adjacent SSE output events while preserving their payloads in an expandable viewer. */
 export function PredictionTimeline({ trace }: { trace: RequestTrace }) {
   const events = compactEvents(trace.events);
   return (

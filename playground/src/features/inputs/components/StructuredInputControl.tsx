@@ -5,6 +5,7 @@ import type { InputControlProps } from "@/features/inputs/components/InputField"
 import { emptyInputValue } from "@/features/inputs/utils/inputControl";
 import { constraintText } from "@/utils/openapi";
 
+/** Retains invalid JSON locally and updates the form value only after parsing succeeds. */
 export function StructuredInputControl(props: InputControlProps) {
   const initial = props.value === undefined ? emptyInputValue(props.schema) : props.value;
   const [raw, setRaw] = useState(JSON.stringify(initial, null, 2));

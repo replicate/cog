@@ -6,6 +6,10 @@ import { formatBytes, isDataURI } from "@/features/inputs/utils/inputControl";
 import { fileToDataURI } from "@/services/cog";
 import { constraintText } from "@/utils/openapi";
 
+/**
+ * Accepts uploaded files or URLs, reports loading and validity, and previews supported media
+ * after converting local files to data URIs.
+ */
 export function FileInputControl(props: InputControlProps) {
   const { disabled } = props;
   const [fileName, setFileName] = useState("");

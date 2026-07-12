@@ -9,6 +9,10 @@ const DEFAULT_TARGET = "http://localhost:8393";
 const REQUEST_TIMEOUT = 10_000;
 type ConnectionApi = Pick<CogApi, "config" | "health" | "schema" | "setTarget">;
 
+/**
+ * Loads playground configuration, retries schema discovery, polls model health, and exposes
+ * the committed target with its derived prediction capabilities.
+ */
 export function useConnection(api: ConnectionApi) {
   const [targetDraft, setTargetDraft] = useState("");
   const [target, setTarget] = useState("");

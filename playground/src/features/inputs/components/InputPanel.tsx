@@ -13,6 +13,7 @@ type Props = {
   state: PlaygroundInputState;
 };
 
+/** Preserves one input value across form and JSON modes while showing mode-specific validation. */
 export function InputPanel({ document, schema, schemaError, state }: Props) {
   return (
     <section id="input-panel">

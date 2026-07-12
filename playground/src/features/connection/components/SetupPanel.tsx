@@ -1,6 +1,7 @@
 import { StatusBadge } from "@/components/StatusBadge";
 import type { HealthResponse } from "@/types/health";
 
+/** Returns no UI when setup telemetry is absent; otherwise keeps potentially large logs collapsed. */
 export function SetupPanel({ setup }: { setup: HealthResponse["setup"] }) {
   if (!setup) return null;
   return (

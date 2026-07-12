@@ -16,6 +16,10 @@ export type InputValidator = (value: unknown) => ValidationIssue[];
 const INVALID_URI_TEXT = /[\p{Cc}\s]|%(?![0-9a-f]{2})/iu;
 const BASE64_DATA = /^[A-Za-z0-9+/]*={0,2}$/;
 
+/**
+ * Normalizes an OpenAPI schema and compiles a synchronous AJV validator that returns
+ * field-oriented issues instead of throwing schema or validation errors.
+ */
 export function createInputValidator(
   document: OpenAPIDocument,
   inputSchema: OpenAPISchema,

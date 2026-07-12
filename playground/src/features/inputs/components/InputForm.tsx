@@ -16,6 +16,7 @@ type Props = {
   onValidityChange: (valid: boolean) => void;
 };
 
+/** Reports aggregate busy/valid state while adding or removing optional properties from the value. */
 export function InputForm({
   document,
   schema,

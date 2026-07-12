@@ -10,6 +10,7 @@ type Props = {
   onChange: (value: WebhookEvent[]) => void;
 };
 
+/** Allows optional webhook filters while keeping `completed` selected and immutable. */
 export function WebhookOptions({ value, webhookBase, disabled, onChange }: Props) {
   return (
     <fieldset id="webhook-options" disabled={disabled}>

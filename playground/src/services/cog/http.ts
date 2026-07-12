@@ -4,6 +4,7 @@ import type { PredictionEnvelope } from "@/types/prediction";
 const MAX_JSON_RESPONSE_LENGTH = 16 * 1024 * 1024;
 const MAX_ERROR_RESPONSE_LENGTH = 1024 * 1024;
 
+/** Preserves status and structured validation details from an unsuccessful HTTP response. */
 export class HttpError extends Error {
   constructor(
     message: string,
@@ -14,11 +15,13 @@ export class HttpError extends Error {
   }
 }
 
+/** Rejects unsuccessful responses and parses a size-bounded prediction envelope. */
 export async function parsePredictionResponse(response: Response): Promise<PredictionEnvelope> {
   if (!response.ok) throw await responseError(response);
   return parseJSONResponse<PredictionEnvelope>(response);
 }
 
+/** Converts a bounded JSON or text error response into an `HttpError`. */
 export async function responseError(response: Response): Promise<HttpError> {
   const text = await readResponseText(response, MAX_ERROR_RESPONSE_LENGTH);
   let body: JsonObject = {};
@@ -37,6 +40,7 @@ export async function responseError(response: Response): Promise<HttpError> {
   return new HttpError(message, response.status, detail);
 }
 
+/** Reads JSON under the response-size limit without performing runtime shape validation. */
 export async function parseJSONResponse<T>(response: Response): Promise<T> {
   return JSON.parse(await readResponseText(response, MAX_JSON_RESPONSE_LENGTH)) as T;
 }

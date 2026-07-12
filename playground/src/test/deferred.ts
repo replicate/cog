@@ -1,3 +1,4 @@
+/** Creates a test promise whose resolve and reject callbacks are controlled externally. */
 export function deferred<Value>(): {
   promise: Promise<Value>;
   resolve: (value: Value) => void;

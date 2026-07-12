@@ -16,6 +16,7 @@ import {
 } from "@/features/predictions";
 import { currentTheme, setTheme, type ThemeMode } from "@/config/theme";
 
+/** Owns the shared API client and resets run state when the connected model schema changes. */
 export function App() {
   const api = useMemo(() => new CogApi(), []);
   const connection = useConnection(api);
