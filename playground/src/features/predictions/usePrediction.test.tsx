@@ -310,6 +310,33 @@ describe("usePrediction", () => {
       vi.useRealTimers();
     }
   });
+
+  it("closes an asynchronous event stream when stopped during setup", async () => {
+    const sources: MockEventSource[] = [];
+    let stop: () => void = () => undefined;
+    vi.stubGlobal(
+      "EventSource",
+      class extends MockEventSource {
+        constructor(url: string) {
+          super(url);
+          sources.push(this);
+          stop();
+        }
+      },
+    );
+    const api = fakeApi({ submit: vi.fn() });
+    const { result } = renderHook(() => usePrediction(api));
+    stop = result.current.stop;
+
+    await act(() => result.current.run({ ...options, mode: "async" }));
+
+    expect(sources[0].close).toHaveBeenCalledOnce();
+    expect(api.submit).not.toHaveBeenCalled();
+    expect(result.current).toMatchObject({
+      running: false,
+      envelope: { status: "canceled" },
+    });
+  });
 });
 
 function fakeApi(overrides: Partial<Record<"submit" | "stream" | "cancel", unknown>>): CogApi {

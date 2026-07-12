@@ -251,7 +251,10 @@ export function usePrediction(api: CogApi) {
     if (!options.webhookBase) throw new Error("No webhook host is configured");
     const webhookToken = crypto.randomUUID();
     const events = new EventSource(`/events?token=${encodeURIComponent(webhookToken)}`);
-    if (activeRun.current?.token !== token) return;
+    if (activeRun.current?.token !== token) {
+      events.close();
+      return;
+    }
     activeRun.current.events = events;
     await eventSourceReady(events, signal);
     recordTraceEvent(token, "webhook", "Webhook event stream connected");
