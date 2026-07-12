@@ -16,7 +16,15 @@ url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/carg
 checksum = "sha256:0e8c2aa59128612c90d9e09c02204e912f29a5b8d9a64671b94608cbe09e064f"
 url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-unknown-linux-musl.tar.gz"
 
+[tools."aqua:EmbarkStudios/cargo-deny"."platforms.linux-x64-baseline"]
+checksum = "sha256:0e8c2aa59128612c90d9e09c02204e912f29a5b8d9a64671b94608cbe09e064f"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-unknown-linux-musl.tar.gz"
+
 [tools."aqua:EmbarkStudios/cargo-deny"."platforms.linux-x64-musl"]
+checksum = "sha256:0e8c2aa59128612c90d9e09c02204e912f29a5b8d9a64671b94608cbe09e064f"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-unknown-linux-musl.tar.gz"
+
+[tools."aqua:EmbarkStudios/cargo-deny"."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:0e8c2aa59128612c90d9e09c02204e912f29a5b8d9a64671b94608cbe09e064f"
 url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-unknown-linux-musl.tar.gz"
 
@@ -28,7 +36,15 @@ url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/carg
 checksum = "sha256:c42163655413f7e872638cd8c4345a327b512ef0ab99109e9cced691b95af5fb"
 url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-apple-darwin.tar.gz"
 
+[tools."aqua:EmbarkStudios/cargo-deny"."platforms.macos-x64-baseline"]
+checksum = "sha256:c42163655413f7e872638cd8c4345a327b512ef0ab99109e9cced691b95af5fb"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-apple-darwin.tar.gz"
+
 [tools."aqua:EmbarkStudios/cargo-deny"."platforms.windows-x64"]
+checksum = "sha256:413f0e2ce780d0d14ba8e9339f9fb033419a8a971ec7714faec518e4a664bdb0"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-pc-windows-msvc.tar.gz"
+
+[tools."aqua:EmbarkStudios/cargo-deny"."platforms.windows-x64-baseline"]
 checksum = "sha256:413f0e2ce780d0d14ba8e9339f9fb033419a8a971ec7714faec518e4a664bdb0"
 url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-pc-windows-msvc.tar.gz"
 
@@ -51,7 +67,17 @@ checksum = "sha256:dfa775874cf0561b404a02a8f4481fc69b28091da95aa697259820d429b09
 url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-linux-amd64.tar.gz"
 provenance = "github-attestations"
 
+[tools."aqua:golangci/golangci-lint"."platforms.linux-x64-baseline"]
+checksum = "sha256:dfa775874cf0561b404a02a8f4481fc69b28091da95aa697259820d429b09c99"
+url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-linux-amd64.tar.gz"
+provenance = "github-attestations"
+
 [tools."aqua:golangci/golangci-lint"."platforms.linux-x64-musl"]
+checksum = "sha256:dfa775874cf0561b404a02a8f4481fc69b28091da95aa697259820d429b09c99"
+url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-linux-amd64.tar.gz"
+provenance = "github-attestations"
+
+[tools."aqua:golangci/golangci-lint"."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:dfa775874cf0561b404a02a8f4481fc69b28091da95aa697259820d429b09c99"
 url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-linux-amd64.tar.gz"
 provenance = "github-attestations"
@@ -66,7 +92,17 @@ checksum = "sha256:66fb0da81b8033b477f97eea420d4b46b230ca172b8bb87c6610109f3772b
 url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-darwin-amd64.tar.gz"
 provenance = "github-attestations"
 
+[tools."aqua:golangci/golangci-lint"."platforms.macos-x64-baseline"]
+checksum = "sha256:66fb0da81b8033b477f97eea420d4b46b230ca172b8bb87c6610109f3772b6b6"
+url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-darwin-amd64.tar.gz"
+provenance = "github-attestations"
+
 [tools."aqua:golangci/golangci-lint"."platforms.windows-x64"]
+checksum = "sha256:c60c87695e79db8e320f0e5be885059859de52bb5ee5f11be5577828570bc2a3"
+url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-windows-amd64.zip"
+provenance = "github-attestations"
+
+[tools."aqua:golangci/golangci-lint"."platforms.windows-x64-baseline"]
 checksum = "sha256:c60c87695e79db8e320f0e5be885059859de52bb5ee5f11be5577828570bc2a3"
 url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-windows-amd64.zip"
 provenance = "github-attestations"
@@ -87,7 +123,15 @@ url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/got
 checksum = "sha256:11ccddeaf708ef228889f9fe2f68291a75b27013ddfc3b18156e094f5f40e8ee"
 url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_linux_amd64.tar.gz"
 
+[tools."aqua:gotestyourself/gotestsum"."platforms.linux-x64-baseline"]
+checksum = "sha256:11ccddeaf708ef228889f9fe2f68291a75b27013ddfc3b18156e094f5f40e8ee"
+url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_linux_amd64.tar.gz"
+
 [tools."aqua:gotestyourself/gotestsum"."platforms.linux-x64-musl"]
+checksum = "sha256:11ccddeaf708ef228889f9fe2f68291a75b27013ddfc3b18156e094f5f40e8ee"
+url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_linux_amd64.tar.gz"
+
+[tools."aqua:gotestyourself/gotestsum"."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:11ccddeaf708ef228889f9fe2f68291a75b27013ddfc3b18156e094f5f40e8ee"
 url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_linux_amd64.tar.gz"
 
@@ -99,7 +143,15 @@ url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/got
 checksum = "sha256:99529350f4c7b780b1efc543ca0d9721b09f0a4228f0efa9281261f58fefa05a"
 url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_darwin_amd64.tar.gz"
 
+[tools."aqua:gotestyourself/gotestsum"."platforms.macos-x64-baseline"]
+checksum = "sha256:99529350f4c7b780b1efc543ca0d9721b09f0a4228f0efa9281261f58fefa05a"
+url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_darwin_amd64.tar.gz"
+
 [tools."aqua:gotestyourself/gotestsum"."platforms.windows-x64"]
+checksum = "sha256:fd5a6dc69e46a0970593e70d85a7e75f16714e9c61d6d72ccc324eb82df5bb8a"
+url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_windows_amd64.tar.gz"
+
+[tools."aqua:gotestyourself/gotestsum"."platforms.windows-x64-baseline"]
 checksum = "sha256:fd5a6dc69e46a0970593e70d85a7e75f16714e9c61d6d72ccc324eb82df5bb8a"
 url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_windows_amd64.tar.gz"
 
@@ -122,7 +174,17 @@ checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"
 provenance = "github-attestations"
 
+[tools."aqua:jqlang/jq"."platforms.linux-x64-baseline"]
+checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d"
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"
+provenance = "github-attestations"
+
 [tools."aqua:jqlang/jq"."platforms.linux-x64-musl"]
+checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d"
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"
+provenance = "github-attestations"
+
+[tools."aqua:jqlang/jq"."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d"
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"
 provenance = "github-attestations"
@@ -137,7 +199,17 @@ checksum = "sha256:e80dbe0d2a2597e3c11c404f03337b981d74b4a8504b70586c354b7697a7c
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-amd64"
 provenance = "github-attestations"
 
+[tools."aqua:jqlang/jq"."platforms.macos-x64-baseline"]
+checksum = "sha256:e80dbe0d2a2597e3c11c404f03337b981d74b4a8504b70586c354b7697a7c27f"
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-amd64"
+provenance = "github-attestations"
+
 [tools."aqua:jqlang/jq"."platforms.windows-x64"]
+checksum = "sha256:23cb60a1354eed6bcc8d9b9735e8c7b388cd1fdcb75726b93bc299ef22dd9334"
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-amd64.exe"
+provenance = "github-attestations"
+
+[tools."aqua:jqlang/jq"."platforms.windows-x64-baseline"]
 checksum = "sha256:23cb60a1354eed6bcc8d9b9735e8c7b388cd1fdcb75726b93bc299ef22dd9334"
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-amd64.exe"
 provenance = "github-attestations"
@@ -150,7 +222,15 @@ backend = "aqua:mitsuhiko/insta"
 checksum = "sha256:592f7f8ddd465f0b8f2e7121bbe6bace97b475330b7f3c0ac62e504c1de6b967"
 url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-unknown-linux-musl.tar.xz"
 
+[tools."aqua:mitsuhiko/insta"."platforms.linux-x64-baseline"]
+checksum = "sha256:592f7f8ddd465f0b8f2e7121bbe6bace97b475330b7f3c0ac62e504c1de6b967"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-unknown-linux-musl.tar.xz"
+
 [tools."aqua:mitsuhiko/insta"."platforms.linux-x64-musl"]
+checksum = "sha256:592f7f8ddd465f0b8f2e7121bbe6bace97b475330b7f3c0ac62e504c1de6b967"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-unknown-linux-musl.tar.xz"
+
+[tools."aqua:mitsuhiko/insta"."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:592f7f8ddd465f0b8f2e7121bbe6bace97b475330b7f3c0ac62e504c1de6b967"
 url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-unknown-linux-musl.tar.xz"
 
@@ -162,7 +242,15 @@ url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-a
 checksum = "sha256:4a2e8bc9b3e7591fd96580cbb4c79cae062060f9482719bb32bc3932eff08fba"
 url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-apple-darwin.tar.xz"
 
+[tools."aqua:mitsuhiko/insta"."platforms.macos-x64-baseline"]
+checksum = "sha256:4a2e8bc9b3e7591fd96580cbb4c79cae062060f9482719bb32bc3932eff08fba"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-apple-darwin.tar.xz"
+
 [tools."aqua:mitsuhiko/insta"."platforms.windows-x64"]
+checksum = "sha256:d13a207264e10644d6995bdb332d7cc7353ffc53a0199f4e20376923016247ab"
+url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-pc-windows-msvc.zip"
+
+[tools."aqua:mitsuhiko/insta"."platforms.windows-x64-baseline"]
 checksum = "sha256:d13a207264e10644d6995bdb332d7cc7353ffc53a0199f4e20376923016247ab"
 url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-pc-windows-msvc.zip"
 
@@ -182,7 +270,15 @@ url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/ca
 checksum = "sha256:742ed281f15fef6eaf49535ac10ffe98fb57913d0c4c88d6888d794043c05618"
 url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.x86_64-unknown-linux-musl.tar.gz"
 
+[tools."aqua:rust-cross/cargo-zigbuild"."platforms.linux-x64-baseline"]
+checksum = "sha256:742ed281f15fef6eaf49535ac10ffe98fb57913d0c4c88d6888d794043c05618"
+url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.x86_64-unknown-linux-musl.tar.gz"
+
 [tools."aqua:rust-cross/cargo-zigbuild"."platforms.linux-x64-musl"]
+checksum = "sha256:742ed281f15fef6eaf49535ac10ffe98fb57913d0c4c88d6888d794043c05618"
+url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.x86_64-unknown-linux-musl.tar.gz"
+
+[tools."aqua:rust-cross/cargo-zigbuild"."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:742ed281f15fef6eaf49535ac10ffe98fb57913d0c4c88d6888d794043c05618"
 url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.x86_64-unknown-linux-musl.tar.gz"
 
@@ -194,7 +290,15 @@ url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/ca
 checksum = "sha256:d5c7ac2e6f25fb76083dff84640cdf679c5da858b9c97631555c3185be2fbf35"
 url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.apple-darwin.tar.gz"
 
+[tools."aqua:rust-cross/cargo-zigbuild"."platforms.macos-x64-baseline"]
+checksum = "sha256:d5c7ac2e6f25fb76083dff84640cdf679c5da858b9c97631555c3185be2fbf35"
+url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.apple-darwin.tar.gz"
+
 [tools."aqua:rust-cross/cargo-zigbuild"."platforms.windows-x64"]
+checksum = "sha256:b0bb728ba068ee61342f40a2124b3d8d234af8f716dd416b7c1f794dfeb4e478"
+url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.windows-x64.zip"
+
+[tools."aqua:rust-cross/cargo-zigbuild"."platforms.windows-x64-baseline"]
 checksum = "sha256:b0bb728ba068ee61342f40a2124b3d8d234af8f716dd416b7c1f794dfeb4e478"
 url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.windows-x64.zip"
 
@@ -214,7 +318,15 @@ url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-unknown-linux-
 checksum = "sha256:20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c"
 url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init"
 
+[tools."aqua:rust-lang/rustup"."platforms.linux-x64-baseline"]
+checksum = "sha256:20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c"
+url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init"
+
 [tools."aqua:rust-lang/rustup"."platforms.linux-x64-musl"]
+checksum = "sha256:e6599a1c7be58a2d8eaca66a80e0dc006d87bbcf780a58b7343d6e14c1605cb2"
+url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-musl/rustup-init"
+
+[tools."aqua:rust-lang/rustup"."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:e6599a1c7be58a2d8eaca66a80e0dc006d87bbcf780a58b7343d6e14c1605cb2"
 url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-musl/rustup-init"
 
@@ -226,7 +338,15 @@ url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-apple-darwin/r
 checksum = "sha256:9c331076f62b4d0edeae63d9d1c9442d5fe39b37b05025ec8d41c5ed35486496"
 url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-apple-darwin/rustup-init"
 
+[tools."aqua:rust-lang/rustup"."platforms.macos-x64-baseline"]
+checksum = "sha256:9c331076f62b4d0edeae63d9d1c9442d5fe39b37b05025ec8d41c5ed35486496"
+url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-apple-darwin/rustup-init"
+
 [tools."aqua:rust-lang/rustup"."platforms.windows-x64"]
+checksum = "sha256:88d8258dcf6ae4f7a80c7d1088e1f36fa7025a1cfd1343731b4ee6f385121fc0"
+url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-pc-windows-msvc/rustup-init.exe"
+
+[tools."aqua:rust-lang/rustup"."platforms.windows-x64-baseline"]
 checksum = "sha256:88d8258dcf6ae4f7a80c7d1088e1f36fa7025a1cfd1343731b4ee6f385121fc0"
 url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-pc-windows-msvc/rustup-init.exe"
 
@@ -246,7 +366,15 @@ url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-unknown-linux-
 checksum = "sha256:20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c"
 url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init"
 
+[tools."aqua:rust-lang/rustup/rustup-init"."platforms.linux-x64-baseline"]
+checksum = "sha256:20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c"
+url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init"
+
 [tools."aqua:rust-lang/rustup/rustup-init"."platforms.linux-x64-musl"]
+checksum = "sha256:e6599a1c7be58a2d8eaca66a80e0dc006d87bbcf780a58b7343d6e14c1605cb2"
+url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-musl/rustup-init"
+
+[tools."aqua:rust-lang/rustup/rustup-init"."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:e6599a1c7be58a2d8eaca66a80e0dc006d87bbcf780a58b7343d6e14c1605cb2"
 url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-musl/rustup-init"
 
@@ -258,7 +386,15 @@ url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-apple-darwin/r
 checksum = "sha256:9c331076f62b4d0edeae63d9d1c9442d5fe39b37b05025ec8d41c5ed35486496"
 url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-apple-darwin/rustup-init"
 
+[tools."aqua:rust-lang/rustup/rustup-init"."platforms.macos-x64-baseline"]
+checksum = "sha256:9c331076f62b4d0edeae63d9d1c9442d5fe39b37b05025ec8d41c5ed35486496"
+url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-apple-darwin/rustup-init"
+
 [tools."aqua:rust-lang/rustup/rustup-init"."platforms.windows-x64"]
+checksum = "sha256:88d8258dcf6ae4f7a80c7d1088e1f36fa7025a1cfd1343731b4ee6f385121fc0"
+url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-pc-windows-msvc/rustup-init.exe"
+
+[tools."aqua:rust-lang/rustup/rustup-init"."platforms.windows-x64-baseline"]
 checksum = "sha256:88d8258dcf6ae4f7a80c7d1088e1f36fa7025a1cfd1343731b4ee6f385121fc0"
 url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-pc-windows-msvc/rustup-init.exe"
 
@@ -278,7 +414,15 @@ url = "https://github.com/vektra/mockery/releases/download/v3.7.0/mockery_3.7.0_
 checksum = "sha256:5e10597d9741d7b8cda699f044b24c9e8b51467dce413e79516d7cd9373c2896"
 url = "https://github.com/vektra/mockery/releases/download/v3.7.0/mockery_3.7.0_Linux_x86_64.tar.gz"
 
+[tools."aqua:vektra/mockery"."platforms.linux-x64-baseline"]
+checksum = "sha256:5e10597d9741d7b8cda699f044b24c9e8b51467dce413e79516d7cd9373c2896"
+url = "https://github.com/vektra/mockery/releases/download/v3.7.0/mockery_3.7.0_Linux_x86_64.tar.gz"
+
 [tools."aqua:vektra/mockery"."platforms.linux-x64-musl"]
+checksum = "sha256:5e10597d9741d7b8cda699f044b24c9e8b51467dce413e79516d7cd9373c2896"
+url = "https://github.com/vektra/mockery/releases/download/v3.7.0/mockery_3.7.0_Linux_x86_64.tar.gz"
+
+[tools."aqua:vektra/mockery"."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:5e10597d9741d7b8cda699f044b24c9e8b51467dce413e79516d7cd9373c2896"
 url = "https://github.com/vektra/mockery/releases/download/v3.7.0/mockery_3.7.0_Linux_x86_64.tar.gz"
 
@@ -290,7 +434,15 @@ url = "https://github.com/vektra/mockery/releases/download/v3.7.0/mockery_3.7.0_
 checksum = "sha256:36e7357fd160689a9a8ae57726e099761159845e2749ba31091589853a5a894d"
 url = "https://github.com/vektra/mockery/releases/download/v3.7.0/mockery_3.7.0_Darwin_x86_64.tar.gz"
 
+[tools."aqua:vektra/mockery"."platforms.macos-x64-baseline"]
+checksum = "sha256:36e7357fd160689a9a8ae57726e099761159845e2749ba31091589853a5a894d"
+url = "https://github.com/vektra/mockery/releases/download/v3.7.0/mockery_3.7.0_Darwin_x86_64.tar.gz"
+
 [tools."aqua:vektra/mockery"."platforms.windows-x64"]
+checksum = "sha256:76d524ad1740cd02ed621d90015f538fdb53cf6cd4a1ad4d289db017fb69bd0e"
+url = "https://github.com/vektra/mockery/releases/download/v3.7.0/mockery_3.7.0_Windows_x86_64.tar.gz"
+
+[tools."aqua:vektra/mockery"."platforms.windows-x64-baseline"]
 checksum = "sha256:76d524ad1740cd02ed621d90015f538fdb53cf6cd4a1ad4d289db017fb69bd0e"
 url = "https://github.com/vektra/mockery/releases/download/v3.7.0/mockery_3.7.0_Windows_x86_64.tar.gz"
 
@@ -310,7 +462,15 @@ url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/ca
 checksum = "sha256:3225eea8041c30d7462761a481883e3aa8fe31c58def4b6c8dd91b7c80973df0"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
+[tools.cargo-binstall."platforms.linux-x64-baseline"]
+checksum = "sha256:3225eea8041c30d7462761a481883e3aa8fe31c58def4b6c8dd91b7c80973df0"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+
 [tools.cargo-binstall."platforms.linux-x64-musl"]
+checksum = "sha256:3225eea8041c30d7462761a481883e3aa8fe31c58def4b6c8dd91b7c80973df0"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+
+[tools.cargo-binstall."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:3225eea8041c30d7462761a481883e3aa8fe31c58def4b6c8dd91b7c80973df0"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
@@ -322,7 +482,15 @@ url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/ca
 checksum = "sha256:633dc2f381f7000d8ba3c02eb24b2f290bf0154372bafe8d8094d777f129f21d"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-x86_64-apple-darwin.zip"
 
+[tools.cargo-binstall."platforms.macos-x64-baseline"]
+checksum = "sha256:633dc2f381f7000d8ba3c02eb24b2f290bf0154372bafe8d8094d777f129f21d"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-x86_64-apple-darwin.zip"
+
 [tools.cargo-binstall."platforms.windows-x64"]
+checksum = "sha256:fca962c3d12ae6192280111074db073c15abad3ba162a1a5a2af0f6f01872114"
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-x86_64-pc-windows-msvc.zip"
+
+[tools.cargo-binstall."platforms.windows-x64-baseline"]
 checksum = "sha256:fca962c3d12ae6192280111074db073c15abad3ba162a1a5a2af0f6f01872114"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-x86_64-pc-windows-msvc.zip"
 
@@ -350,7 +518,15 @@ url = "https://dl.google.com/go/go1.25.6.linux-arm64.tar.gz"
 checksum = "sha256:f022b6aad78e362bcba9b0b94d09ad58c5a70c6ba3b7582905fababf5fe0181a"
 url = "https://dl.google.com/go/go1.25.6.linux-amd64.tar.gz"
 
+[tools.go."platforms.linux-x64-baseline"]
+checksum = "sha256:f022b6aad78e362bcba9b0b94d09ad58c5a70c6ba3b7582905fababf5fe0181a"
+url = "https://dl.google.com/go/go1.25.6.linux-amd64.tar.gz"
+
 [tools.go."platforms.linux-x64-musl"]
+checksum = "sha256:f022b6aad78e362bcba9b0b94d09ad58c5a70c6ba3b7582905fababf5fe0181a"
+url = "https://dl.google.com/go/go1.25.6.linux-amd64.tar.gz"
+
+[tools.go."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:f022b6aad78e362bcba9b0b94d09ad58c5a70c6ba3b7582905fababf5fe0181a"
 url = "https://dl.google.com/go/go1.25.6.linux-amd64.tar.gz"
 
@@ -362,7 +538,15 @@ url = "https://dl.google.com/go/go1.25.6.darwin-arm64.tar.gz"
 checksum = "sha256:e2b5b237f5c262931b8e280ac4b8363f156e19bfad5270c099998932819670b7"
 url = "https://dl.google.com/go/go1.25.6.darwin-amd64.tar.gz"
 
+[tools.go."platforms.macos-x64-baseline"]
+checksum = "sha256:e2b5b237f5c262931b8e280ac4b8363f156e19bfad5270c099998932819670b7"
+url = "https://dl.google.com/go/go1.25.6.darwin-amd64.tar.gz"
+
 [tools.go."platforms.windows-x64"]
+checksum = "sha256:19b4733b727ba5c611b5656187f3ac367d278d64c3d4199a845e39c0fdac5335"
+url = "https://dl.google.com/go/go1.25.6.windows-amd64.zip"
+
+[tools.go."platforms.windows-x64-baseline"]
 checksum = "sha256:19b4733b727ba5c611b5656187f3ac367d278d64c3d4199a845e39c0fdac5335"
 url = "https://dl.google.com/go/go1.25.6.windows-amd64.zip"
 
@@ -454,7 +638,15 @@ url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-aarch64-
 checksum = "sha256:2fe394f493318551f271277a2228e56b31ca69a4842483e5709af4548f342bc3"
 url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-unknown-linux-musl.tar.gz"
 
+[tools.ruff."platforms.linux-x64-baseline"]
+checksum = "sha256:2fe394f493318551f271277a2228e56b31ca69a4842483e5709af4548f342bc3"
+url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-unknown-linux-musl.tar.gz"
+
 [tools.ruff."platforms.linux-x64-musl"]
+checksum = "sha256:2fe394f493318551f271277a2228e56b31ca69a4842483e5709af4548f342bc3"
+url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-unknown-linux-musl.tar.gz"
+
+[tools.ruff."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:2fe394f493318551f271277a2228e56b31ca69a4842483e5709af4548f342bc3"
 url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-unknown-linux-musl.tar.gz"
 
@@ -466,7 +658,15 @@ url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-aarch64-
 checksum = "sha256:69e424a42ac3a7c6c7032ad96deb757c35c93c848b6ea329a3f4c605e6d89ef9"
 url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-apple-darwin.tar.gz"
 
+[tools.ruff."platforms.macos-x64-baseline"]
+checksum = "sha256:69e424a42ac3a7c6c7032ad96deb757c35c93c848b6ea329a3f4c605e6d89ef9"
+url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-apple-darwin.tar.gz"
+
 [tools.ruff."platforms.windows-x64"]
+checksum = "sha256:d2af4376053458f283d74980b49dc0d61d3ef9d9b8684c5b25bd64b73e11634a"
+url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-pc-windows-msvc.zip"
+
+[tools.ruff."platforms.windows-x64-baseline"]
 checksum = "sha256:d2af4376053458f283d74980b49dc0d61d3ef9d9b8684c5b25bd64b73e11634a"
 url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-pc-windows-msvc.zip"
 
@@ -477,6 +677,10 @@ backend = "core:rust"
 [tools.rust.options]
 components = "clippy,rust-analyzer,rustfmt"
 targets = "aarch64-apple-darwin,aarch64-unknown-linux-gnu,x86_64-unknown-linux-gnu"
+
+[[tools.rust]]
+version = "1.93.0"
+backend = "core:rust"
 
 [[tools.ty]]
 version = "0.0.10"
@@ -494,7 +698,15 @@ url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-aarch64-unkno
 checksum = "sha256:870e0f634d740df2a543dc977d68cae9bb073f1e70da93278b78622962a51189"
 url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-unknown-linux-musl.tar.gz"
 
+[tools.ty."platforms.linux-x64-baseline"]
+checksum = "sha256:870e0f634d740df2a543dc977d68cae9bb073f1e70da93278b78622962a51189"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-unknown-linux-musl.tar.gz"
+
 [tools.ty."platforms.linux-x64-musl"]
+checksum = "sha256:870e0f634d740df2a543dc977d68cae9bb073f1e70da93278b78622962a51189"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-unknown-linux-musl.tar.gz"
+
+[tools.ty."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:870e0f634d740df2a543dc977d68cae9bb073f1e70da93278b78622962a51189"
 url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-unknown-linux-musl.tar.gz"
 
@@ -506,7 +718,15 @@ url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-aarch64-apple
 checksum = "sha256:eb839e72d317e381ad7c5804d61a6098b041b0b7bd0a207f429b8bfe9f445be0"
 url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-apple-darwin.tar.gz"
 
+[tools.ty."platforms.macos-x64-baseline"]
+checksum = "sha256:eb839e72d317e381ad7c5804d61a6098b041b0b7bd0a207f429b8bfe9f445be0"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-apple-darwin.tar.gz"
+
 [tools.ty."platforms.windows-x64"]
+checksum = "sha256:d7cd33adf0113decee579fbf31f58b55e44195571043b22ed0e653bf60062d4a"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-pc-windows-msvc.zip"
+
+[tools.ty."platforms.windows-x64-baseline"]
 checksum = "sha256:d7cd33adf0113decee579fbf31f58b55e44195571043b22ed0e653bf60062d4a"
 url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-pc-windows-msvc.zip"
 
@@ -529,7 +749,17 @@ checksum = "sha256:708b752876aeeb753257e1d55470569789e465684c1d3bc1760db26360b6c
 url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-unknown-linux-musl.tar.gz"
 provenance = "github-attestations"
 
+[tools.uv."platforms.linux-x64-baseline"]
+checksum = "sha256:708b752876aeeb753257e1d55470569789e465684c1d3bc1760db26360b6c28b"
+url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-unknown-linux-musl.tar.gz"
+provenance = "github-attestations"
+
 [tools.uv."platforms.linux-x64-musl"]
+checksum = "sha256:708b752876aeeb753257e1d55470569789e465684c1d3bc1760db26360b6c28b"
+url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-unknown-linux-musl.tar.gz"
+provenance = "github-attestations"
+
+[tools.uv."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:708b752876aeeb753257e1d55470569789e465684c1d3bc1760db26360b6c28b"
 url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-unknown-linux-musl.tar.gz"
 provenance = "github-attestations"
@@ -544,7 +774,17 @@ checksum = "sha256:171eb8c518313e157c5b4cec7b4f743bc6bab1bd23e09b646679a02d096a0
 url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-apple-darwin.tar.gz"
 provenance = "github-attestations"
 
+[tools.uv."platforms.macos-x64-baseline"]
+checksum = "sha256:171eb8c518313e157c5b4cec7b4f743bc6bab1bd23e09b646679a02d096a047f"
+url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-apple-darwin.tar.gz"
+provenance = "github-attestations"
+
 [tools.uv."platforms.windows-x64"]
+checksum = "sha256:eb02fd95d8e0eed462b4a67ecdd320d865b38c560bffcda9a0b87ec944bdf036"
+url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-pc-windows-msvc.zip"
+provenance = "github-attestations"
+
+[tools.uv."platforms.windows-x64-baseline"]
 checksum = "sha256:eb02fd95d8e0eed462b4a67ecdd320d865b38c560bffcda9a0b87ec944bdf036"
 url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-pc-windows-msvc.zip"
 provenance = "github-attestations"
@@ -565,7 +805,15 @@ url = "https://ziglang.org/download/0.15.2/zig-aarch64-linux-0.15.2.tar.xz"
 checksum = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
 url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
 
+[tools.zig."platforms.linux-x64-baseline"]
+checksum = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
+url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
+
 [tools.zig."platforms.linux-x64-musl"]
+checksum = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
+url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
+
+[tools.zig."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
 url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
 
@@ -578,6 +826,14 @@ provenance = "minisign"
 checksum = "sha256:375b6909fc1495d16fc2c7db9538f707456bfc3373b14ee83fdd3e22b3d43f7f"
 url = "https://ziglang.org/download/0.15.2/zig-x86_64-macos-0.15.2.tar.xz"
 
+[tools.zig."platforms.macos-x64-baseline"]
+checksum = "sha256:375b6909fc1495d16fc2c7db9538f707456bfc3373b14ee83fdd3e22b3d43f7f"
+url = "https://ziglang.org/download/0.15.2/zig-x86_64-macos-0.15.2.tar.xz"
+
 [tools.zig."platforms.windows-x64"]
+checksum = "sha256:3a0ed1e8799a2f8ce2a6e6290a9ff22e6906f8227865911fb7ddedc3cc14cb0c"
+url = "https://ziglang.org/download/0.15.2/zig-x86_64-windows-0.15.2.zip"
+
+[tools.zig."platforms.windows-x64-baseline"]
 checksum = "sha256:3a0ed1e8799a2f8ce2a6e6290a9ff22e6906f8227865911fb7ddedc3cc14cb0c"
 url = "https://ziglang.org/download/0.15.2/zig-x86_64-windows-0.15.2.zip"
