@@ -5,15 +5,11 @@ import { inputAndOutputSchemas } from "../../domain/schema";
 import type { HealthResponse, OpenAPIDocument } from "../../domain/types";
 
 const DEFAULT_TARGET = "http://localhost:8393";
-const TARGET_STORAGE_KEY = "cog-playground-target";
+const REQUEST_TIMEOUT = 10_000;
 
 export function useConnection(api: CogApi) {
-  const initialTarget = useMemo(() => {
-    const query = new URLSearchParams(location.search).get("target");
-    return query || localStorage.getItem(TARGET_STORAGE_KEY) || DEFAULT_TARGET;
-  }, []);
-  const [targetDraft, setTargetDraft] = useState(initialTarget);
-  const [target, setTarget] = useState(initialTarget);
+  const [targetDraft, setTargetDraft] = useState("");
+  const [target, setTarget] = useState("");
   const [health, setHealth] = useState<HealthResponse>({ status: "unknown" });
   const [schema, setSchema] = useState<OpenAPIDocument>();
   const [schemaError, setSchemaError] = useState("");
@@ -24,26 +20,42 @@ export function useConnection(api: CogApi) {
   );
 
   useEffect(() => {
+    const controller = new AbortController();
     api
-      .config()
-      .then((config) => setWebhookBase(config.webhookBase ?? ""))
-      .catch(() => {});
+      .config(AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT)]))
+      .then((config) => {
+        const initialTarget = config.target?.trim() || DEFAULT_TARGET;
+        setTargetDraft(initialTarget);
+        setTarget(initialTarget);
+        setWebhookBase(config.webhookBase ?? "");
+      })
+      .catch((error: unknown) => {
+        if (isAbortError(error)) return;
+        setTargetDraft(DEFAULT_TARGET);
+        setTarget(DEFAULT_TARGET);
+      });
+    return () => controller.abort();
   }, [api]);
 
   useEffect(() => {
+    if (!target) return;
     api.setTarget(target);
-    localStorage.setItem(TARGET_STORAGE_KEY, target);
-    history.replaceState(null, "", `?target=${encodeURIComponent(target)}`);
+    setHealth({ status: "unknown" });
+    setSchema(undefined);
+    setSchemaError("Loading schema...");
     let canceled = false;
     let retry: number | undefined;
+    const controller = new AbortController();
     const loadSchema = async () => {
       try {
-        const document = await api.schema();
+        const document = await api.schema(
+          AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT)]),
+        );
         if (canceled) return;
         setSchema(document);
         setSchemaError("");
       } catch (error) {
-        if (canceled) return;
+        if (canceled || isAbortError(error)) return;
         setSchema(undefined);
         setSchemaError(`Waiting for schema... (${errorMessage(error)})`);
         retry = window.setTimeout(loadSchema, 3000);
@@ -52,27 +64,35 @@ export function useConnection(api: CogApi) {
     void loadSchema();
     return () => {
       canceled = true;
+      controller.abort();
       if (retry) clearTimeout(retry);
     };
   }, [api, target]);
 
   useEffect(() => {
+    if (!target) return;
     let canceled = false;
+    let timer: number | undefined;
+    const controller = new AbortController();
     const poll = async () => {
       try {
-        const next = await api.health();
+        const next = await api.health(
+          AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT)]),
+        );
         if (!canceled) setHealth(next);
-      } catch {
-        if (!canceled) {
+      } catch (error) {
+        if (!canceled && !isAbortError(error)) {
           setHealth({ status: "unreachable", user_healthcheck_error: "target unreachable" });
         }
+      } finally {
+        if (!canceled) timer = window.setTimeout(poll, 5000);
       }
     };
     void poll();
-    const timer = window.setInterval(poll, 5000);
     return () => {
       canceled = true;
-      clearInterval(timer);
+      controller.abort();
+      if (timer) clearTimeout(timer);
     };
   }, [api, target]);
 
@@ -94,4 +114,8 @@ export function useConnection(api: CogApi) {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }

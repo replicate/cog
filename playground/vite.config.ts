@@ -17,5 +17,6 @@ export default defineConfig({
   build: {
     outDir: path.resolve(root, "../pkg/cli/playground"),
     emptyOutDir: true,
+    license: { fileName: "THIRD_PARTY_LICENSES.md" },
   },
 });

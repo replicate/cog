@@ -26,6 +26,7 @@ export function JsonEditor({
   const editorRef = useRef<AceAjax.Editor | undefined>(undefined);
   const initialValue = useRef(value);
   const onChangeRef = useRef(onChange);
+  const updatingValue = useRef(false);
   onChangeRef.current = onChange;
 
   useEffect(() => {
@@ -49,7 +50,9 @@ export function JsonEditor({
     });
     editor.setValue(initialValue.current, -1);
     hostRef.current.querySelector("textarea")?.setAttribute("aria-label", label);
-    editor.on("change", () => onChangeRef.current?.(editor.getValue()));
+    editor.on("change", () => {
+      if (!updatingValue.current) onChangeRef.current?.(editor.getValue());
+    });
     const updateTheme = () => editor.setTheme(currentAceTheme());
     window.addEventListener("cog-theme-change", updateTheme);
     return () => {
@@ -62,7 +65,11 @@ export function JsonEditor({
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    if (editor.getValue() !== value) editor.setValue(value, followTail ? 1 : -1);
+    if (editor.getValue() !== value) {
+      updatingValue.current = true;
+      editor.setValue(value, followTail ? 1 : -1);
+      updatingValue.current = false;
+    }
     editor.resize();
     if (followTail)
       editor.renderer.scrollToLine(editor.session.getLength(), false, false, () => {});

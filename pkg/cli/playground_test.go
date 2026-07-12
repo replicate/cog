@@ -23,7 +23,11 @@ func newTestPlayground(t *testing.T) *httptest.Server {
 	t.Helper()
 	uiFS, err := fs.Sub(playgroundUI, "playground")
 	require.NoError(t, err)
-	s := &playgroundServer{hub: newEventHub(), webhookBase: "http://wh.example/cb"}
+	s := &playgroundServer{
+		hub:           newEventHub(),
+		webhookBase:   "http://wh.example/cb",
+		defaultTarget: "http://localhost:8393",
+	}
 	ts := httptest.NewServer(s.routes(uiFS))
 	t.Cleanup(ts.Close)
 	return ts
@@ -51,6 +55,10 @@ func TestPlaygroundServesUI(t *testing.T) {
 	assert.Contains(t, string(body), "Cog Playground")
 
 	assets := regexp.MustCompile(`(?:src|href)="(/?assets/[^"]+)"`).FindAllStringSubmatch(string(body), -1)
+	if !playgroundAssetsBuilt {
+		assert.Empty(t, assets, "stub index should not reference generated assets")
+		return
+	}
 	require.NotEmpty(t, assets, "generated index should reference bundled assets")
 	for _, match := range assets {
 		path := "/" + strings.TrimPrefix(match[1], "/")
@@ -75,6 +83,7 @@ func TestPlaygroundConfig(t *testing.T) {
 	var config map[string]string
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&config))
 	assert.Equal(t, "http://wh.example/cb", config["webhookBase"])
+	assert.Equal(t, "http://localhost:8393", config["target"])
 }
 
 func TestPlaygroundRejectsRemoteUIAndProxyRequests(t *testing.T) {
@@ -110,7 +119,7 @@ func TestPlaygroundProxyHeaderTarget(t *testing.T) {
 	ts := newTestPlayground(t)
 	stub := echoServer(t)
 
-	req, err := http.NewRequest(http.MethodGet, ts.URL+"/proxy/openapi.json?foo=bar&cog_target=ignored", nil)
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/proxy/openapi.json?foo=bar", nil)
 	require.NoError(t, err)
 	req.Header.Set("X-Cog-Target", stub.URL)
 
@@ -121,10 +130,10 @@ func TestPlaygroundProxyHeaderTarget(t *testing.T) {
 	var got map[string]string
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
 	assert.Equal(t, "/openapi.json", got["path"], "/proxy prefix should be stripped")
-	assert.Equal(t, "foo=bar", got["query"], "cog_target should be removed from the forwarded query")
+	assert.Equal(t, "foo=bar", got["query"])
 }
 
-func TestPlaygroundProxyQueryTarget(t *testing.T) {
+func TestPlaygroundProxyRejectsQueryTarget(t *testing.T) {
 	ts := newTestPlayground(t)
 	stub := echoServer(t)
 
@@ -132,11 +141,7 @@ func TestPlaygroundProxyQueryTarget(t *testing.T) {
 	resp, err := http.Get(u)
 	require.NoError(t, err)
 	defer resp.Body.Close()
-
-	var got map[string]string
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
-	assert.Equal(t, "/health-check", got["path"])
-	assert.Equal(t, "x=1", got["query"])
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 func TestPlaygroundProxyPreservesEscapedPathSegments(t *testing.T) {
@@ -166,7 +171,10 @@ func TestPlaygroundProxyForwardsRequestAndResponse(t *testing.T) {
 		assert.Equal(t, `{"input":{"prompt":"hello"}}`, string(body))
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		assert.Empty(t, r.Header.Get("X-Cog-Target"))
+		assert.Empty(t, r.Header.Get("Authorization"))
+		assert.Empty(t, r.Header.Get("Cookie"))
 		w.Header().Set("X-Upstream", "preserved")
+		w.Header().Set("Set-Cookie", "session=upstream")
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_, _ = w.Write([]byte(`{"detail":"invalid input"}`))
 	}))
@@ -175,6 +183,8 @@ func TestPlaygroundProxyForwardsRequestAndResponse(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPut, ts.URL+"/proxy/predictions/p1", bytes.NewBufferString(`{"input":{"prompt":"hello"}}`))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer local-secret")
+	req.Header.Set("Cookie", "session=local-secret")
 	req.Header.Set("X-Cog-Target", stub.URL+"/api")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -184,6 +194,7 @@ func TestPlaygroundProxyForwardsRequestAndResponse(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
 	assert.Equal(t, "preserved", resp.Header.Get("X-Upstream"))
+	assert.Empty(t, resp.Header.Get("Set-Cookie"))
 	assert.JSONEq(t, `{"detail":"invalid input"}`, string(body))
 }
 
@@ -223,6 +234,44 @@ func TestPlaygroundWebhookRejectsNonPost(t *testing.T) {
 func TestPlaygroundRecognizesIPv6Loopback(t *testing.T) {
 	assert.True(t, isLoopbackRemote("[::1]:8080"))
 	assert.False(t, isLoopbackRemote("not-an-address"))
+	assert.True(t, isLoopbackHost("[::1]:8080"))
+	assert.True(t, isLoopbackHost("localhost:8080"))
+	assert.False(t, isLoopbackHost("playground.example:8080"))
+}
+
+func TestPlaygroundRejectsCrossSiteBrowserRequests(t *testing.T) {
+	ts := newTestPlayground(t)
+
+	for name, mutate := range map[string]func(*http.Request){
+		"host": func(req *http.Request) { req.Host = "attacker.example" },
+		"origin": func(req *http.Request) {
+			req.Header.Set("Origin", "https://attacker.example")
+		},
+		"fetch metadata": func(req *http.Request) {
+			req.Header.Set("Sec-Fetch-Site", "cross-site")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, ts.URL+"/config", nil)
+			require.NoError(t, err)
+			mutate(req)
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+		})
+	}
+}
+
+func TestPlaygroundSetsBrowserSecurityHeaders(t *testing.T) {
+	ts := newTestPlayground(t)
+	resp, err := http.Get(ts.URL + "/")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'")
+	assert.Equal(t, "no-referrer", resp.Header.Get("Referrer-Policy"))
+	assert.Equal(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
 }
 
 func TestPlaygroundProxyUnreachableTarget(t *testing.T) {
@@ -339,6 +388,20 @@ func TestPlaygroundWebhookRelayPreservesNewlines(t *testing.T) {
 		assert.Equal(t, []string{`{"a":1}`, `{"b":2}`}, data)
 	case <-time.After(2 * time.Second):
 		require.FailNow(t, "timed out waiting for relayed webhook event")
+	}
+}
+
+func TestWriteSSEDataNormalizesLineEndings(t *testing.T) {
+	for name, input := range map[string]string{
+		"LF":   "first\nsecond",
+		"CRLF": "first\r\nsecond",
+		"CR":   "first\rsecond",
+	} {
+		t.Run(name, func(t *testing.T) {
+			var output strings.Builder
+			writeSSEData(&output, []byte(input))
+			assert.Equal(t, "data: first\ndata: second\n\n", output.String())
+		})
 	}
 }
 

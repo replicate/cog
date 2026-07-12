@@ -9,6 +9,8 @@ import type {
 
 const PROXY_PREFIX = "/proxy";
 const MAX_SSE_FRAME_LENGTH = 1024 * 1024;
+const MAX_JSON_RESPONSE_LENGTH = 16 * 1024 * 1024;
+const MAX_ERROR_RESPONSE_LENGTH = 1024 * 1024;
 
 type SubmitOptions = {
   endpoint: string;
@@ -40,18 +42,18 @@ export class CogApi {
     this.#target = target.trim().replace(/\/+$/, "");
   }
 
-  async config(): Promise<{ webhookBase?: string }> {
-    const response = await fetch("/config");
+  async config(signal?: AbortSignal): Promise<{ target?: string; webhookBase?: string }> {
+    const response = await fetch("/config", { credentials: "omit", signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json() as Promise<{ webhookBase?: string }>;
+    return parseJSONResponse<{ target?: string; webhookBase?: string }>(response);
   }
 
-  async health(): Promise<HealthResponse> {
-    return this.#jsonRequest<HealthResponse>("/health-check");
+  async health(signal?: AbortSignal): Promise<HealthResponse> {
+    return this.#jsonRequest<HealthResponse>("/health-check", signal);
   }
 
-  async schema(): Promise<OpenAPIDocument> {
-    return this.#jsonRequest<OpenAPIDocument>("/openapi.json");
+  async schema(signal?: AbortSignal): Promise<OpenAPIDocument> {
+    return this.#jsonRequest<OpenAPIDocument>("/openapi.json", signal);
   }
 
   async submit(options: SubmitOptions): Promise<PredictionEnvelope> {
@@ -61,6 +63,7 @@ export class CogApi {
       method: options.id ? "PUT" : "POST",
       headers,
       body: JSON.stringify(this.#body(options.input, options.webhook, options.webhookEvents)),
+      credentials: "omit",
       signal: options.signal,
     });
     options.onResponse?.(response);
@@ -72,6 +75,7 @@ export class CogApi {
       method: options.id ? "PUT" : "POST",
       headers: this.#headers({ "Content-Type": "application/json", Accept: "text/event-stream" }),
       body: JSON.stringify(this.#body(options.input)),
+      credentials: "omit",
       signal: options.signal,
     });
     options.onResponse?.(response);
@@ -114,6 +118,7 @@ export class CogApi {
     const response = await fetch(`${PROXY_PREFIX}${endpoint}/${encodeURIComponent(id)}/cancel`, {
       method: "POST",
       headers: this.#headers(),
+      credentials: "omit",
       signal,
     });
     if (!response.ok) throw await responseError(response);
@@ -137,10 +142,14 @@ export class CogApi {
     return webhook ? { input, webhook, webhook_events_filter: webhookEvents } : { input };
   }
 
-  async #jsonRequest<T>(endpoint: string): Promise<T> {
-    const response = await fetch(PROXY_PREFIX + endpoint, { headers: this.#headers() });
+  async #jsonRequest<T>(endpoint: string, signal?: AbortSignal): Promise<T> {
+    const response = await fetch(PROXY_PREFIX + endpoint, {
+      headers: this.#headers(),
+      credentials: "omit",
+      signal,
+    });
     if (!response.ok) throw await responseError(response);
-    return response.json() as Promise<T>;
+    return parseJSONResponse<T>(response);
   }
 }
 
@@ -190,11 +199,11 @@ export function fileToDataURI(file: File): Promise<string> {
 
 async function parseResponse(response: Response): Promise<PredictionEnvelope> {
   if (!response.ok) throw await responseError(response);
-  return response.json() as Promise<PredictionEnvelope>;
+  return parseJSONResponse<PredictionEnvelope>(response);
 }
 
 async function responseError(response: Response): Promise<HttpError> {
-  const text = await response.text();
+  const text = await readResponseText(response, MAX_ERROR_RESPONSE_LENGTH);
   let body: JsonObject = {};
   try {
     const parsed: unknown = JSON.parse(text);
@@ -209,4 +218,36 @@ async function responseError(response: Response): Promise<HttpError> {
     text ||
     `HTTP ${response.status}`;
   return new HttpError(message, response.status, detail);
+}
+
+async function parseJSONResponse<T>(response: Response): Promise<T> {
+  return JSON.parse(await readResponseText(response, MAX_JSON_RESPONSE_LENGTH)) as T;
+}
+
+async function readResponseText(response: Response, maxLength: number): Promise<string> {
+  const contentLength = Number(response.headers.get("Content-Length"));
+  if (Number.isFinite(contentLength) && contentLength > maxLength) {
+    await response.body?.cancel();
+    throw new Error(`Response body exceeds ${maxLength} bytes`);
+  }
+  if (!response.body) return "";
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let length = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return text + decoder.decode();
+      length += value.byteLength;
+      if (length > maxLength) {
+        await reader.cancel();
+        throw new Error(`Response body exceeds ${maxLength} bytes`);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }

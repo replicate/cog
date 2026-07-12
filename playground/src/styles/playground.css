@@ -183,8 +183,10 @@ section {
 }
 .panel-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 14px;
 }
 .panel-head h2 {
@@ -330,7 +332,8 @@ input[type="file"]::file-selector-button {
   opacity: 0;
   transition: opacity 0.12s ease;
 }
-.ace-json:hover .editor-copy {
+.ace-json:hover .editor-copy,
+.code-viewer:hover .editor-copy {
   opacity: 0.95;
 }
 .editor-copy:focus-visible {
@@ -340,18 +343,27 @@ input[type="file"]::file-selector-button {
   color: var(--text);
   background: var(--surface-hover);
 }
-.ace-output {
+.viewer-output {
   height: 60vh;
   min-height: 280px;
 }
-.ace-inspector {
+.ace-input {
+  height: min(55vh, 520px);
+  min-height: 280px;
+}
+.viewer-inspector {
+  min-height: 80px;
+}
+.viewer-timeline {
+  margin-top: 6px;
+}
+.viewer-inspector > pre {
   min-height: 80px;
   max-height: 320px;
 }
-.ace-timeline {
+.viewer-timeline > pre {
   min-height: 80px;
   max-height: 240px;
-  margin-top: 6px;
 }
 .ace-field {
   height: 140px;
@@ -359,6 +371,27 @@ input[type="file"]::file-selector-button {
 .ace_editor {
   font-family: "SF Mono", Monaco, Consolas, "Liberation Mono", monospace !important;
   line-height: 1.5 !important;
+}
+.code-viewer {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  width: 100%;
+  overflow: hidden;
+}
+.code-viewer pre {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: var(--text);
+  font-family: "SF Mono", Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .metrics-table {
   border-collapse: collapse;
@@ -584,6 +617,12 @@ input[type="file"]::file-selector-button {
   }
   #action-bar {
     position: static;
+  }
+  .panel-head > * {
+    min-width: 0;
+  }
+  .playground-segmented {
+    max-width: 100%;
   }
 }
 

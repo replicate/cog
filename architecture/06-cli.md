@@ -110,7 +110,7 @@ cog playground --target http://localhost:8393
 
 The command serves an embedded React application and reverse-proxies its requests to the selected model API. The UI and proxy accept only loopback connections, even when `--host 0.0.0.0` is used so a container can deliver webhooks. Webhook URLs contain an opaque per-prediction token and payloads are relayed to the browser over server-sent events.
 
-The proxy is intentionally user-directed: this is a local development tool for APIs selected by the user, not a remotely hosted gateway.
+The proxy is intentionally user-directed: this is a local development tool for APIs selected by the user, not a remotely hosted gateway. CLI and release builds compile `playground/` into ignored assets under `pkg/cli/playground/`, then embed them in the Go binary. Ordinary Go tests use a build-time stub, so a clean Go checkout does not require Node; binaries built without the asset tag reject the playground command with build instructions.
 
 **Code**: `pkg/cli/` owns the server and embedded assets; `playground/` owns the frontend source.
 

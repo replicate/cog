@@ -121,6 +121,20 @@ describe("CogApi", () => {
       collect(api.stream({ endpoint: "/predictions", input: {}, signal })),
     ).rejects.toThrow("SSE event is too large");
   });
+
+  it("rejects oversized JSON responses before reading them", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("{}", {
+          headers: { "Content-Length": String(16 * 1024 * 1024 + 1) },
+        }),
+      ),
+    );
+    const api = new CogApi();
+
+    await expect(api.schema()).rejects.toThrow("Response body exceeds 16777216 bytes");
+  });
 });
 
 describe("parseSSE", () => {

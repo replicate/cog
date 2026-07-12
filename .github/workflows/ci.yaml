@@ -63,6 +63,57 @@ jobs:
     steps:
       - run: echo "supported_pythons=$SUPPORTED_PYTHONS"
 
+  playground-changes:
+    name: Detect playground changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Check playground sources
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA" "$GITHUB_SHA" -- playground; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  playground-check:
+    name: Check playground frontend
+    needs: playground-changes
+    if: needs.playground-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.4.27
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Check formatting
+        run: mise run fmt:playground
+      - name: Lint
+        run: mise run lint:playground
+      - name: Type check
+        run: mise run typecheck:playground
+      - name: Test
+        run: mise run test:playground
+      - name: Build embedded assets
+        run: mise run --force build:playground
+      - name: Upload playground assets
+        uses: actions/upload-artifact@v6
+        with:
+          name: PlaygroundAssets
+          path: pkg/cli/playground
+
 # =============================================================================
 # Version Check - Validates VERSION.txt format and sync
 # =============================================================================
@@ -183,6 +234,11 @@ jobs:
 
   build-cog:
     name: Build cog CLI
+    needs: [playground-changes, playground-check]
+    if: >-
+      always() &&
+      needs.playground-changes.result == 'success' &&
+      (needs.playground-check.result == 'success' || needs.playground-check.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -193,6 +249,15 @@ jobs:
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Download verified playground assets
+        if: needs.playground-changes.outputs.changed == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: PlaygroundAssets
+          path: pkg/cli/playground
+      - name: Build playground assets for CLI
+        if: needs.playground-changes.outputs.changed != 'true'
+        run: mise run build:playground
       - name: Get version from VERSION.txt
         id: version
         run: echo "version=$(tr -d '[:space:]' < VERSION.txt)" >> "$GITHUB_OUTPUT"
@@ -532,6 +597,57 @@ jobs:
       - name: Test coglet-python bindings
         run: uvx nox -s coglet -p ${{ matrix.python-version }}
 
+  test-playground-e2e:
+    name: Test playground in Chromium
+    needs: [playground-changes, playground-check, build-cog, build-sdk, build-rust]
+    if: needs.playground-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest-16-cores
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+        with:
+          registry: index.docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Install cog binary
+        run: |
+          cp dist/cog ./cog
+          chmod +x ./cog
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.4.27
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Install playground dependencies and Chromium
+        run: |
+          mise run playground:install
+          pnpm --dir playground exec playwright install --with-deps chromium
+      - name: Run browser integration tests
+        env:
+          BUILDKIT_PROGRESS: quiet
+          COG_BINARY: ${{ github.workspace }}/cog
+          COG_REGISTRY_HOST: ghcr.io/replicate/cog
+          COG_SDK_WHEEL: ${{ github.workspace }}/dist
+          COGLET_WHEEL: ${{ github.workspace }}/dist
+        run: pnpm --dir playground run test:e2e
+      - name: Upload browser test report
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: PlaygroundPlaywrightReport
+          path: |
+            playground/playwright-report
+            playground/test-results
+
   # Compute integration test shards dynamically.
   # Slow tests (tagged with [short] skip) are distributed round-robin first,
   # then remaining tests fill in. This ensures slow tests don't pile up on one runner.
@@ -696,6 +812,8 @@ jobs:
     name: CI Complete
     needs:
       - setup
+      - playground-changes
+      - playground-check
       - version-check
       - build-cog
       - build-sdk
@@ -716,6 +834,7 @@ jobs:
       - test-rust
       - test-python
       - test-coglet-python
+      - test-playground-e2e
       - integration-shards
       - test-integration
     if: always()
@@ -725,6 +844,8 @@ jobs:
       - name: Check job results
         run: |
           echo "Job results:"
+          echo "  playground-changes: ${{ needs.playground-changes.result }}"
+          echo "  playground-check: ${{ needs.playground-check.result }}"
           echo "  version-check: ${{ needs.version-check.result }}"
           echo "  build-cog: ${{ needs.build-cog.result }}"
           echo "  build-sdk: ${{ needs.build-sdk.result }}"
@@ -745,41 +866,53 @@ jobs:
           echo "  test-rust: ${{ needs.test-rust.result }}"
           echo "  test-python: ${{ needs.test-python.result }}"
           echo "  test-coglet-python: ${{ needs.test-coglet-python.result }}"
+          echo "  test-playground-e2e: ${{ needs.test-playground-e2e.result }}"
           echo "  integration-shards: ${{ needs.integration-shards.result }}"
           echo "  test-integration: ${{ needs.test-integration.result }}"
 
-          # Fail if any required job failed.
-          # lint-rust-advisories is excluded: it uses continue-on-error because
-          # advisory DB updates shouldn't block unrelated PRs.
           FAILED=false
-          for result in \
-            "${{ needs.setup.result }}" \
-            "${{ needs.version-check.result }}" \
-            "${{ needs.build-cog.result }}" \
-            "${{ needs.build-sdk.result }}" \
-            "${{ needs.build-rust.result }}" \
-            "${{ needs.fmt-go.result }}" \
-            "${{ needs.fmt-rust.result }}" \
-            "${{ needs.fmt-python.result }}" \
-            "${{ needs.check-llm-docs.result }}" \
-            "${{ needs.check-stubs.result }}" \
-            "${{ needs.lint-go.result }}" \
-            "${{ needs.lint-rust.result }}" \
-            "${{ needs.lint-rust-deny.result }}" \
-            "${{ needs.lint-python.result }}" \
-            "${{ needs.lint-docs.result }}" \
-            "${{ needs.test-go.result }}" \
-            "${{ needs.fuzz-go.result }}" \
-            "${{ needs.test-rust.result }}" \
-            "${{ needs.test-python.result }}" \
-            "${{ needs.test-coglet-python.result }}" \
-            "${{ needs.integration-shards.result }}" \
-            "${{ needs.test-integration.result }}"
-          do
-            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+          check_success() {
+            if [ "$2" != "success" ]; then
+              echo "::error::$1 finished with unexpected result: $2"
               FAILED=true
             fi
-          done
+          }
+
+          # lint-rust-advisories is informational and intentionally excluded.
+          check_success setup "${{ needs.setup.result }}"
+          check_success playground-changes "${{ needs.playground-changes.result }}"
+          check_success version-check "${{ needs.version-check.result }}"
+          check_success build-cog "${{ needs.build-cog.result }}"
+          check_success build-sdk "${{ needs.build-sdk.result }}"
+          check_success build-rust "${{ needs.build-rust.result }}"
+          check_success fmt-go "${{ needs.fmt-go.result }}"
+          check_success fmt-rust "${{ needs.fmt-rust.result }}"
+          check_success fmt-python "${{ needs.fmt-python.result }}"
+          check_success check-llm-docs "${{ needs.check-llm-docs.result }}"
+          check_success check-stubs "${{ needs.check-stubs.result }}"
+          check_success lint-go "${{ needs.lint-go.result }}"
+          check_success lint-rust "${{ needs.lint-rust.result }}"
+          check_success lint-rust-deny "${{ needs.lint-rust-deny.result }}"
+          check_success lint-python "${{ needs.lint-python.result }}"
+          check_success lint-docs "${{ needs.lint-docs.result }}"
+          check_success test-go "${{ needs.test-go.result }}"
+          check_success fuzz-go "${{ needs.fuzz-go.result }}"
+          check_success test-rust "${{ needs.test-rust.result }}"
+          check_success test-python "${{ needs.test-python.result }}"
+          check_success test-coglet-python "${{ needs.test-coglet-python.result }}"
+          check_success integration-shards "${{ needs.integration-shards.result }}"
+          check_success test-integration "${{ needs.test-integration.result }}"
+
+          if [ "${{ needs.playground-changes.outputs.changed }}" = "true" ]; then
+            check_success playground-check "${{ needs.playground-check.result }}"
+            check_success test-playground-e2e "${{ needs.test-playground-e2e.result }}"
+          else
+            if [ "${{ needs.playground-check.result }}" != "skipped" ] || \
+               [ "${{ needs.test-playground-e2e.result }}" != "skipped" ]; then
+              echo "::error::Playground jobs should be skipped when playground sources are unchanged"
+              FAILED=true
+            fi
+          fi
 
           if [ "$FAILED" = "true" ]; then
             echo "::error::Some jobs failed or were cancelled"

@@ -5,6 +5,11 @@ import type { PredictionEnvelope, RequestTrace, RunMode, TraceEventKind } from "
 
 const TERMINAL = new Set(["succeeded", "failed", "canceled"]);
 const MAX_RAW_EVENT_TEXT = 1024 * 1024;
+const MAX_RAW_EVENTS = 1000;
+const MAX_STREAM_OUTPUT_TEXT = 4 * 1024 * 1024;
+const MAX_STREAM_OUTPUT_ITEMS = 4096;
+const MAX_LOG_TEXT = 1024 * 1024;
+const MAX_METRICS = 100;
 const MAX_TRACE_EVENTS = 100;
 const MAX_TRACE_EVENT_TEXT = 64 * 1024;
 
@@ -29,6 +34,7 @@ type RunOptions = {
 type StreamBuffer = {
   rawEvents: string[];
   output: unknown[];
+  outputLength: number;
   frame?: number;
 };
 
@@ -78,7 +84,17 @@ export function usePrediction(api: CogApi) {
     if (activeRun.current?.token !== token || !buffer) return;
     buffer.rawEvents.push(raw);
     buffer.rawEvents = boundedTextItems(buffer.rawEvents, MAX_RAW_EVENT_TEXT);
-    if (output !== undefined) buffer.output.push(output);
+    if (output !== undefined) {
+      buffer.output.push(output);
+      buffer.outputLength += valueLength(output);
+      while (
+        (buffer.outputLength > MAX_STREAM_OUTPUT_TEXT ||
+          buffer.output.length > MAX_STREAM_OUTPUT_ITEMS) &&
+        buffer.output.length > 1
+      ) {
+        buffer.outputLength -= valueLength(buffer.output.shift());
+      }
+    }
     if (buffer.frame === undefined) {
       buffer.frame = window.requestAnimationFrame(() => flushStreamBuffer(token));
     }
@@ -102,7 +118,7 @@ export function usePrediction(api: CogApi) {
   }, []);
 
   const run = async (options: RunOptions) => {
-    if (running) return;
+    if (activeRun.current) return;
     const token = crypto.randomUUID();
     const abort = new AbortController();
     activeRun.current = {
@@ -112,7 +128,7 @@ export function usePrediction(api: CogApi) {
       abort,
       startedAt: performance.now(),
     };
-    streamBuffer.current = { rawEvents: [], output: [] };
+    streamBuffer.current = { rawEvents: [], output: [], outputLength: 0 };
     traceToken.current = token;
     setRunning(true);
     setError("");
@@ -170,7 +186,6 @@ export function usePrediction(api: CogApi) {
   };
 
   const runStreaming = async (token: string, options: RunOptions, signal: AbortSignal) => {
-    const chunks: unknown[] = [];
     const rawFrames: string[] = [];
     let terminal = false;
     for await (const event of api.stream({
@@ -190,27 +205,33 @@ export function usePrediction(api: CogApi) {
         if (typeof event.data.id === "string") activeRun.current.predictionId = event.data.id;
         terminal = TERMINAL.has(String(event.data.status ?? ""));
       } else if (event.type === "output") {
-        chunks.push(event.data.chunk);
         queueStreamRender(token, event.raw, event.data.chunk);
         continue;
       } else if (event.type === "metric") {
+        const name = String(event.data.name);
         setEnvelope((current) => ({
           ...current,
-          metrics: { ...current?.metrics, [String(event.data.name)]: Number(event.data.value) },
+          metrics:
+            Object.hasOwn(current?.metrics ?? {}, name) ||
+            Object.keys(current?.metrics ?? {}).length < MAX_METRICS
+              ? { ...current?.metrics, [name]: Number(event.data.value) }
+              : current?.metrics,
         }));
       } else if (event.type === "log") {
         setEnvelope((current) => ({
           ...current,
-          logs:
-            (current?.logs ?? "") +
+          logs: appendBoundedText(
+            current?.logs ?? "",
             String(event.data.data ?? event.data.message ?? event.data.value ?? ""),
+            MAX_LOG_TEXT,
+          ),
         }));
       } else if (event.type === "error") {
         setError(String(event.data.error ?? "Stream error"));
         setEnvelope((current) => ({ ...current, ...event.data, status: "failed" }));
         terminal = true;
       } else if (event.type === "completed") {
-        applyEnvelope(event.data);
+        applyEnvelope(boundedTerminalEnvelope(event.data));
         terminal = true;
       }
       queueStreamRender(token, event.raw);
@@ -390,7 +411,7 @@ export function usePrediction(api: CogApi) {
 function boundedTextItems(items: string[], maxLength: number): string[] {
   const retained: string[] = [];
   let length = 0;
-  for (let index = items.length - 1; index >= 0; index -= 1) {
+  for (let index = items.length - 1; index >= 0 && retained.length < MAX_RAW_EVENTS; index -= 1) {
     const item = items[index];
     if (length + item.length > maxLength) {
       if (retained.length === 0) retained.push(item.slice(-maxLength));
@@ -406,6 +427,31 @@ function boundedTraceData(data: unknown): unknown {
   return typeof data === "string" && data.length > MAX_TRACE_EVENT_TEXT
     ? data.slice(0, MAX_TRACE_EVENT_TEXT) + "\n... truncated"
     : data;
+}
+
+function appendBoundedText(current: string, addition: string, maxLength: number): string {
+  const combined = current + addition;
+  return combined.length > maxLength ? combined.slice(-maxLength) : combined;
+}
+
+function boundedTerminalEnvelope(next: PredictionEnvelope): PredictionEnvelope {
+  const { output: _output, logs, metrics, ...rest } = next;
+  return {
+    ...rest,
+    ...(typeof logs === "string" ? { logs: logs.slice(-MAX_LOG_TEXT) } : {}),
+    ...(metrics
+      ? { metrics: Object.fromEntries(Object.entries(metrics).slice(0, MAX_METRICS)) }
+      : {}),
+  };
+}
+
+function valueLength(value: unknown): number {
+  if (typeof value === "string") return value.length;
+  try {
+    return JSON.stringify(value)?.length ?? 0;
+  } catch {
+    return String(value).length;
+  }
 }
 
 function requestHeaders(mode: RunMode): Record<string, string> {

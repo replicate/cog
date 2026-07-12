@@ -36,7 +36,7 @@ export type HealthResponse = {
   status?: string;
   user_healthcheck_error?: string;
   setup?: { status?: string; logs?: string };
-  version?: { cog?: string; coglet?: string; python?: string };
+  version?: { coglet?: string; python_sdk?: string; python?: string };
 };
 
 export type PredictionEnvelope = {

@@ -32,8 +32,9 @@ config_roots = ["."]
 
 [tools]
 
-bun = "1.3.14"
 go = "latest"
+node = "24.18.0"
+"npm:pnpm" = "11.11.0"
 uv = "0.9.26"
 "pipx:nox" = { version = "2025.11.12", uvx = true, uvx_args = "--python-preference=managed -p 3.13" }
 "rust" = { version = "1.93.0", components = "rustfmt,clippy,rust-analyzer", targets = "x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin" }
@@ -163,17 +164,20 @@ GOFLAGS=-buildvcs=false go run github.com/goreleaser/goreleaser/v2@latest build 
 [tasks."playground:install"]
 description = "Install playground dependencies"
 dir = "playground"
-sources = ["package.json", "bun.lock"]
+sources = ["package.json", "pnpm-lock.yaml", "../mise.toml", "../mise.lock"]
 outputs = ["node_modules/.cog-playground-installed"]
-run = "bun install --frozen-lockfile && touch node_modules/.cog-playground-installed"
+run = "pnpm install --frozen-lockfile && touch node_modules/.cog-playground-installed"
 
 [tasks."build:playground"]
 description = "Build embedded playground assets"
 depends = ["playground:install"]
 dir = "playground"
-sources = ["src/**/*", "index.html", "package.json", "bun.lock", "tsconfig.json", "vite.config.ts"]
-outputs = ["../pkg/cli/playground/index.html", "../pkg/cli/playground/assets/*"]
-run = "bun run build"
+sources = ["src/**/*", "index.html", "package.json", "pnpm-lock.yaml", "tsconfig.json", "vite.config.ts", "../mise.toml", "../mise.lock"]
+outputs = ["../pkg/cli/playground/index.html", "../pkg/cli/playground/THIRD_PARTY_LICENSES.md", "../pkg/cli/playground/assets/*"]
+run = [
+  "pnpm run build",
+  "test -s ../pkg/cli/playground/THIRD_PARTY_LICENSES.md",
+]
 
 [tasks."build:cog:release"]
 description = "Build cog CLI (release)"
@@ -333,7 +337,22 @@ run = "nox -s tests -p 3.13"
 description = "Run playground tests with coverage"
 depends = ["playground:install"]
 dir = "playground"
-run = "bun run test:coverage"
+run = "pnpm run test:coverage"
+
+[tasks."test:playground:e2e"]
+description = "Run playground browser tests against a real Cog server"
+depends = ["build:cog", "build:sdk", "build:coglet:wheel:linux-x64", "playground:install"]
+dir = "playground"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd .. && pwd)"
+BINARY="${COG_BINARY:-$(ls "$ROOT"/dist/go/*/cog | head -1)}"
+COG_BINARY="$BINARY" \
+COG_SDK_WHEEL="${COG_SDK_WHEEL:-$ROOT/dist}" \
+COGLET_WHEEL="${COGLET_WHEEL:-$ROOT/dist}" \
+pnpm run test:e2e
+"""
 
 [tasks."test:python:all"]
 description = "Run Python SDK tests on all supported Python versions"
@@ -468,13 +487,13 @@ alias = "fmt:playground:check"
 description = "Check playground formatting"
 depends = ["playground:install"]
 dir = "playground"
-run = "bun run fmt:check"
+run = "pnpm run fmt:check"
 
 [tasks."fmt:playground:fix"]
 description = "Fix playground formatting"
 depends = ["playground:install"]
 dir = "playground"
-run = "bun run fmt"
+run = "pnpm run fmt"
 
 # Docs formatting
 [tasks."fmt:docs"]
@@ -565,13 +584,13 @@ alias = "lint:playground:check"
 description = "Lint playground code"
 depends = ["playground:install"]
 dir = "playground"
-run = "bun run lint"
+run = "pnpm run lint"
 
 [tasks."lint:playground:fix"]
 description = "Fix playground lint issues"
 depends = ["playground:install"]
 dir = "playground"
-run = "bun run lint:fix"
+run = "pnpm run lint:fix"
 
 # =============================================================================
 # Typecheck tasks
@@ -593,7 +612,7 @@ run = "nox -s typecheck"
 description = "Type check playground code"
 depends = ["playground:install"]
 dir = "playground"
-run = "bun run typecheck"
+run = "pnpm run typecheck"
 
 # =============================================================================
 # Generate tasks

@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import type { PredictionEnvelope, RequestTrace, TraceEvent } from "../../domain/types";
-import { LazyJsonEditor } from "@/editor/LazyJsonEditor";
+import { CodeViewer } from "@/editor/CodeViewer";
 
 export type InspectorView = "logs" | "timeline" | "request";
 
@@ -61,12 +61,10 @@ function TimelinePayload({ value }: { value: unknown }) {
     <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary>Payload</summary>
       {open && (
-        <LazyJsonEditor
+        <CodeViewer
           value={formatValue(value)}
           label="Timeline event payload"
-          className="ace-timeline"
-          readOnly
-          autoHeight
+          className="viewer-timeline"
         />
       )}
     </details>
@@ -158,15 +156,7 @@ function InspectorDocument({ label, value }: { label: string; value: unknown }) 
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>{label}</summary>
-      {open && (
-        <LazyJsonEditor
-          value={formatValue(value)}
-          label={label}
-          className="ace-inspector"
-          readOnly
-          autoHeight
-        />
-      )}
+      {open && <CodeViewer value={formatValue(value)} label={label} className="viewer-inspector" />}
     </details>
   );
 }

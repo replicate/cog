@@ -1,11 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("@/editor/LazyJsonEditor", () => ({
-  LazyJsonEditor: ({ label, value }: { label: string; value: string }) => (
-    <pre aria-label={label}>{value}</pre>
-  ),
-}));
+import { describe, expect, it } from "vitest";
 
 import { OutputPanel } from "./OutputPanel";
 
@@ -33,7 +27,8 @@ describe("OutputPanel", () => {
   });
 
   it.each([
-    ["https://example.com/image.png", "img", "Prediction output"],
+    ["data:image/png;base64,AA==", "img", "Prediction output"],
+    ["https://example.com/image.png", "link", "https://example.com/image.png"],
     ["data:application/octet-stream;base64,AA==", "link", "Download file"],
     ["https://example.com/file.txt", "link", "https://example.com/file.txt"],
   ])("renders media and URL output", (value, role, label) => {
@@ -70,5 +65,49 @@ describe("OutputPanel", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Request" }));
     expect(screen.getByText("Total duration")).toBeVisible();
     expect(screen.getByText("120 ms")).toBeVisible();
+  });
+
+  it("concatenates only outputs marked for concatenation", () => {
+    const { rerender } = render(
+      <OutputPanel
+        output={["hello ", "world"]}
+        outputSchema={{ type: "array", items: { type: "string" } }}
+        rawEvents={[]}
+        running={false}
+        streaming={false}
+      />,
+    );
+    expect(screen.getByLabelText("Structured prediction output")).toHaveTextContent("hello ");
+
+    rerender(
+      <OutputPanel
+        output={["hello ", "world"]}
+        outputSchema={{
+          type: "array",
+          items: { type: "string" },
+          "x-cog-array-type": "iterator",
+        }}
+        rawEvents={[]}
+        running={false}
+        streaming
+      />,
+    );
+    expect(screen.getByLabelText("Structured prediction output")).toHaveTextContent("hello ");
+
+    rerender(
+      <OutputPanel
+        output={["hello ", "world"]}
+        outputSchema={{
+          type: "array",
+          items: { type: "string" },
+          "x-cog-array-type": "iterator",
+          "x-cog-array-display": "concatenate",
+        }}
+        rawEvents={[]}
+        running={false}
+        streaming
+      />,
+    );
+    expect(screen.getByText("hello world")).toBeVisible();
   });
 });

@@ -228,6 +228,7 @@ function StructuredControl(props: FieldProps & { disabled: boolean }) {
         value={raw}
         label={`${props.name} JSON`}
         className="ace-field"
+        readOnly={props.disabled}
         onChange={(next) => {
           setRaw(next);
           try {
@@ -293,14 +294,14 @@ function FileControl(props: FieldProps & { disabled: boolean }) {
 }
 
 function MediaPreview({ value }: { value: string }) {
-  if (value.startsWith("data:image/") || /\.(png|jpe?g|gif|webp)(?:[?#]|$)/i.test(value)) {
+  if (value.startsWith("data:image/")) {
     return <img className="input-media" src={value} alt="Selected input preview" />;
   }
-  if (value.startsWith("data:audio/") || /\.(mp3|wav|ogg|flac|m4a)(?:[?#]|$)/i.test(value)) {
+  if (value.startsWith("data:audio/")) {
     // oxlint-disable-next-line jsx-a11y/media-has-caption -- model inputs do not include caption tracks
     return <audio controls src={value} />;
   }
-  if (value.startsWith("data:video/") || /\.(mp4|webm|mov)(?:[?#]|$)/i.test(value)) {
+  if (value.startsWith("data:video/")) {
     // oxlint-disable-next-line jsx-a11y/media-has-caption -- model inputs do not include caption tracks
     return <video controls src={value} />;
   }
@@ -325,7 +326,6 @@ function validValue(schema: OpenAPISchema, value: unknown, required: boolean): b
   if (typeof value === "string") {
     if (schema.minLength !== undefined && value.length < schema.minLength) return false;
     if (schema.maxLength !== undefined && value.length > schema.maxLength) return false;
-    if (schema.pattern && !new RegExp(schema.pattern).test(value)) return false;
   }
   if (typeof value === "number") {
     if (schema.minimum !== undefined && value < schema.minimum) return false;

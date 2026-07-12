@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 
 import { SegmentedTabs } from "../../components/SegmentedTabs";
 import { StatusBadge } from "../../components/StatusBadge";
-import type { PredictionEnvelope, RequestTrace } from "../../domain/types";
-import { LazyJsonEditor } from "@/editor/LazyJsonEditor";
+import type { OpenAPISchema, PredictionEnvelope, RequestTrace } from "../../domain/types";
+import { CodeViewer } from "@/editor/CodeViewer";
 import { type InspectorView, RequestInspector } from "./RequestInspector";
 
 type PanelView = "output" | "raw" | InspectorView;
@@ -15,10 +15,19 @@ type Props = {
   rawEvents: string[];
   running: boolean;
   streaming: boolean;
+  outputSchema?: OpenAPISchema;
   trace?: RequestTrace;
 };
 
-export function OutputPanel({ envelope, output, rawEvents, running, streaming, trace }: Props) {
+export function OutputPanel({
+  envelope,
+  output,
+  rawEvents,
+  running,
+  streaming,
+  outputSchema,
+  trace,
+}: Props) {
   const hasResult = envelope || rawEvents.length > 0 || output !== undefined;
   const [panelView, setPanelView] = useState<PanelView>("output");
   const hasLogs = Boolean(envelope?.logs?.trim());
@@ -54,18 +63,17 @@ export function OutputPanel({ envelope, output, rawEvents, running, streaming, t
         <>
           {envelope?.metrics && <Metrics metrics={envelope.metrics} />}
           {hasResult ? (
-            <RenderedOutput value={output} running={running} />
+            <RenderedOutput value={output} running={running} schema={outputSchema} />
           ) : (
             <div className="empty-output">Run a prediction to see its output.</div>
           )}
         </>
       ) : panelView === "raw" ? (
         hasResult ? (
-          <LazyJsonEditor
+          <CodeViewer
             value={rawEvents.join("\n\n")}
             label="Raw prediction events"
-            className="ace-output"
-            readOnly
+            className="viewer-output"
             followTail={streaming}
           />
         ) : (
@@ -93,7 +101,15 @@ function Metrics({ metrics }: { metrics: Record<string, number> }) {
   );
 }
 
-function RenderedOutput({ value, running }: { value: unknown; running: boolean }) {
+function RenderedOutput({
+  value,
+  running,
+  schema,
+}: {
+  value: unknown;
+  running: boolean;
+  schema?: OpenAPISchema;
+}) {
   if (value === undefined || value === null) {
     return (
       <div className="empty-output">
@@ -124,6 +140,17 @@ function RenderedOutput({ value, running }: { value: unknown; running: boolean }
         </div>
       );
     }
+    const concatenated = schema?.["x-cog-array-display"] === "concatenate";
+    if (!concatenated) {
+      return (
+        <CodeViewer
+          value={JSON.stringify(strings, null, 2)}
+          label="Structured prediction output"
+          className="viewer-output"
+          followTail={running}
+        />
+      );
+    }
     return (
       <pre className="text-output">
         {strings.join("")}
@@ -132,25 +159,24 @@ function RenderedOutput({ value, running }: { value: unknown; running: boolean }
     );
   }
   return (
-    <LazyJsonEditor
+    <CodeViewer
       value={JSON.stringify(value, null, 2)}
       label="Structured prediction output"
-      className="ace-output"
-      readOnly
+      className="viewer-output"
       followTail={running}
     />
   );
 }
 
 function media(value: string): ReactNode {
-  if (value.startsWith("data:image/") || /\.(png|jpe?g|gif|webp)(?:[?#]|$)/i.test(value)) {
+  if (value.startsWith("data:image/")) {
     return <img src={value} alt="Prediction output" />;
   }
-  if (value.startsWith("data:audio/") || /\.(mp3|wav|ogg|flac|m4a)(?:[?#]|$)/i.test(value)) {
+  if (value.startsWith("data:audio/")) {
     // oxlint-disable-next-line jsx-a11y/media-has-caption -- model outputs do not include caption tracks
     return <audio controls src={value} />;
   }
-  if (value.startsWith("data:video/") || /\.(mp4|webm|mov)(?:[?#]|$)/i.test(value)) {
+  if (value.startsWith("data:video/")) {
     // oxlint-disable-next-line jsx-a11y/media-has-caption -- model outputs do not include caption tracks
     return <video controls src={value} />;
   }
@@ -162,7 +188,7 @@ function media(value: string): ReactNode {
     );
   if (/^https?:\/\//i.test(value))
     return (
-      <a href={value} target="_blank" rel="noreferrer">
+      <a href={value} target="_blank" rel="noopener noreferrer">
         {value}
       </a>
     );

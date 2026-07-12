@@ -3,12 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && vite build",
+    "build": "vite build",
     "dev": "vite",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
+    "test:e2e": "playwright test",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
@@ -17,11 +18,12 @@
   "dependencies": {
     "@cloudflare/kumo": "^2.7.0",
     "@phosphor-icons/react": "^2.1.10",
-    "ace-builds": "^1.43.6",
+    "ace-builds": "1.44.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@tailwindcss/vite": "^4.1.17",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -38,5 +40,9 @@
     "typescript": "^5.9.3",
     "vite": "^8.1.4",
     "vitest": "^4.0.8"
-  }
+  },
+  "engines": {
+    "node": "24.18.0"
+  },
+  "packageManager": "pnpm@11.11.0"
 }

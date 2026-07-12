@@ -29,6 +29,7 @@ export function App() {
   const [predictionId, setPredictionId] = useState("");
   const [formBusy, setFormBusy] = useState(false);
   const [formValid, setFormValid] = useState(true);
+  const [formRevision, setFormRevision] = useState(0);
   const [theme, setThemeState] = useState<ThemeMode>(currentTheme());
   const [webhookEvents, setWebhookEvents] = useState(["start", "output", "logs", "completed"]);
   const { schema, capabilities } = connection;
@@ -39,6 +40,10 @@ export function App() {
     const defaults = defaultInput(schema, capabilities.input);
     setInput(defaults);
     setJsonInput(JSON.stringify(defaults, null, 2));
+    setJsonError("");
+    setFormBusy(false);
+    setFormValid(true);
+    setFormRevision((current) => current + 1);
     setRunMode(capabilities.streaming ? "stream" : "sync");
     resetPrediction();
   }, [capabilities, resetPrediction, schema]);
@@ -72,7 +77,15 @@ export function App() {
     setJsonInput(JSON.stringify(defaults, null, 2));
     setPredictionId("");
     setJsonError("");
+    setFormBusy(false);
+    setFormValid(true);
+    setFormRevision((current) => current + 1);
     prediction.reset();
+  };
+
+  const changeJsonInput = (next: string) => {
+    setJsonInput(next);
+    setJsonError(inputObjectError(next));
   };
 
   const changeInputMode = (next: string) => {
@@ -97,15 +110,28 @@ export function App() {
     setThemeState(next);
   };
 
+  const downloadSchema = () => {
+    if (!connection.schema) return;
+    const href = URL.createObjectURL(
+      new Blob([JSON.stringify(connection.schema, null, 2)], { type: "application/json" }),
+    );
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = "openapi.json";
+    link.click();
+    URL.revokeObjectURL(href);
+  };
+
   const version = [
     connection.health.version?.coglet && `coglet ${connection.health.version.coglet}`,
-    connection.health.version?.cog && `cog ${connection.health.version.cog}`,
+    connection.health.version?.python_sdk && `cog ${connection.health.version.python_sdk}`,
     connection.health.version?.python && `py ${connection.health.version.python}`,
   ]
     .filter(Boolean)
     .join(" · ");
+  const activeInputValid = inputMode === "json" ? !jsonError : !formBusy && formValid;
   const runnable = Boolean(
-    connection.schema && connection.capabilities && !formBusy && formValid && !prediction.running,
+    connection.schema && connection.capabilities && activeInputValid && !prediction.running,
   );
 
   return (
@@ -118,13 +144,9 @@ export function App() {
         <Button size="sm" variant="ghost" onClick={toggleTheme}>
           {theme === "dark" ? "Light" : "Dark"}
         </Button>
-        <a
-          href={`/proxy/openapi.json?cog_target=${encodeURIComponent(connection.target)}`}
-          target="_blank"
-          rel="noreferrer"
-        >
+        <Button size="sm" variant="ghost" disabled={!connection.schema} onClick={downloadSchema}>
           Schema
-        </a>
+        </Button>
       </header>
 
       <ConnectionBar
@@ -181,6 +203,7 @@ export function App() {
           )}
           {connection.schema && connection.capabilities && inputMode === "form" && (
             <InputForm
+              key={formRevision}
               document={connection.schema}
               schema={connection.capabilities.input}
               value={input}
@@ -194,7 +217,8 @@ export function App() {
               <LazyJsonEditor
                 value={jsonInput}
                 label="Prediction input JSON"
-                onChange={setJsonInput}
+                className="ace-input"
+                onChange={changeJsonInput}
               />
               {jsonError && <small className="field-error">{jsonError}</small>}
               <Button
@@ -213,6 +237,7 @@ export function App() {
           rawEvents={prediction.rawEvents}
           running={prediction.running}
           streaming={runMode !== "sync"}
+          outputSchema={connection.capabilities?.output}
           trace={prediction.trace}
         />
       </main>
@@ -226,7 +251,7 @@ function formatJSON(
   onError: (error: string) => void,
 ) {
   try {
-    onChange(JSON.stringify(JSON.parse(value), null, 2));
+    onChange(JSON.stringify(parseInputObject(value), null, 2));
     onError("");
   } catch (error) {
     onError(errorMessage(error));
@@ -235,6 +260,15 @@ function formatJSON(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function inputObjectError(value: string): string {
+  try {
+    parseInputObject(value);
+    return "";
+  } catch (error) {
+    return errorMessage(error);
+  }
 }
 
 function parseInputObject(value: string): Record<string, unknown> {

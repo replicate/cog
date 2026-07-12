@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,9 +23,6 @@ import (
 
 	"github.com/replicate/cog/pkg/util/console"
 )
-
-//go:embed playground
-var playgroundUI embed.FS
 
 // maxWebhookBody caps a single webhook payload relayed to the browser.
 const maxWebhookBody = 10 * 1024 * 1024
@@ -85,13 +81,18 @@ be reachable from inside the container. On Docker Desktop the default
 
 // playgroundServer holds the runtime state for a playground instance.
 type playgroundServer struct {
-	hub          *eventHub
-	webhookBase  string
-	eventSlots   chan struct{}
-	webhookSlots chan struct{}
+	hub           *eventHub
+	webhookBase   string
+	defaultTarget string
+	eventSlots    chan struct{}
+	webhookSlots  chan struct{}
 }
 
 func cmdPlayground(cmd *cobra.Command, _ []string) error {
+	if !playgroundAssetsBuilt {
+		return errors.New("playground assets are not included; build Cog with 'mise run build:cog'")
+	}
+
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
 	defer stop()
 
@@ -107,10 +108,11 @@ func cmdPlayground(cmd *cobra.Command, _ []string) error {
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	srvState := &playgroundServer{
-		hub:          newEventHub(),
-		webhookBase:  fmt.Sprintf("http://%s:%d", playgroundWebhookHost, port),
-		eventSlots:   make(chan struct{}, maxConcurrentEventStreams),
-		webhookSlots: make(chan struct{}, maxConcurrentWebhooks),
+		hub:           newEventHub(),
+		webhookBase:   fmt.Sprintf("http://%s:%d", playgroundWebhookHost, port),
+		defaultTarget: playgroundTarget,
+		eventSlots:    make(chan struct{}, maxConcurrentEventStreams),
+		webhookSlots:  make(chan struct{}, maxConcurrentWebhooks),
 	}
 
 	mux := srvState.routes(uiFS)
@@ -119,7 +121,7 @@ func cmdPlayground(cmd *cobra.Command, _ []string) error {
 	if browserHost == "0.0.0.0" || browserHost == "" {
 		browserHost = "127.0.0.1"
 	}
-	uiURL := fmt.Sprintf("http://%s:%d/?target=%s", browserHost, port, url.QueryEscape(playgroundTarget))
+	uiURL := fmt.Sprintf("http://%s:%d/", browserHost, port)
 	console.Infof("Cog playground running at %s", uiURL)
 	console.Info("Press Ctrl+C to stop.")
 	if !playgroundNoOpen {
@@ -163,19 +165,57 @@ func (s *playgroundServer) routes(uiFS fs.FS) http.Handler {
 	mux.HandleFunc("/webhook/", s.handleWebhook)
 	mux.HandleFunc("/events", s.handleEvents)
 	mux.HandleFunc("/config", s.handleConfig)
-	return loopbackOnly(mux)
+	return protectPlayground(mux)
 }
 
-// loopbackOnly keeps the UI and user-directed proxy private even when the
-// server listens on 0.0.0.0 for container webhook callbacks.
-func loopbackOnly(next http.Handler) http.Handler {
+// protectPlayground keeps the UI and user-directed proxy private even when the
+// server listens on 0.0.0.0 for container webhook callbacks. Remote webhook
+// deliveries are the only requests exempt from the browser-origin checks.
+func protectPlayground(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/webhook/") || isLoopbackRemote(r.RemoteAddr) {
+		setPlaygroundSecurityHeaders(w)
+		if strings.HasPrefix(r.URL.Path, "/webhook/") {
 			next.ServeHTTP(w, r)
 			return
 		}
-		http.Error(w, "playground UI and proxy are only available from this machine", http.StatusForbidden)
+		if !isLoopbackRemote(r.RemoteAddr) || !isLoopbackHost(r.Host) || isCrossSiteRequest(r) {
+			http.Error(w, "playground UI and proxy are only available from this browser", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
+}
+
+func setPlaygroundSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data: http: https:; media-src 'self' data: http: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+}
+
+func isLoopbackHost(hostport string) bool {
+	host := hostport
+	if parsed, _, err := net.SplitHostPort(hostport); err == nil {
+		host = parsed
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func isCrossSiteRequest(r *http.Request) bool {
+	if strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
+		return true
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return false
+	}
+	parsed, err := url.Parse(origin)
+	return err != nil || !strings.EqualFold(parsed.Host, r.Host) || (parsed.Scheme != "http" && parsed.Scheme != "https")
 }
 
 func isLoopbackRemote(remoteAddr string) bool {
@@ -191,7 +231,10 @@ func isLoopbackRemote(remoteAddr string) bool {
 // base URL the model should call back on.
 func (s *playgroundServer) handleConfig(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"webhookBase": s.webhookBase})
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"target":      s.defaultTarget,
+		"webhookBase": s.webhookBase,
+	})
 }
 
 // handleWebhook receives a webhook delivery from a model and relays its body to
@@ -289,22 +332,19 @@ func (s *playgroundServer) handleEvents(w http.ResponseWriter, r *http.Request) 
 // "data: ". This preserves embedded newlines without letting them terminate the
 // event early or inject additional SSE fields (e.g. a spoofed "event:" line).
 func writeSSEData(w io.Writer, msg []byte) {
-	for line := range strings.SplitSeq(string(msg), "\n") {
+	normalized := strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(string(msg))
+	for line := range strings.SplitSeq(normalized, "\n") {
 		_, _ = fmt.Fprintf(w, "data: %s\n", line)
 	}
 	_, _ = fmt.Fprint(w, "\n")
 }
 
 // handlePlaygroundProxy reverse-proxies /proxy/* to the target model API. The
-// target origin is taken from the X-Cog-Target header (set by fetch requests)
-// or the cog_target query parameter (used for plain navigations like the schema
-// link). Proxying keeps the browser same-origin, sidestepping CORS, and streams
-// SSE responses through unbuffered.
+// target origin is taken from the X-Cog-Target header set by the playground UI.
+// Proxying keeps the browser same-origin, sidestepping CORS, and streams SSE
+// responses through unbuffered.
 func handlePlaygroundProxy(w http.ResponseWriter, r *http.Request) {
 	rawTarget := r.Header.Get("X-Cog-Target")
-	if rawTarget == "" {
-		rawTarget = r.URL.Query().Get("cog_target")
-	}
 	if rawTarget == "" {
 		writeProxyError(w, http.StatusBadRequest, "no target API set")
 		return
@@ -319,7 +359,7 @@ func handlePlaygroundProxy(w http.ResponseWriter, r *http.Request) {
 	proxy := &httputil.ReverseProxy{
 		FlushInterval: -1, // flush immediately so SSE streams in real time
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			// Forward the path after /proxy, dropping the cog_target hint.
+			// Forward the path after /proxy.
 			escapedPath := strings.TrimPrefix(pr.In.URL.EscapedPath(), "/proxy")
 			if escapedPath == "" {
 				escapedPath = "/"
@@ -330,12 +370,19 @@ func handlePlaygroundProxy(w http.ResponseWriter, r *http.Request) {
 			}
 			pr.Out.URL.Path = path
 			pr.Out.URL.RawPath = escapedPath
-			query := pr.Out.URL.Query()
-			query.Del("cog_target")
-			pr.Out.URL.RawQuery = query.Encode()
 			pr.SetURL(target)
 			pr.Out.Host = target.Host
 			pr.Out.Header.Del("X-Cog-Target")
+			pr.Out.Header.Del("Authorization")
+			pr.Out.Header.Del("Cookie")
+			pr.Out.Header.Del("Origin")
+			pr.Out.Header.Del("Referer")
+		},
+		ModifyResponse: func(resp *http.Response) error {
+			resp.Header.Del("Clear-Site-Data")
+			resp.Header.Del("Service-Worker-Allowed")
+			resp.Header.Del("Set-Cookie")
+			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			writeProxyError(w, http.StatusBadGateway, "cannot reach target API: "+err.Error())

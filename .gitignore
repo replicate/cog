@@ -64,3 +64,4 @@ target
 /playground/coverage/
 /playground/playwright-report/
 /playground/test-results/
+/pkg/cli/playground/

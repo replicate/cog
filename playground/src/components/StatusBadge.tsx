@@ -8,15 +8,20 @@ export function StatusBadge({ status }: { status?: string }) {
     busy: "warning",
     starting: "warning",
     processing: "warning",
+    defunct: "error",
     failed: "error",
     error: "error",
+    setup_failed: "error",
+    unhealthy: "error",
     unreachable: "error",
     canceled: "secondary",
     unknown: "secondary",
   };
   return (
-    <Badge variant={variants[normalized] ?? "secondary"} appearance="dot">
-      {normalized}
-    </Badge>
+    <output>
+      <Badge variant={variants[normalized] ?? "secondary"} appearance="dot">
+        {normalized}
+      </Badge>
+    </output>
   );
 }

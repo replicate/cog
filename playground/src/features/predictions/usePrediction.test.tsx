@@ -80,6 +80,42 @@ describe("usePrediction", () => {
     );
   });
 
+  it("bounds the number of retained stream chunks", async () => {
+    const events = Array.from({ length: 4100 }, () => ({
+      type: "output",
+      data: { chunk: "" },
+      raw: "event: output",
+    }));
+    const api = fakeApi({
+      stream: vi.fn(() =>
+        eventStream([
+          { type: "start", data: { id: "p1", status: "processing" }, raw: "event: start" },
+          ...events,
+          {
+            type: "completed",
+            data: {
+              status: "succeeded",
+              output: Array.from({ length: 5000 }, () => "terminal"),
+              logs: "x".repeat(1024 * 1024 + 100),
+              metrics: Object.fromEntries(
+                Array.from({ length: 120 }, (_, index) => [`metric_${index}`, index]),
+              ),
+            },
+            raw: "event: completed",
+          },
+        ]),
+      ),
+    });
+    const { result } = renderHook(() => usePrediction(api));
+
+    await act(() => result.current.run({ ...options, mode: "stream" }));
+
+    expect(result.current.output).toHaveLength(4096);
+    expect(result.current.rawEvents).toHaveLength(1000);
+    expect(result.current.envelope?.logs).toHaveLength(1024 * 1024);
+    expect(Object.keys(result.current.envelope?.metrics ?? {})).toHaveLength(100);
+  });
+
   it("marks a stream without a terminal event as failed", async () => {
     const api = fakeApi({
       stream: vi.fn(() =>
