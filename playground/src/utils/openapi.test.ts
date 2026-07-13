@@ -20,6 +20,7 @@ const document: OpenAPIDocument = {
           late: { type: "string", "x-order": 2 },
           prompt: { type: "string", default: "hello", "x-order": 1 },
           optional: { type: "boolean", default: false },
+          nullable: { type: "string", nullable: true, default: null },
           enabled: { type: "boolean" },
           choice: { allOf: [{ $ref: "#/components/schemas/Choice" }] },
         },
@@ -49,12 +50,14 @@ describe("schema helpers", () => {
       "prompt",
       "late",
       "optional",
+      "nullable",
       "enabled",
       "choice",
     ]);
     expect(defaultInput(document, input)).toEqual({
       prompt: "hello",
       optional: false,
+      nullable: null,
       enabled: false,
       choice: 1,
     });
@@ -92,7 +95,14 @@ describe("schema helpers", () => {
 
   it("formats constraints", () => {
     expect(
-      constraintText({ minimum: 1, maximum: 9, minLength: 2, maxLength: 10, pattern: "^[a-z]+$" }),
-    ).toBe("min 1 · max 9 · min 2 chars · max 10 chars · pattern: ^[a-z]+$");
+      constraintText({
+        default: 5,
+        minimum: 1,
+        maximum: 9,
+        minLength: 2,
+        maxLength: 10,
+        pattern: "^[a-z]+$",
+      }),
+    ).toBe("default 5 · min 1 · max 9 · min 2 chars · max 10 chars · pattern: ^[a-z]+$");
   });
 });

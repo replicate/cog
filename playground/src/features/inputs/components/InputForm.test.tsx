@@ -140,6 +140,31 @@ describe("InputForm", () => {
     expect(screen.getByLabelText("note")).toBeEnabled();
   });
 
+  it("shows defaults and leaves optional fields without defaults unchecked", () => {
+    render(
+      <InputForm
+        document={document}
+        schema={{
+          properties: {
+            guidance: { type: "number", default: 0.5, minimum: 0, maximum: 1 },
+            omitted: { type: "string" },
+          },
+        }}
+        value={{ guidance: 0.5 }}
+        onChange={vi.fn()}
+        onBusyChange={vi.fn()}
+        onValidityChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("default 0.5 · min 0 · max 1")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Include optional field guidance" })).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Include optional field omitted" }),
+    ).not.toBeChecked();
+    expect(screen.getByLabelText("omitted")).toBeDisabled();
+  });
+
   it("associates required controls with constraints and invalid state", () => {
     render(
       <InputForm

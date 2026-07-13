@@ -56,7 +56,9 @@ export function InputForm({
       const property = effectiveSchema(document, schema.properties?.[name] ?? {});
       setField(
         name,
-        property.default ?? enumValues(document, property)?.[0] ?? emptyInputValue(property),
+        Object.hasOwn(property, "default")
+          ? property.default
+          : (enumValues(document, property)?.[0] ?? emptyInputValue(property)),
       );
       return;
     }

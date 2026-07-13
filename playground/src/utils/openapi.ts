@@ -41,7 +41,7 @@ export function defaultInput(
   const required = new Set(schema.required ?? []);
   for (const [name, raw] of orderedProperties(schema)) {
     const property = effectiveSchema(root, raw);
-    if (property.default !== undefined && property.default !== null) {
+    if (Object.hasOwn(property, "default")) {
       result[name] = property.default;
       continue;
     }
@@ -62,15 +62,21 @@ export function orderedProperties(schema: OpenAPISchema): [string, OpenAPISchema
   });
 }
 
-/** Formats supported numeric, length, and pattern constraints as field guidance. */
+/** Formats an explicit default and supported constraints as field guidance. */
 export function constraintText(schema: OpenAPISchema): string {
   const parts: string[] = [];
+  if (Object.hasOwn(schema, "default")) parts.push(`default ${formatSchemaValue(schema.default)}`);
   if (schema.minimum !== undefined) parts.push(`min ${schema.minimum}`);
   if (schema.maximum !== undefined) parts.push(`max ${schema.maximum}`);
   if (schema.minLength !== undefined) parts.push(`min ${schema.minLength} chars`);
   if (schema.maxLength !== undefined) parts.push(`max ${schema.maxLength} chars`);
   if (schema.pattern) parts.push(`pattern: ${schema.pattern}`);
   return parts.join(" · ");
+}
+
+function formatSchemaValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
 }
 
 export type PlaygroundCapabilities = {
