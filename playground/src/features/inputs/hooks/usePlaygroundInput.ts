@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { InputMode } from "@/features/inputs/types";
 import { errorMessage, parseInputObject, serializeInput } from "@/features/inputs/utils/input";
-import { validateInput } from "@/features/inputs/validation/validateInput";
+import { disposeValidationWorker, validateInput } from "@/features/inputs/validation/validateInput";
 import type { ValidationIssue } from "@/features/inputs/validation/inputValidation";
 import type { OpenAPIDocument } from "@/types/openapi";
 import { defaultInput, type PlaygroundSchemas } from "@/utils/openapi";
@@ -35,11 +35,15 @@ export function usePlaygroundInput({ target, document, capabilities }: Options) 
   const validationController = useRef<AbortController | undefined>(undefined);
   const connectionState = useRef({ target, document, capabilities });
   connectionState.current = { target, document, capabilities };
+  // Identifies the connected schema so the validation worker compiles it once
+  // and reuses the compiled validator across runs.
+  const schemaId = useRef(0);
 
   useEffect(
     () => () => {
       validationAttempt.current += 1;
       validationController.current?.abort();
+      disposeValidationWorker();
     },
     [],
   );
@@ -55,6 +59,8 @@ export function usePlaygroundInput({ target, document, capabilities }: Options) 
       setFormValid(true);
       return;
     }
+    // A new connection means a new (immutable) schema to compile once.
+    schemaId.current += 1;
     const defaults = defaultInput(document, capabilities.input);
     setInput(defaults);
     setJsonInput(serializeInput(defaults));
@@ -99,6 +105,7 @@ export function usePlaygroundInput({ target, document, capabilities }: Options) 
       validationDocument,
       validationCapabilities.input,
       nextInput,
+      schemaId.current,
       controller.signal,
     );
     if (validationController.current === controller) validationController.current = undefined;

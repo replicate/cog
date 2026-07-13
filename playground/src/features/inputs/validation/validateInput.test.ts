@@ -1,16 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { validateInput } from "@/features/inputs/validation/validateInput";
+import { disposeValidationWorker, validateInput } from "@/features/inputs/validation/validateInput";
 import type { ValidationIssue } from "@/features/inputs/validation/inputValidation";
 
 const document = { components: { schemas: {} } };
 const schema = { type: "object", properties: { prompt: { type: "string" } } };
 
+type Request = { requestId: number; schemaId: number; value: unknown };
+type Response = { requestId: number; issues: ValidationIssue[] };
+
 class FakeWorker {
   static instances: FakeWorker[] = [];
 
   onerror: ((event: ErrorEvent) => void) | null = null;
-  onmessage: ((event: MessageEvent<{ issues: ValidationIssue[] }>) => void) | null = null;
+  onmessage: ((event: MessageEvent<Response>) => void) | null = null;
   postMessage = vi.fn();
   terminate = vi.fn();
 
@@ -18,40 +21,56 @@ class FakeWorker {
     FakeWorker.instances.push(this);
   }
 
-  respond(issues: ValidationIssue[]): void {
-    this.onmessage?.({ data: { issues } } as MessageEvent<{ issues: ValidationIssue[] }>);
+  get lastRequest(): Request {
+    return this.postMessage.mock.lastCall?.[0] as Request;
+  }
+
+  respond(requestId: number, issues: ValidationIssue[]): void {
+    this.onmessage?.({ data: { requestId, issues } } as MessageEvent<Response>);
   }
 }
 
 describe("validateInput", () => {
   beforeEach(() => {
-    FakeWorker.instances = [];
     vi.stubGlobal("Worker", FakeWorker);
+    disposeValidationWorker();
+    FakeWorker.instances = [];
   });
 
   afterEach(() => {
+    disposeValidationWorker();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
   it("resolves with the worker result", async () => {
     const value = { prompt: "hello" };
-    const result = validateInput(document, schema, value);
+    const result = validateInput(document, schema, value, 1);
 
-    expect(FakeWorker.instances[0].postMessage).toHaveBeenCalledWith({ document, schema, value });
-    FakeWorker.instances[0].respond([]);
+    const worker = FakeWorker.instances[0];
+    expect(worker.lastRequest).toMatchObject({ schemaId: 1, document, schema, value });
+    worker.respond(worker.lastRequest.requestId, []);
 
     await expect(result).resolves.toEqual([]);
-    expect(FakeWorker.instances[0].terminate).toHaveBeenCalled();
   });
 
-  it("terminates validation that exceeds the worker deadline", async () => {
+  it("reuses a single shared worker across runs", async () => {
+    const first = validateInput(document, schema, { prompt: "a" }, 1);
+    const second = validateInput(document, schema, { prompt: "b" }, 1);
+
+    expect(FakeWorker.instances).toHaveLength(1);
+    const worker = FakeWorker.instances[0];
+    for (const call of worker.postMessage.mock.calls) worker.respond(call[0].requestId, []);
+
+    await expect(Promise.all([first, second])).resolves.toEqual([[], []]);
+  });
+
+  it("resolves with a timeout issue when the worker exceeds the deadline", async () => {
     vi.useFakeTimers();
-    const result = validateInput(document, schema, { prompt: "hello" });
+    const result = validateInput(document, schema, { prompt: "hello" }, 1);
 
     vi.advanceTimersByTime(10_000);
 
-    expect(FakeWorker.instances[0].terminate).toHaveBeenCalled();
     await expect(result).resolves.toEqual([
       expect.objectContaining({ keyword: "schema", message: expect.stringContaining("timed out") }),
     ]);
@@ -64,7 +83,8 @@ describe("validateInput", () => {
       });
     }
     vi.stubGlobal("Worker", ThrowingWorker);
-    const failed = validateInput(document, schema, { prompt: "hello" });
+    disposeValidationWorker();
+    const failed = validateInput(document, schema, { prompt: "hello" }, 1);
 
     await expect(failed).resolves.toEqual([
       expect.objectContaining({
@@ -72,16 +92,14 @@ describe("validateInput", () => {
         message: expect.stringContaining("could not clone"),
       }),
     ]);
-    expect(FakeWorker.instances[0].terminate).toHaveBeenCalled();
   });
 
-  it("terminates validation when canceled", async () => {
+  it("resolves empty when canceled", async () => {
     const controller = new AbortController();
-    const result = validateInput(document, schema, { prompt: "hello" }, controller.signal);
+    const result = validateInput(document, schema, { prompt: "hello" }, 1, controller.signal);
 
     controller.abort();
 
     await expect(result).resolves.toEqual([]);
-    expect(FakeWorker.instances[0].terminate).toHaveBeenCalled();
   });
 });

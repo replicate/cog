@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { LazyJsonEditor } from "@/components/editor/LazyJsonEditor";
 import { useFollowTail } from "@/features/predictions/hooks/useFollowTail";
+import { formatDuration, formatValue } from "@/features/predictions/utils/format";
 import type { RequestTrace, TraceEvent } from "@/types/prediction";
 
 /** Compacts adjacent SSE output events while preserving their payloads in an expandable viewer. */
@@ -79,14 +80,4 @@ function compactEvents(events: TraceEvent[]): TimelineEvent[] {
     compacted.push({ ...event, count: event.count ?? 1 });
   }
   return compacted;
-}
-
-function formatValue(value: unknown): string {
-  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
-}
-
-function formatDuration(milliseconds: number): string {
-  return milliseconds < 1000
-    ? `${Math.round(milliseconds)} ms`
-    : `${(milliseconds / 1000).toFixed(2)} s`;
 }

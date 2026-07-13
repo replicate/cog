@@ -115,6 +115,9 @@ export function OutputPanel({
   );
 }
 
+// Inactive panels are frozen: they hold their last content while hidden and
+// re-sync when reactivated. This avoids re-rendering the heavyweight (hidden)
+// CodeMirror editors on every stream event.
 const PanelContent = memo(
   function PanelContent({
     view,

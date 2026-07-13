@@ -30,12 +30,6 @@ import (
 // maxWebhookBody caps a single webhook payload relayed to the browser.
 const maxWebhookBody = 10 * 1024 * 1024
 
-const (
-	maxConcurrentEventStreams = 4
-	maxConcurrentWebhooks     = 4
-	webhookBackpressureWait   = time.Second
-)
-
 var (
 	playgroundPort        = 0
 	playgroundTarget      = "http://localhost:8393"
@@ -87,8 +81,15 @@ type playgroundServer struct {
 	hub           *eventHub
 	webhookBase   string
 	defaultTarget string
-	eventSlots    chan struct{}
-	webhookSlots  chan struct{}
+}
+
+// newPlaygroundServer builds a playground server with an initialized event hub.
+func newPlaygroundServer(webhookBase, defaultTarget string) *playgroundServer {
+	return &playgroundServer{
+		hub:           newEventHub(),
+		webhookBase:   webhookBase,
+		defaultTarget: defaultTarget,
+	}
 }
 
 func cmdPlayground(cmd *cobra.Command, _ []string) error {
@@ -110,13 +111,10 @@ func cmdPlayground(cmd *cobra.Command, _ []string) error {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
-	srvState := &playgroundServer{
-		hub:           newEventHub(),
-		webhookBase:   "http://" + playgroundAddress(playgroundWebhookHost, port),
-		defaultTarget: playgroundTarget,
-		eventSlots:    make(chan struct{}, maxConcurrentEventStreams),
-		webhookSlots:  make(chan struct{}, maxConcurrentWebhooks),
-	}
+	srvState := newPlaygroundServer(
+		"http://"+playgroundAddress(playgroundWebhookHost, port),
+		playgroundTarget,
+	)
 
 	mux := srvState.routes(uiFS)
 
@@ -194,12 +192,6 @@ func normalizePlaygroundHost(host string) string {
 // routes builds the HTTP handler: static UI, the reverse proxy, and the webhook
 // sink + event relay.
 func (s *playgroundServer) routes(uiFS fs.FS) http.Handler {
-	if s.eventSlots == nil {
-		s.eventSlots = make(chan struct{}, maxConcurrentEventStreams)
-	}
-	if s.webhookSlots == nil {
-		s.webhookSlots = make(chan struct{}, maxConcurrentWebhooks)
-	}
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServerFS(uiFS))
 	mux.HandleFunc("/proxy/", handlePlaygroundProxy)
@@ -302,15 +294,6 @@ func (s *playgroundServer) handleWebhook(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "no browser is ready to receive this webhook", http.StatusServiceUnavailable)
 		return
 	}
-	acquireTimer := time.NewTimer(webhookBackpressureWait)
-	defer acquireTimer.Stop()
-	select {
-	case s.webhookSlots <- struct{}{}:
-		defer func() { <-s.webhookSlots }()
-	case <-acquireTimer.C:
-		http.Error(w, "too many concurrent webhooks", http.StatusServiceUnavailable)
-		return
-	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
 	if err != nil {
 		var maxBytesError *http.MaxBytesError
@@ -321,7 +304,7 @@ func (s *playgroundServer) handleWebhook(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "cannot read webhook body", http.StatusBadRequest)
 		return
 	}
-	if !s.hub.publish(token, body, webhookBackpressureWait) {
+	if !s.hub.publish(token, body) {
 		http.Error(w, "no browser is ready to receive this webhook", http.StatusServiceUnavailable)
 		return
 	}
@@ -334,13 +317,6 @@ func (s *playgroundServer) handleEvents(w http.ResponseWriter, r *http.Request) 
 	token := r.URL.Query().Get("token")
 	if token == "" {
 		http.Error(w, "missing token", http.StatusBadRequest)
-		return
-	}
-	select {
-	case s.eventSlots <- struct{}{}:
-		defer func() { <-s.eventSlots }()
-	default:
-		http.Error(w, "too many event streams", http.StatusServiceUnavailable)
 		return
 	}
 	flusher, ok := w.(http.Flusher)
@@ -514,28 +490,27 @@ func (h *eventHub) unsubscribe(token string, ch chan []byte) {
 	}
 }
 
-func (h *eventHub) publish(token string, msg []byte, wait time.Duration) bool {
+// publish delivers msg to every subscriber of token, best-effort. It reports
+// whether at least one subscriber received it. Delivery is non-blocking: a
+// subscriber whose buffer is momentarily full is skipped rather than stalling
+// the webhook. The depth-buffered channels absorb any realistic burst for a
+// single-user tool.
+func (h *eventHub) publish(token string, msg []byte) bool {
 	h.mu.Lock()
-	subs := h.subs[token]
-	if len(subs) == 0 {
-		h.mu.Unlock()
-		return false
-	}
 	// Snapshot under the lock so slow subscribers cannot stall the hub.
-	channels := make([]chan []byte, 0, len(subs))
-	for ch := range subs {
+	channels := make([]chan []byte, 0, len(h.subs[token]))
+	for ch := range h.subs[token] {
 		channels = append(channels, ch)
 	}
 	h.mu.Unlock()
 
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
+	delivered := false
 	for _, ch := range channels {
 		select {
 		case ch <- msg:
-		case <-timer.C:
-			return false
+			delivered = true
+		default:
 		}
 	}
-	return true
+	return delivered
 }

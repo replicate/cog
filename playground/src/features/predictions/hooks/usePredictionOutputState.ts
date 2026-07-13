@@ -1,9 +1,9 @@
-import { type RefObject, startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { type RefObject, startTransition, useCallback, useRef, useState } from "react";
 
 import type { RunMode } from "@/features/predictions/types";
 import {
-  boundedTextItems,
   MAX_RAW_EVENT_TEXT,
+  MAX_RAW_EVENTS,
   MAX_STREAM_OUTPUT_ITEMS,
   MAX_STREAM_OUTPUT_TEXT,
   valueLength,
@@ -12,79 +12,68 @@ import type { TraceRun } from "@/features/predictions/hooks/usePredictionTrace";
 
 type StreamBuffer = {
   rawEvents: string[];
+  rawLength: number;
   output: unknown[];
   outputLength: number;
-  frame?: number;
 };
 
-/** Batches stream rendering by animation frame and rejects writes from stale run tokens. */
+function emptyBuffer(): StreamBuffer {
+  return { rawEvents: [], rawLength: 0, output: [], outputLength: 0 };
+}
+
+// Amortized O(1) trim: drop oldest items until within both the item and
+// character limits, keeping at least the newest item.
+function trim(items: unknown[], length: number, maxItems: number, maxText: number): number {
+  while (items.length > 1 && (items.length > maxItems || length > maxText)) {
+    length -= valueLength(items.shift());
+  }
+  return length;
+}
+
+/** Accumulates streamed output and raw frames bounded to the newest content, ignoring stale runs. */
 export function usePredictionOutputState<T extends TraceRun>(activeRun: RefObject<T | undefined>) {
   const [output, setOutput] = useState<unknown>();
   const [rawEvents, setRawEvents] = useState<string[]>([]);
-  const streamBuffer = useRef<StreamBuffer | undefined>(undefined);
+  const buffer = useRef<StreamBuffer>(emptyBuffer());
 
-  useEffect(
-    () => () => {
-      const frame = streamBuffer.current?.frame;
-      if (frame !== undefined) window.cancelAnimationFrame(frame);
-      streamBuffer.current = undefined;
-    },
-    [],
-  );
-
-  const flushStreamBuffer = useCallback(
-    (token: string) => {
+  const queueStreamRender = useCallback(
+    (token: string, raw: string, nextOutput?: unknown) => {
       if (activeRun.current?.token !== token) return;
-      const buffer = streamBuffer.current;
-      if (!buffer) return;
-      if (buffer.frame !== undefined) window.cancelAnimationFrame(buffer.frame);
-      buffer.frame = undefined;
-      if (buffer.rawEvents.length === 0 && buffer.output.length === 0) return;
-      const nextRawEvents = buffer.rawEvents.splice(0);
-      const nextOutput = buffer.output.slice();
+      const buf = buffer.current;
+      buf.rawEvents.push(raw);
+      buf.rawLength += raw.length;
+      buf.rawLength = trim(buf.rawEvents, buf.rawLength, MAX_RAW_EVENTS, MAX_RAW_EVENT_TEXT);
+      const nextRawEvents = buf.rawEvents.slice() as string[];
+
+      let nextOutputItems: unknown[] | undefined;
+      if (nextOutput !== undefined) {
+        buf.output.push(nextOutput);
+        buf.outputLength += valueLength(nextOutput);
+        buf.outputLength = trim(
+          buf.output,
+          buf.outputLength,
+          MAX_STREAM_OUTPUT_ITEMS,
+          MAX_STREAM_OUTPUT_TEXT,
+        );
+        nextOutputItems = buf.output.slice();
+      }
+
       startTransition(() => {
-        if (nextRawEvents.length) {
-          setRawEvents((current) =>
-            boundedTextItems([...current, ...nextRawEvents], MAX_RAW_EVENT_TEXT),
-          );
-        }
-        if (nextOutput.length) setOutput(nextOutput);
+        setRawEvents(nextRawEvents);
+        if (nextOutputItems) setOutput(nextOutputItems);
       });
     },
     [activeRun],
   );
 
-  const queueStreamRender = useCallback(
-    (token: string, raw: string, nextOutput?: unknown) => {
-      const buffer = streamBuffer.current;
-      if (activeRun.current?.token !== token || !buffer) return;
-      buffer.rawEvents.push(raw);
-      buffer.rawEvents = boundedTextItems(buffer.rawEvents, MAX_RAW_EVENT_TEXT);
-      if (nextOutput !== undefined) {
-        buffer.output.push(nextOutput);
-        buffer.outputLength += valueLength(nextOutput);
-        while (
-          (buffer.outputLength > MAX_STREAM_OUTPUT_TEXT ||
-            buffer.output.length > MAX_STREAM_OUTPUT_ITEMS) &&
-          buffer.output.length > 1
-        ) {
-          buffer.outputLength -= valueLength(buffer.output.shift());
-        }
-      }
-      if (buffer.frame === undefined) {
-        buffer.frame = window.requestAnimationFrame(() => flushStreamBuffer(token));
-      }
-    },
-    [activeRun, flushStreamBuffer],
-  );
-
   const startOutput = useCallback((mode: RunMode) => {
-    streamBuffer.current = { rawEvents: [], output: [], outputLength: 0 };
+    buffer.current = emptyBuffer();
     setOutput(mode === "stream" ? [] : undefined);
     setRawEvents([]);
   }, []);
 
   const resetOutput = useCallback(() => {
+    buffer.current = emptyBuffer();
     setOutput(undefined);
     setRawEvents([]);
   }, []);
@@ -94,7 +83,6 @@ export function usePredictionOutputState<T extends TraceRun>(activeRun: RefObjec
     rawEvents,
     setOutput,
     setRawEvents,
-    flushStreamBuffer,
     queueStreamRender,
     startOutput,
     resetOutput,

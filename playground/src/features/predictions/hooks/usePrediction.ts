@@ -51,7 +51,6 @@ export function usePrediction(api: PredictionApi) {
     rawEvents,
     setOutput,
     setRawEvents,
-    flushStreamBuffer,
     queueStreamRender,
     startOutput,
     resetOutput,
@@ -82,13 +81,12 @@ export function usePrediction(api: PredictionApi) {
   const finish = useCallback(
     (token: string) => {
       if (activeRun.current?.token !== token) return;
-      flushStreamBuffer(token);
       finishTrace(token);
       activeRun.current.events?.close();
       activeRun.current = undefined;
       setRunning(false);
     },
-    [finishTrace, flushStreamBuffer],
+    [finishTrace],
   );
 
   const applyEnvelope = useCallback(
@@ -158,8 +156,6 @@ export function usePrediction(api: PredictionApi) {
     })) {
       if (activeRun.current?.token !== token) return;
       rawFrames.push(event.raw);
-      const retainedFrames = boundedTextItems(rawFrames, MAX_RAW_EVENT_TEXT);
-      rawFrames.splice(0, rawFrames.length, ...retainedFrames);
       recordTraceEvent(token, "sse", event.type, event.data);
       if (event.type === "start") {
         applyEnvelope(event.data);
@@ -194,8 +190,7 @@ export function usePrediction(api: PredictionApi) {
       queueStreamRender(token, event.raw);
       if (terminal) break;
     }
-    flushStreamBuffer(token);
-    setTraceBody(token, rawFrames.join("\n\n"), false);
+    setTraceBody(token, boundedTextItems(rawFrames, MAX_RAW_EVENT_TEXT).join("\n\n"), false);
     if (!terminal) {
       setError("Prediction stream ended before a terminal event");
       setEnvelope((current) => ({ ...current, status: "failed" }));

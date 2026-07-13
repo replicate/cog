@@ -8,8 +8,7 @@ export const MAX_STREAM_OUTPUT_TEXT = 4 * 1024 * 1024;
 export const MAX_STREAM_OUTPUT_ITEMS = 4096;
 export const MAX_LOG_TEXT = 1024 * 1024;
 export const MAX_METRICS = 100;
-
-const MAX_RAW_EVENTS = 1000;
+export const MAX_RAW_EVENTS = 1000;
 
 /** Retains the newest text items within both character and item-count limits. */
 export function boundedTextItems(items: string[], maxLength: number): string[] {

@@ -27,11 +27,7 @@ func newTestPlayground(t *testing.T) *httptest.Server {
 	t.Helper()
 	uiFS, err := fs.Sub(playgroundUI, "playground")
 	require.NoError(t, err)
-	s := &playgroundServer{
-		hub:           newEventHub(),
-		webhookBase:   "http://wh.example/cb",
-		defaultTarget: "http://localhost:8393",
-	}
+	s := newPlaygroundServer("http://wh.example/cb", "http://localhost:8393")
 	ts := httptest.NewServer(s.routes(uiFS))
 	t.Cleanup(ts.Close)
 	return ts
@@ -135,7 +131,7 @@ func TestPlaygroundConfig(t *testing.T) {
 func TestPlaygroundRejectsRemoteUIAndProxyRequests(t *testing.T) {
 	uiFS, err := fs.Sub(playgroundUI, "playground")
 	require.NoError(t, err)
-	s := &playgroundServer{hub: newEventHub(), webhookBase: "http://wh.example/cb"}
+	s := newPlaygroundServer("http://wh.example/cb", "")
 
 	for _, path := range []string{"/", "/config", "/proxy/health-check"} {
 		req := httptest.NewRequest(http.MethodGet, "http://playground.example"+path, nil)
@@ -149,7 +145,7 @@ func TestPlaygroundRejectsRemoteUIAndProxyRequests(t *testing.T) {
 func TestPlaygroundAllowsRemoteWebhookRequests(t *testing.T) {
 	uiFS, err := fs.Sub(playgroundUI, "playground")
 	require.NoError(t, err)
-	s := &playgroundServer{hub: newEventHub(), webhookBase: "http://wh.example/cb"}
+	s := newPlaygroundServer("http://wh.example/cb", "")
 	ch := s.hub.subscribe("token")
 	defer s.hub.unsubscribe("token", ch)
 
@@ -492,7 +488,7 @@ func TestPlaygroundWebhookRejectsOversizedBody(t *testing.T) {
 	uiFS, err := fs.Sub(playgroundUI, "playground")
 	require.NoError(t, err)
 	// Keep a subscriber active so the handler reaches its body-size check.
-	s := &playgroundServer{hub: newEventHub(), webhookBase: "http://wh.example/cb"}
+	s := newPlaygroundServer("http://wh.example/cb", "")
 	ch := s.hub.subscribe("token")
 	defer s.hub.unsubscribe("token", ch)
 	ts := httptest.NewServer(s.routes(uiFS))
@@ -535,44 +531,28 @@ func TestPlaygroundProxyStripsAbsoluteRedirectLocation(t *testing.T) {
 	assert.Empty(t, resp.Header.Get("Location"))
 }
 
-func TestEventHubPublishDoesNotHoldLockAcrossDelivery(t *testing.T) {
+// A stalled subscriber (full buffer) must not block or deny delivery to a
+// healthy one: publish is best-effort and non-blocking.
+func TestEventHubPublishDeliversDespiteStalledSubscriber(t *testing.T) {
 	hub := newEventHub()
-	ch := hub.subscribe("token")
-	// Fill the buffered channel so publish must wait outside the hub lock.
-	for range 4 {
-		ch <- []byte("fill")
+	stalled := hub.subscribe("token")
+	healthy := hub.subscribe("token")
+	// Fill the stalled subscriber's buffer so any send to it would block.
+	for len(stalled) < cap(stalled) {
+		stalled <- []byte("fill")
 	}
 
-	done := make(chan bool, 1)
-	go func() {
-		done <- hub.publish("token", []byte("msg"), 200*time.Millisecond)
-	}()
+	assert.True(t, hub.publish("token", []byte("msg")), "healthy subscriber should receive the message")
 
-	// subscribe must still complete promptly while publish waits on a full buffer.
-	ready := make(chan struct{})
-	go func() {
-		_ = hub.subscribe("token-other")
-		close(ready)
-	}()
 	select {
-	case <-ready:
-	case <-time.After(100 * time.Millisecond):
-		require.FailNow(t, "subscribe blocked while publish waited on a full subscriber")
+	case msg := <-healthy:
+		assert.Equal(t, []byte("msg"), msg)
+	case <-time.After(time.Second):
+		require.FailNow(t, "healthy subscriber did not receive the message")
 	}
+}
 
-	for range 4 {
-		<-ch
-	}
-	select {
-	case ok := <-done:
-		require.True(t, ok)
-		select {
-		case msg := <-ch:
-			assert.Equal(t, []byte("msg"), msg)
-		case <-time.After(100 * time.Millisecond):
-			require.FailNow(t, "published message not delivered")
-		}
-	case <-time.After(500 * time.Millisecond):
-		require.FailNow(t, "publish did not complete")
-	}
+func TestEventHubPublishReturnsFalseWithoutSubscribers(t *testing.T) {
+	hub := newEventHub()
+	assert.False(t, hub.publish("token", []byte("msg")))
 }

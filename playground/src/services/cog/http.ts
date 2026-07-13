@@ -1,4 +1,4 @@
-import type { JsonObject } from "@/types/json";
+import { isJsonObject, type JsonObject } from "@/types/json";
 import type { PredictionEnvelope } from "@/types/prediction";
 
 const MAX_JSON_RESPONSE_LENGTH = 16 * 1024 * 1024;
@@ -71,8 +71,4 @@ async function readResponseText(response: Response, maxLength: number): Promise<
   } finally {
     reader.releaseLock();
   }
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

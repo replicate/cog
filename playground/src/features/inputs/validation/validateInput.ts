@@ -3,11 +3,59 @@ import type { ValidationIssue } from "@/features/inputs/validation/inputValidati
 
 const VALIDATION_TIMEOUT_MS = 10_000;
 
-/** Validates input in a disposable worker with abort, timeout, and schema-error handling. */
+type PendingRequest = {
+  resolve: (issues: ValidationIssue[]) => void;
+  timeout: ReturnType<typeof setTimeout>;
+  signal?: AbortSignal;
+  onAbort: () => void;
+};
+
+type WorkerResponse = { requestId: number; issues: ValidationIssue[] };
+
+// A single long-lived worker is shared across runs. The worker compiles the
+// validator once per schemaId and reuses it: a connected model's schema is
+// immutable for the life of its server, so it never needs recompiling.
+let worker: Worker | undefined;
+let nextRequestId = 1;
+const pending = new Map<number, PendingRequest>();
+
+function settle(requestId: number, issues: ValidationIssue[]): void {
+  const request = pending.get(requestId);
+  if (!request) return;
+  pending.delete(requestId);
+  clearTimeout(request.timeout);
+  request.signal?.removeEventListener("abort", request.onAbort);
+  request.resolve(issues);
+}
+
+function ensureWorker(): Worker {
+  if (worker) return worker;
+  const created = new Worker(new URL("./validation.worker.ts", import.meta.url), {
+    type: "module",
+  });
+  created.onmessage = (event: MessageEvent<WorkerResponse>) => {
+    settle(event.data.requestId, event.data.issues);
+  };
+  created.onerror = (event) => {
+    // The worker is unusable; fail everything in flight and rebuild lazily.
+    const issue = schemaIssue(event.message);
+    for (const requestId of pending.keys()) settle(requestId, [issue]);
+    created.terminate();
+    if (worker === created) worker = undefined;
+  };
+  worker = created;
+  return created;
+}
+
+/**
+ * Validates input against a model's schema in the shared worker. `schemaId` identifies the
+ * connected schema so the worker compiles its validator once and reuses it across runs.
+ */
 export function validateInput(
   document: OpenAPIDocument,
   schema: OpenAPISchema,
   value: unknown,
+  schemaId: number,
   signal?: AbortSignal,
 ): Promise<ValidationIssue[]> {
   return new Promise((resolve) => {
@@ -15,40 +63,34 @@ export function validateInput(
       resolve([]);
       return;
     }
-    let active = true;
-    let worker: Worker;
+    let active: Worker;
     try {
-      worker = new Worker(new URL("./validation.worker.ts", import.meta.url), { type: "module" });
+      active = ensureWorker();
     } catch (error) {
       resolve([schemaIssue(error)]);
       return;
     }
-
-    const finish = (issues: ValidationIssue[]) => {
-      if (!active) return;
-      active = false;
-      window.clearTimeout(timeout);
-      signal?.removeEventListener("abort", abort);
-      worker.terminate();
-      resolve(issues);
-    };
-    const abort = () => finish([]);
-    const timeout = window.setTimeout(() => {
-      finish([schemaIssue(new Error("validation timed out"))]);
-    }, VALIDATION_TIMEOUT_MS);
-    signal?.addEventListener("abort", abort, { once: true });
-    worker.onmessage = (event: MessageEvent<{ issues: ValidationIssue[] }>) => {
-      finish(event.data.issues);
-    };
-    worker.onerror = (event) => {
-      finish([schemaIssue(event.message)]);
-    };
+    const requestId = nextRequestId++;
+    const onAbort = () => settle(requestId, []);
+    const timeout = setTimeout(
+      () => settle(requestId, [schemaIssue(new Error("validation timed out"))]),
+      VALIDATION_TIMEOUT_MS,
+    );
+    signal?.addEventListener("abort", onAbort, { once: true });
+    pending.set(requestId, { resolve, timeout, signal, onAbort });
     try {
-      worker.postMessage({ document, schema, value });
+      active.postMessage({ requestId, schemaId, document, schema, value });
     } catch (error) {
-      finish([schemaIssue(error)]);
+      settle(requestId, [schemaIssue(error)]);
     }
   });
+}
+
+/** Tears down the shared validation worker, resolving any in-flight requests. */
+export function disposeValidationWorker(): void {
+  worker?.terminate();
+  worker = undefined;
+  for (const requestId of pending.keys()) settle(requestId, []);
 }
 
 function schemaIssue(error: unknown): ValidationIssue {

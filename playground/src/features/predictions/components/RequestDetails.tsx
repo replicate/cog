@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { LazyJsonEditor } from "@/components/editor/LazyJsonEditor";
+import { formatDuration, formatValue } from "@/features/predictions/utils/format";
 import type { PredictionEnvelope, RequestTrace } from "@/types/prediction";
 
 /** Shows client and server timings with bodies expanded and headers collapsed by default. */
@@ -71,14 +72,4 @@ function InspectorDocument({ label, value }: { label: string; value: unknown }) 
       )}
     </details>
   );
-}
-
-function formatValue(value: unknown): string {
-  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
-}
-
-function formatDuration(milliseconds: number): string {
-  return milliseconds < 1000
-    ? `${Math.round(milliseconds)} ms`
-    : `${(milliseconds / 1000).toFixed(2)} s`;
 }

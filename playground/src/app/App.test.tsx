@@ -66,7 +66,10 @@ vi.mock("@/features/predictions/hooks/usePrediction", () => ({
   }),
 }));
 
-vi.mock("@/features/inputs/validation/validateInput", () => ({ validateInput: mockValidateInput }));
+vi.mock("@/features/inputs/validation/validateInput", () => ({
+  validateInput: mockValidateInput,
+  disposeValidationWorker: vi.fn(),
+}));
 
 vi.mock("@/features/inputs/components/InputForm", () => ({
   InputForm: ({
@@ -207,7 +210,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Run" }));
     await waitFor(() => expect(mockValidateInput).toHaveBeenCalled());
-    const signal = mockValidateInput.mock.calls[0][3] as AbortSignal;
+    const signal = mockValidateInput.mock.calls[0][4] as AbortSignal;
 
     fireEvent.change(screen.getByLabelText("Form prompt"), { target: { value: "changed" } });
     expect(signal.aborted).toBe(true);

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 
 import { useFollowTail } from "@/features/predictions/hooks/useFollowTail";
 
@@ -62,31 +62,48 @@ function formatMetricValue(value: unknown): string {
   }
 }
 
-function RenderedOutput({ value, running }: { value: unknown; running: boolean }) {
-  if (value === undefined || value === null) {
-    return (
-      <div className="empty-output">
-        {running ? "Waiting for output..." : "Prediction returned no output."}
-      </div>
-    );
-  }
-  if (typeof value === "string") return <StringOutput value={value} running={running} />;
+type RenderedValue =
+  | { kind: "empty" }
+  | { kind: "string"; text: string }
+  | { kind: "mediaList"; items: string[] }
+  | { kind: "text"; text: string };
+
+/** Classifies output once per value change; the string join can be multi-MB during streaming. */
+function classifyOutput(value: unknown): RenderedValue {
+  if (value === undefined || value === null) return { kind: "empty" };
+  if (typeof value === "string") return { kind: "string", text: value };
   if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
     const strings = value as string[];
-    if (strings.some(isMediaValue)) {
+    if (strings.some(isMediaValue)) return { kind: "mediaList", items: strings };
+    return { kind: "text", text: strings.join("") };
+  }
+  return { kind: "text", text: JSON.stringify(value, null, 2) };
+}
+
+function RenderedOutput({ value, running }: { value: unknown; running: boolean }) {
+  const rendered = useMemo(() => classifyOutput(value), [value]);
+  switch (rendered.kind) {
+    case "empty":
+      return (
+        <div className="empty-output">
+          {running ? "Waiting for output..." : "Prediction returned no output."}
+        </div>
+      );
+    case "string":
+      return <StringOutput value={rendered.text} running={running} />;
+    case "mediaList":
       return (
         <div>
-          {strings.map((item, index) => (
+          {rendered.items.map((item, index) => (
             <div className="output-item" key={index}>
               {media(item) ?? <TextOutput value={item} />}
             </div>
           ))}
         </div>
       );
-    }
-    return <TextOutput value={strings.join("")} running={running} />;
+    case "text":
+      return <TextOutput value={rendered.text} running={running} />;
   }
-  return <TextOutput value={JSON.stringify(value, null, 2)} running={running} />;
 }
 
 function StringOutput({ value, running }: { value: string; running: boolean }) {
