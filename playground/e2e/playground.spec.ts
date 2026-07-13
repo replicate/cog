@@ -86,7 +86,7 @@ test("runs a synchronous prediction and inspects its response", async ({ page })
   await page.getByRole("tab", { name: "Timeline" }).click();
   await expect(page.getByText(/POST \/predictions/)).toBeVisible();
   await page.getByRole("tab", { name: "Request" }).click();
-  await expect(page.getByText("Total duration")).toBeVisible();
+  await expect(page.getByText("Prediction time")).toBeVisible();
   await expect(page.getByText("200", { exact: true })).toBeVisible();
 });
 
