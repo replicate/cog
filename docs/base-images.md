@@ -14,7 +14,7 @@ A Cog base image is a Docker image maintained by Replicate that includes:
 Base images are tagged by their configuration, for example:
 
 ```
-r8.im/cog-base:cuda12-python3.13-torch2.6
+r8.im/cog-base:cuda12.4-python3.13-torch2.6.0
 r8.im/cog-base:python3.13
 ```
 
