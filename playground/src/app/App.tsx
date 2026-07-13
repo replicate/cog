@@ -171,7 +171,6 @@ export function App() {
           rawEvents={prediction.rawEvents}
           running={prediction.running}
           streaming={runMode !== "sync"}
-          outputSchema={connection.capabilities?.output}
           trace={prediction.trace}
         />
       </main>

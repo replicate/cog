@@ -3,9 +3,9 @@ import { type RefObject, useCallback, useRef, useState } from "react";
 import type { RunMode } from "@/features/predictions/types";
 import { requestHeaders } from "@/features/predictions/utils/runtime";
 import {
+  appendTraceEvent,
   boundedTraceData,
   enforceTraceBudget,
-  MAX_TRACE_EVENTS,
 } from "@/features/predictions/utils/trace";
 import type { RequestTrace, TraceEventKind } from "@/types/prediction";
 
@@ -78,7 +78,7 @@ export function usePredictionTrace<T extends TraceRun>(activeRun: RefObject<T | 
       };
       updateTrace((current) => ({
         ...current,
-        events: [...current.events, event].slice(-MAX_TRACE_EVENTS),
+        events: appendTraceEvent(current.events, event),
       }));
     },
     [activeRun, updateTrace],
@@ -96,7 +96,7 @@ export function usePredictionTrace<T extends TraceRun>(activeRun: RefObject<T | 
       };
       updateTrace((current) => ({
         ...current,
-        events: [...current.events, event].slice(-MAX_TRACE_EVENTS),
+        events: appendTraceEvent(current.events, event),
       }));
     },
     [updateTrace],

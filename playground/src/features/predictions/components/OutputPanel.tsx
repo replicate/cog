@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 
 import { SegmentedTabs, tabId, tabPanelId } from "@/components/SegmentedTabs";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -8,7 +8,6 @@ import {
   RequestInspector,
 } from "@/features/predictions/components/RequestInspector";
 import { RawResponse } from "@/features/predictions/components/RawResponse";
-import type { OpenAPISchema } from "@/types/openapi";
 import type { PredictionEnvelope, RequestTrace } from "@/types/prediction";
 
 type PanelView = "output" | "raw" | InspectorView;
@@ -20,11 +19,16 @@ type Props = {
   rawEvents: string[];
   running: boolean;
   streaming: boolean;
-  outputSchema?: OpenAPISchema;
   trace?: RequestTrace;
 };
 
-/** Resets to Output for each run and exposes Logs only when the response contains them. */
+type PanelContentProps = Omit<Props, "error"> & {
+  active: boolean;
+  hasResult: boolean;
+  view: PanelView;
+};
+
+/** Retains visited response views and exposes Logs only when the response contains them. */
 export function OutputPanel({
   envelope,
   error,
@@ -36,6 +40,9 @@ export function OutputPanel({
 }: Props) {
   const hasResult = Boolean(envelope || rawEvents.length > 0 || output !== undefined);
   const [panelView, setPanelView] = useState<PanelView>("output");
+  const [mountedViews, setMountedViews] = useState<ReadonlySet<PanelView>>(
+    () => new Set(["output"]),
+  );
   const hasLogs = Boolean(envelope?.logs?.trim());
   const displayedError = error || envelope?.error;
   const panelItems: { value: PanelView; label: string }[] = [
@@ -49,9 +56,11 @@ export function OutputPanel({
   useEffect(() => {
     if (panelView === "logs" && !hasLogs) setPanelView("output");
   }, [hasLogs, panelView]);
-  useEffect(() => {
-    if (running) setPanelView("output");
-  }, [running]);
+
+  const selectPanelView = (view: PanelView) => {
+    setMountedViews((current) => (current.has(view) ? current : new Set(current).add(view)));
+    setPanelView(view);
+  };
 
   return (
     <section id="output-panel">
@@ -65,7 +74,7 @@ export function OutputPanel({
           label="Response details"
           items={panelItems}
           value={panelView}
-          onChange={setPanelView}
+          onChange={selectPanelView}
         />
       </div>
       <output className="sr-only" aria-live="polite">
@@ -76,28 +85,77 @@ export function OutputPanel({
           {displayedError}
         </div>
       )}
-      <div
-        id={tabPanelId("response-view", panelView)}
-        role="tabpanel"
-        aria-labelledby={tabId("response-view", panelView)}
-        tabIndex={0}
-      >
-        {panelView === "output" ? (
-          hasResult ? (
-            <PredictionOutput metrics={envelope?.metrics} running={running} value={output} />
-          ) : (
-            <div className="empty-output">Run a prediction to see its output.</div>
-          )
-        ) : panelView === "raw" ? (
-          hasResult ? (
-            <RawResponse envelope={envelope} live={streaming} rawEvents={rawEvents} />
-          ) : (
-            <div className="empty-output">Run a prediction to see its raw response.</div>
-          )
-        ) : (
-          <RequestInspector view={panelView} trace={trace} envelope={envelope} />
-        )}
-      </div>
+      {panelItems.map(({ value: view }) => {
+        if (!mountedViews.has(view)) return null;
+        const active = panelView === view;
+        return (
+          <div
+            key={view}
+            id={tabPanelId("response-view", view)}
+            role="tabpanel"
+            aria-labelledby={tabId("response-view", view)}
+            tabIndex={active ? 0 : -1}
+            hidden={!active}
+          >
+            <PanelContent
+              view={view}
+              active={active}
+              hasResult={hasResult}
+              envelope={envelope}
+              output={output}
+              rawEvents={rawEvents}
+              running={running}
+              streaming={streaming}
+              trace={trace}
+            />
+          </div>
+        );
+      })}
     </section>
   );
 }
+
+const PanelContent = memo(
+  function PanelContent({
+    view,
+    active,
+    hasResult,
+    envelope,
+    output,
+    rawEvents,
+    running,
+    streaming,
+    trace,
+  }: PanelContentProps) {
+    if (view === "output") {
+      return hasResult ? (
+        <PredictionOutput metrics={envelope?.metrics} running={running} value={output} />
+      ) : (
+        <div className="empty-output">Run a prediction to see its output.</div>
+      );
+    }
+    if (view === "raw") {
+      return hasResult ? (
+        <RawResponse
+          envelope={envelope}
+          live={streaming}
+          rawEvents={rawEvents}
+          running={running}
+          active={active}
+        />
+      ) : (
+        <div className="empty-output">Run a prediction to see its raw response.</div>
+      );
+    }
+    return (
+      <RequestInspector
+        view={view}
+        trace={trace}
+        envelope={envelope}
+        running={running}
+        active={active}
+      />
+    );
+  },
+  (previous, next) => !previous.active && !next.active && previous.running === next.running,
+);

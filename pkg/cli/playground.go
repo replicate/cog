@@ -430,6 +430,15 @@ func handlePlaygroundProxy(w http.ResponseWriter, r *http.Request) {
 			resp.Header.Del("Clear-Site-Data")
 			resp.Header.Del("Service-Worker-Allowed")
 			resp.Header.Del("Set-Cookie")
+			// Drop absolute redirects so the browser cannot be pivoted off the
+			// intended target (fetch uses redirect: "manual" as a second line).
+			if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+				if location := resp.Header.Get("Location"); location != "" {
+					if parsed, err := url.Parse(location); err != nil || parsed.IsAbs() {
+						resp.Header.Del("Location")
+					}
+				}
+			}
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -507,15 +516,21 @@ func (h *eventHub) unsubscribe(token string, ch chan []byte) {
 
 func (h *eventHub) publish(token string, msg []byte, wait time.Duration) bool {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	subs := h.subs[token]
 	if len(subs) == 0 {
+		h.mu.Unlock()
 		return false
 	}
+	// Snapshot under the lock so slow subscribers cannot stall the hub.
+	channels := make([]chan []byte, 0, len(subs))
+	for ch := range subs {
+		channels = append(channels, ch)
+	}
+	h.mu.Unlock()
 
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
-	for ch := range subs {
+	for _, ch := range channels {
 		select {
 		case ch <- msg:
 		case <-timer.C:

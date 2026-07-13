@@ -28,6 +28,7 @@ export function createInputValidator(
     ...inputSchema,
     components: document.components,
   }) as SchemaObject;
+  const required = Array.isArray(inputSchema.required) ? inputSchema.required : [];
   let validate: ReturnType<Ajv["compile"]>;
   try {
     const ajv = new Ajv({
@@ -48,11 +49,41 @@ export function createInputValidator(
   return (value) => {
     try {
       const valid = validate(value);
-      return valid ? [] : normalizeIssues(validate.errors ?? []);
+      const issues = valid ? [] : normalizeIssues(validate.errors ?? []);
+      return withRequiredEmptyIssues(issues, required, value);
     } catch (error) {
       return [schemaValidationIssue(error)];
     }
   };
+}
+
+/**
+ * Flags required fields that are present but empty. AJV's `required` keyword only checks for
+ * a key's presence, so a blank string (e.g. a cleared text field) would otherwise pass.
+ */
+function withRequiredEmptyIssues(
+  issues: ValidationIssue[],
+  required: string[],
+  value: unknown,
+): ValidationIssue[] {
+  if (!isObject(value)) return issues;
+  const result = [...issues];
+  for (const name of required) {
+    if (!isEmptyRequiredValue(value[name])) continue;
+    if (result.some((issue) => issue.path === name)) continue;
+    result.push({
+      field: name,
+      keyword: "required",
+      message: "This field is required.",
+      path: name,
+    });
+  }
+  return result;
+}
+
+function isEmptyRequiredValue(value: unknown): boolean {
+  if (typeof value === "string") return value.trim() === "";
+  return Array.isArray(value) && value.length === 0;
 }
 
 function schemaValidationIssue(error: unknown): ValidationIssue {

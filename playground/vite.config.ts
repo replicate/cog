@@ -19,10 +19,12 @@ export default defineConfig({
   build: {
     outDir: path.resolve(root, "../pkg/cli/playground"),
     emptyOutDir: true,
+    // License notices for deps bundled into the embedded playground UI.
+    // Redistributed with the cog binary; not loaded at runtime.
     license: { fileName: "THIRD_PARTY_LICENSES.md" },
   },
   worker: {
-    /** Creates a fresh license collector for each worker build. */
+    /** Collects licenses for worker-only deps (e.g. ajv) for THIRD_PARTY_LICENSES.md. */
     plugins: () => [workerLicensePlugin()],
     rollupOptions: {
       output: { entryFileNames: "assets/validation.worker-[hash].js" },

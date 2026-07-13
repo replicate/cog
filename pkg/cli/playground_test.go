@@ -511,3 +511,68 @@ func TestPlaygroundWebhookRejectsMissingSubscriber(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
+
+func TestPlaygroundProxyStripsAbsoluteRedirectLocation(t *testing.T) {
+	ts := newTestPlayground(t)
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", "http://169.254.169.254/latest/meta-data/")
+		w.WriteHeader(http.StatusFound)
+	}))
+	t.Cleanup(stub.Close)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/proxy/health-check", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Cog-Target", stub.URL)
+	// Do not follow redirects; we want the proxy response as the browser would with redirect:manual.
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusFound, resp.StatusCode)
+	assert.Empty(t, resp.Header.Get("Location"))
+}
+
+func TestEventHubPublishDoesNotHoldLockAcrossDelivery(t *testing.T) {
+	hub := newEventHub()
+	ch := hub.subscribe("token")
+	// Fill the buffered channel so publish must wait outside the hub lock.
+	for range 4 {
+		ch <- []byte("fill")
+	}
+
+	done := make(chan bool, 1)
+	go func() {
+		done <- hub.publish("token", []byte("msg"), 200*time.Millisecond)
+	}()
+
+	// subscribe must still complete promptly while publish waits on a full buffer.
+	ready := make(chan struct{})
+	go func() {
+		_ = hub.subscribe("token-other")
+		close(ready)
+	}()
+	select {
+	case <-ready:
+	case <-time.After(100 * time.Millisecond):
+		require.FailNow(t, "subscribe blocked while publish waited on a full subscriber")
+	}
+
+	for range 4 {
+		<-ch
+	}
+	select {
+	case ok := <-done:
+		require.True(t, ok)
+		select {
+		case msg := <-ch:
+			assert.Equal(t, []byte("msg"), msg)
+		case <-time.After(100 * time.Millisecond):
+			require.FailNow(t, "published message not delivered")
+		}
+	case <-time.After(500 * time.Millisecond):
+		require.FailNow(t, "publish did not complete")
+	}
+}

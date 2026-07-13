@@ -6,7 +6,7 @@ export type PredictionEnvelope = {
   output?: unknown;
   error?: string;
   logs?: string;
-  metrics?: Record<string, number>;
+  metrics?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -24,6 +24,7 @@ export type TraceEvent = {
   kind: TraceEventKind;
   label: string;
   data?: unknown;
+  count?: number;
 };
 
 export type RequestTrace = {

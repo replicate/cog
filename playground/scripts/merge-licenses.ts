@@ -1,5 +1,9 @@
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 
+// THIRD_PARTY_LICENSES.md is not used at runtime. Playground JS (React, editor
+// deps, ajv in the validation worker, etc.) is bundled into assets embedded in
+// the cog binary and redistributed to users; many OSS licenses require shipping
+// those notices with the software. This file is that compliance record.
 const outputDirectory = new URL("../../pkg/cli/playground/", import.meta.url);
 const mainPath = new URL("THIRD_PARTY_LICENSES.md", outputDirectory);
 const workerPath = new URL("WORKER_LICENSES.md", outputDirectory);

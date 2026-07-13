@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { useEffect, useRef } from "react";
+
+import { useFollowTail } from "@/features/predictions/hooks/useFollowTail";
 
 /** Concatenates text chunks, recognizes media/URL strings, and follows live output until scrolled. */
 export function PredictionOutput({
@@ -7,7 +8,7 @@ export function PredictionOutput({
   running,
   value,
 }: {
-  metrics?: Record<string, number>;
+  metrics?: Record<string, unknown>;
   running: boolean;
   value: unknown;
 }) {
@@ -20,37 +21,23 @@ export function PredictionOutput({
 }
 
 function LiveOutput({ children, running }: { children: ReactNode; running: boolean }) {
-  const viewport = useRef<HTMLDivElement>(null);
-  const followTail = useRef(true);
-  useEffect(() => {
-    if (!running) return;
-    followTail.current = true;
-    const node = viewport.current;
-    if (node) node.scrollTop = node.scrollHeight;
-  }, [running]);
-  useEffect(() => {
-    const node = viewport.current;
-    if (node && followTail.current) node.scrollTop = node.scrollHeight;
-  }, [children, running]);
+  const { ref, onScroll } = useFollowTail<HTMLDivElement>(running, children);
   return (
     <section
-      ref={viewport}
+      ref={ref}
       className="live-output"
       aria-label="Prediction output"
       aria-busy={running}
       // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- scrollable output must be keyboard reachable
       tabIndex={0}
-      onScroll={(event) => {
-        const node = event.currentTarget;
-        followTail.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
-      }}
+      onScroll={onScroll}
     >
       {children}
     </section>
   );
 }
 
-function Metrics({ metrics }: { metrics: Record<string, number> }) {
+function Metrics({ metrics }: { metrics: Record<string, unknown> }) {
   return (
     <table className="metrics-table">
       <caption className="sr-only">Prediction metrics</caption>
@@ -58,12 +45,21 @@ function Metrics({ metrics }: { metrics: Record<string, number> }) {
         {Object.entries(metrics).map(([name, value]) => (
           <tr key={name}>
             <th scope="row">{name}</th>
-            <td>{String(value)}</td>
+            <td>{formatMetricValue(value)}</td>
           </tr>
         ))}
       </tbody>
     </table>
   );
+}
+
+function formatMetricValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function RenderedOutput({ value, running }: { value: unknown; running: boolean }) {

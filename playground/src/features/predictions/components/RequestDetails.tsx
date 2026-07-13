@@ -11,9 +11,6 @@ export function RequestDetails({
   trace: RequestTrace;
   envelope?: PredictionEnvelope;
 }) {
-  const duration = trace.finishedAt
-    ? trace.finishedAt - trace.startedAt
-    : trace.events.at(-1)?.elapsedMs;
   const predictTime =
     typeof envelope?.metrics?.predict_time === "number"
       ? envelope.metrics.predict_time * 1000
@@ -34,10 +31,6 @@ export function RequestDetails({
         <div>
           <dt>Status</dt>
           <dd>{trace.responseStatus ?? "Waiting"}</dd>
-        </div>
-        <div>
-          <dt>Total duration</dt>
-          <dd>{duration === undefined ? "Waiting" : formatDuration(duration)}</dd>
         </div>
         {predictTime !== undefined && (
           <div>

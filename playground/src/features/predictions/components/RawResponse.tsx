@@ -6,10 +6,14 @@ export function RawResponse({
   envelope,
   live,
   rawEvents,
+  running,
+  active,
 }: {
   envelope?: PredictionEnvelope;
   live: boolean;
   rawEvents: string[];
+  running: boolean;
+  active: boolean;
 }) {
   return (
     <LazyJsonEditor
@@ -17,7 +21,8 @@ export function RawResponse({
       label="Raw prediction response"
       className="response-editor"
       readOnly
-      followTail={live}
+      followTail={live && running}
+      active={active}
       autoHeight
     />
   );

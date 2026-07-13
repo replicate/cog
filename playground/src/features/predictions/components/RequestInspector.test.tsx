@@ -40,7 +40,7 @@ const trace: RequestTrace = {
 
 describe("RequestInspector", () => {
   it("compacts streaming events and reveals their payload", () => {
-    render(<RequestInspector view="timeline" trace={trace} />);
+    render(<RequestInspector view="timeline" trace={trace} running={false} />);
 
     expect(screen.getByText("output × 2")).toBeVisible();
     toggleDetails(screen.getByText("Payload"));
@@ -58,11 +58,12 @@ describe("RequestInspector", () => {
         view="request"
         trace={trace}
         envelope={{ metrics: { predict_time: 0.25 } }}
+        running={false}
       />,
     );
 
-    expect(screen.getByText("1.25 s")).toBeVisible();
     expect(screen.getByText("250 ms")).toBeVisible();
+    expect(screen.queryByText("Total duration")).toBeNull();
     expect(screen.getByLabelText("Request body")).toHaveTextContent('"prompt": "hello"');
     expect(screen.getByLabelText("Response body")).toHaveTextContent('"output": "done"');
     expect(screen.getByLabelText("Request body")).toHaveAttribute("data-highlighted", "true");
@@ -71,9 +72,9 @@ describe("RequestInspector", () => {
   });
 
   it("shows useful empty states", () => {
-    const { rerender } = render(<RequestInspector view="timeline" />);
+    const { rerender } = render(<RequestInspector view="timeline" running={false} />);
     expect(screen.getByText(/event timeline/)).toBeVisible();
-    rerender(<RequestInspector view="logs" trace={{ ...trace, events: [] }} />);
+    rerender(<RequestInspector view="logs" trace={{ ...trace, events: [] }} running={false} />);
     expect(screen.getByText("No prediction logs were received.")).toBeVisible();
   });
 });

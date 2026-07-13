@@ -124,6 +124,42 @@ describe("usePrediction", () => {
     );
   });
 
+  it("accumulates increment and append stream metrics", async () => {
+    const api = fakeApi({
+      stream: vi.fn(() =>
+        eventStream([
+          { type: "start", data: { id: "p1", status: "processing" }, raw: "event: start" },
+          {
+            type: "metric",
+            data: { name: "tokens", value: 1, mode: "increment" },
+            raw: "event: metric",
+          },
+          {
+            type: "metric",
+            data: { name: "tokens", value: 3, mode: "increment" },
+            raw: "event: metric",
+          },
+          {
+            type: "metric",
+            data: { name: "steps", value: "a", mode: "append" },
+            raw: "event: metric",
+          },
+          {
+            type: "metric",
+            data: { name: "steps", value: "b", mode: "append" },
+            raw: "event: metric",
+          },
+          { type: "completed", data: { status: "succeeded" }, raw: "event: completed" },
+        ]),
+      ),
+    });
+    const { result } = renderHook(() => usePrediction(api));
+
+    await act(() => result.current.run({ ...options, mode: "stream" }));
+
+    expect(result.current.envelope?.metrics).toEqual({ tokens: 4, steps: ["a", "b"] });
+  });
+
   it("bounds the number of retained stream chunks", async () => {
     const events = Array.from({ length: 4100 }, () => ({
       type: "output",
@@ -403,6 +439,64 @@ describe("usePrediction", () => {
       running: false,
       error: "Webhook event connection was interrupted",
       envelope: { status: "failed" },
+    });
+  });
+
+  it("fails and unblocks after an invalid webhook payload", async () => {
+    const sources: MockEventSource[] = [];
+    vi.stubGlobal(
+      "EventSource",
+      class extends MockEventSource {
+        constructor(url: string) {
+          super(url);
+          sources.push(this);
+          queueMicrotask(() => this.onopen?.(new Event("open")));
+        }
+      },
+    );
+    const api = fakeApi({
+      submit: vi.fn(async () => ({ id: "p1", status: "starting" })),
+    });
+    const { result } = renderHook(() => usePrediction(api));
+
+    await act(async () => {
+      void result.current.run({ ...options, mode: "async" });
+      await Promise.resolve();
+    });
+    await act(async () =>
+      sources[0].onmessage?.(new MessageEvent("message", { data: "not-json" })),
+    );
+
+    expect(result.current).toMatchObject({
+      running: false,
+      error: "Received an invalid webhook payload",
+      envelope: { status: "failed" },
+    });
+  });
+
+  it("aborts an active run when reset", async () => {
+    let requestSignal: AbortSignal | undefined;
+    const api = fakeApi({
+      stream: vi.fn((request: { signal: AbortSignal }) => {
+        requestSignal = request.signal;
+        return pendingStream(() => undefined);
+      }),
+    });
+    const { result } = renderHook(() => usePrediction(api));
+
+    await act(async () => {
+      void result.current.run({ ...options, mode: "stream" });
+      await Promise.resolve();
+    });
+    expect(result.current.running).toBe(true);
+
+    act(() => result.current.reset());
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(result.current).toMatchObject({
+      running: false,
+      envelope: undefined,
+      error: "",
     });
   });
 

@@ -19,6 +19,91 @@ describe("JsonEditor", () => {
     await waitFor(() => expect(editor).toHaveTextContent('"answer":43'));
   });
 
+  it("follows the tail until the user scrolls away", async () => {
+    const { container, rerender } = render(
+      <JsonEditor value="first" label="Live response" readOnly followTail />,
+    );
+    const scroller = container.querySelector<HTMLElement>(".cm-scroller");
+    if (!scroller) throw new Error("CodeMirror scroller was not rendered");
+
+    let scrollHeight = 1_000;
+    Object.defineProperties(scroller, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      scrollTop: { configurable: true, value: 0, writable: true },
+    });
+
+    rerender(<JsonEditor value="first\nsecond" label="Live response" readOnly followTail />);
+    await waitFor(() => expect(scroller.scrollTop).toBe(scrollHeight));
+    await nextAnimationFrame();
+
+    scroller.scrollTop = 300;
+    fireEvent.scroll(scroller);
+    scrollHeight = 1_200;
+    rerender(<JsonEditor value="first\nsecond\nthird" label="Live response" readOnly followTail />);
+    await nextAnimationFrame();
+
+    expect(scroller.scrollTop).toBe(300);
+
+    scrollHeight = 1_300;
+    rerender(
+      <JsonEditor
+        value="first\nsecond\nthird\nfourth"
+        label="Live response"
+        readOnly
+        followTail
+        active={false}
+      />,
+    );
+    rerender(
+      <JsonEditor value="first\nsecond\nthird\nfourth" label="Live response" readOnly followTail />,
+    );
+    await nextAnimationFrame();
+
+    expect(scroller.scrollTop).toBe(300);
+
+    rerender(
+      <JsonEditor
+        value="first\nsecond\nthird\nfourth"
+        label="Live response"
+        readOnly
+        followTail={false}
+      />,
+    );
+    scrollHeight = 1_400;
+    rerender(
+      <JsonEditor
+        value="first\nsecond\nthird\nfourth\nfifth"
+        label="Live response"
+        readOnly
+        followTail
+      />,
+    );
+
+    await waitFor(() => expect(scroller.scrollTop).toBe(scrollHeight));
+  });
+
+  it("does not override a user scroll while a tail measurement is queued", async () => {
+    const { container, rerender } = render(
+      <JsonEditor value="first" label="Queued response" readOnly followTail={false} />,
+    );
+    const scroller = container.querySelector<HTMLElement>(".cm-scroller");
+    if (!scroller) throw new Error("CodeMirror scroller was not rendered");
+    Object.defineProperties(scroller, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, value: 1_000 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+    });
+
+    rerender(<JsonEditor value="first\nsecond" label="Queued response" readOnly followTail />);
+    fireEvent.wheel(scroller, { deltaY: -100 });
+    scroller.scrollTop = 300;
+    fireEvent.scroll(scroller);
+    await nextAnimationFrame();
+
+    expect(scroller.scrollTop).toBe(300);
+  });
+
   it("copies the complete document", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
@@ -65,3 +150,7 @@ describe("JsonEditor", () => {
     expect(editor).toHaveTextContent('"answer":43');
   });
 });
+
+function nextAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+}

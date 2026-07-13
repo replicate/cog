@@ -3,11 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RunMode, WebhookEvent } from "@/features/predictions/types";
 import {
   appendBoundedText,
+  applyMetric,
   boundedTerminalEnvelope,
   boundedTextItems,
   eventSourceReady,
   MAX_LOG_TEXT,
-  MAX_METRICS,
   MAX_RAW_EVENT_TEXT,
   predictionErrorMessage as errorMessage,
   TERMINAL,
@@ -172,11 +172,7 @@ export function usePrediction(api: PredictionApi) {
         const name = String(event.data.name);
         setEnvelope((current) => ({
           ...current,
-          metrics:
-            Object.hasOwn(current?.metrics ?? {}, name) ||
-            Object.keys(current?.metrics ?? {}).length < MAX_METRICS
-              ? { ...current?.metrics, [name]: Number(event.data.value) }
-              : current?.metrics,
+          metrics: applyMetric(current?.metrics, name, event.data.value, event.data.mode),
         }));
       } else if (event.type === "log") {
         setEnvelope((current) => ({
@@ -242,6 +238,9 @@ export function usePrediction(api: PredictionApi) {
       } catch {
         recordTraceEvent(token, "webhook", "Webhook delivery", event.data);
         setError("Received an invalid webhook payload");
+        setEnvelope((current) => ({ ...current, status: "failed" }));
+        activeRun.current.abort.abort();
+        finish(token);
       }
     };
     events.onerror = () => {
@@ -294,6 +293,13 @@ export function usePrediction(api: PredictionApi) {
   };
 
   const reset = useCallback(() => {
+    const current = activeRun.current;
+    if (current) {
+      current.abort.abort();
+      current.events?.close();
+      activeRun.current = undefined;
+      setRunning(false);
+    }
     setEnvelope(undefined);
     resetOutput();
     setError("");

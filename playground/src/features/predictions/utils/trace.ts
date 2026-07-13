@@ -7,10 +7,34 @@ export const MAX_TRACE_TOTAL_TEXT = 1024 * 1024;
 const MAX_TRACE_COLLECTION_ITEMS = 100;
 const MAX_TRACE_DEPTH = 10;
 const OMITTED_PAYLOAD = "[payload omitted: trace budget exceeded]";
+const OMITTED_OUTPUT = "[earlier output omitted]\n\n";
 
 /** Recursively bounds trace strings, data URIs, collections, depth, and circular references. */
 export function boundedTraceData(data: unknown): unknown {
   return boundValue(data, new WeakSet<object>(), 0);
+}
+
+/** Compacts adjacent streamed output before enforcing the trace's event-count limit. */
+export function appendTraceEvent(events: TraceEvent[], event: TraceEvent): TraceEvent[] {
+  const previous = events.at(-1);
+  if (
+    previous?.kind === "sse" &&
+    previous.label === "output" &&
+    event.kind === "sse" &&
+    event.label === "output"
+  ) {
+    const data = appendTraceOutput(previous.data, event.data);
+    return [
+      ...events.slice(0, -1),
+      {
+        ...previous,
+        elapsedMs: event.elapsedMs,
+        data,
+        count: (previous.count ?? 1) + (event.count ?? 1),
+      },
+    ];
+  }
+  return [...events, event].slice(-MAX_TRACE_EVENTS);
 }
 
 /** Enforces one aggregate payload budget across request, response, and event data. */
@@ -97,4 +121,23 @@ function serialize(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function formatTraceValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function appendTraceOutput(previous: unknown, next: unknown): string {
+  const formattedPrevious = formatTraceValue(previous);
+  const previousText = formattedPrevious.startsWith(OMITTED_OUTPUT)
+    ? formattedPrevious.slice(OMITTED_OUTPUT.length)
+    : formattedPrevious;
+  const combined = `${previousText}\n\n${formatTraceValue(next)}`;
+  if (combined.length <= MAX_TRACE_PAYLOAD_TEXT) return combined;
+  return OMITTED_OUTPUT + combined.slice(-(MAX_TRACE_PAYLOAD_TEXT - OMITTED_OUTPUT.length));
 }

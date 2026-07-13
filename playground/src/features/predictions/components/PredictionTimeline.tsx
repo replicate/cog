@@ -1,13 +1,29 @@
 import { useState } from "react";
 
 import { LazyJsonEditor } from "@/components/editor/LazyJsonEditor";
+import { useFollowTail } from "@/features/predictions/hooks/useFollowTail";
 import type { RequestTrace, TraceEvent } from "@/types/prediction";
 
 /** Compacts adjacent SSE output events while preserving their payloads in an expandable viewer. */
-export function PredictionTimeline({ trace }: { trace: RequestTrace }) {
+export function PredictionTimeline({
+  trace,
+  running,
+  active,
+}: {
+  trace: RequestTrace;
+  running: boolean;
+  active: boolean;
+}) {
   const events = compactEvents(trace.events);
+  const { ref, onScroll } = useFollowTail<HTMLOListElement>(running, trace.events.at(-1), active);
   return (
-    <ol className="trace-timeline">
+    <ol
+      ref={ref}
+      className="trace-timeline"
+      // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- scrollable timeline must be keyboard reachable
+      tabIndex={0}
+      onScroll={onScroll}
+    >
       {events.map((event) => (
         <li key={event.id} className={`trace-${event.kind}`}>
           <time>{formatDuration(event.elapsedMs)}</time>
@@ -55,12 +71,12 @@ function compactEvents(events: TraceEvent[]): TimelineEvent[] {
       event.label === "output" &&
       previous.label === "output"
     ) {
-      previous.count += 1;
+      previous.count += event.count ?? 1;
       previous.elapsedMs = event.elapsedMs;
       previous.data = `${formatValue(previous.data)}\n\n${formatValue(event.data)}`;
       continue;
     }
-    compacted.push({ ...event, count: 1 });
+    compacted.push({ ...event, count: event.count ?? 1 });
   }
   return compacted;
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  appendTraceEvent,
   boundedTraceData,
   enforceTraceBudget,
   MAX_TRACE_PAYLOAD_TEXT,
@@ -56,5 +57,36 @@ describe("prediction trace bounding", () => {
     expect(tracePayloadLength(bounded)).toBeLessThanOrEqual(MAX_TRACE_TOTAL_TEXT);
     expect(bounded.events.at(-1)?.data).toBe(events.at(-1)?.data);
     expect(bounded.events[0].data).toContain("trace budget exceeded");
+  });
+
+  it("compacts adjacent output events before reaching the event limit", () => {
+    const events = Array.from({ length: 250 }, (_, index) => ({
+      id: String(index),
+      elapsedMs: index,
+      kind: "sse" as const,
+      label: "output",
+      data: { chunk: `token-${index}` },
+    })).reduce(appendTraceEvent, []);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].count).toBe(250);
+    expect(events[0].data).toContain("token-0");
+    expect(events[0].data).toContain("token-249");
+  });
+
+  it("retains the newest output when compacted payloads exceed their limit", () => {
+    const events = Array.from({ length: 100 }, (_, index) => ({
+      id: String(index),
+      elapsedMs: index,
+      kind: "sse" as const,
+      label: "output",
+      data: `${index}:${"x".repeat(1024)}`,
+    })).reduce(appendTraceEvent, []);
+    const data = String(events[0].data);
+
+    expect(data.length).toBeLessThanOrEqual(MAX_TRACE_PAYLOAD_TEXT);
+    expect(data).toContain("earlier output omitted");
+    expect(data).not.toMatch(/(?:^|\n\n)0:/);
+    expect(data).toMatch(/(?:^|\n\n)99:/);
   });
 });

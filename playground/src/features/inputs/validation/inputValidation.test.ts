@@ -70,6 +70,27 @@ describe("createInputValidator", () => {
     );
   });
 
+  it("flags required fields that are present but empty", () => {
+    const validate = createInputValidator(document, {
+      type: "object",
+      required: ["prompt", "tags"],
+      properties: {
+        prompt: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+      },
+    });
+
+    expect(validate({ prompt: "hi", tags: ["a"] })).toEqual([]);
+    expect(validate({ prompt: "   ", tags: [] })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "prompt", keyword: "required" }),
+        expect.objectContaining({ path: "tags", keyword: "required" }),
+      ]),
+    );
+    // An absent required field is reported once, not duplicated.
+    expect(validate({ tags: ["a"] }).filter((issue) => issue.path === "prompt")).toHaveLength(1);
+  });
+
   it("keeps additional properties when the OpenAPI schema allows them", () => {
     const validate = createInputValidator(document, {
       type: "object",

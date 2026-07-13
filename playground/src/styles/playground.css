@@ -571,8 +571,10 @@ input[type="file"]::file-selector-button {
   --trace-color: var(--accent);
 
   position: relative;
+  max-height: 60vh;
   margin: 0;
-  padding: 2px 0 2px 92px;
+  padding: 2px 8px 2px 92px;
+  overflow: auto;
   list-style: none;
 }
 .trace-timeline::before {

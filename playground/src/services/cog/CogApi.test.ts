@@ -29,6 +29,7 @@ describe("CogApi", () => {
     const [url, request] = fetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/proxy/predictions/custom%2Fid");
     expect(request.method).toBe("PUT");
+    expect(request.redirect).toBe("manual");
     expect(new Headers(request.headers).get("X-Cog-Target")).toBe("http://localhost:5000");
     expect(new Headers(request.headers).get("Prefer")).toBe("respond-async");
     expect(JSON.parse(String(request.body))).toEqual({
@@ -36,6 +37,22 @@ describe("CogApi", () => {
       webhook: "http://callback/webhook/token",
       webhook_events_filter: ["start", "completed"],
     });
+  });
+
+  it("rejects proxy redirects instead of following them", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(null, {
+          status: 302,
+          headers: { Location: "http://169.254.169.254/" },
+        }),
+      ),
+    );
+    const api = new CogApi();
+    api.setTarget("http://localhost:5000");
+
+    await expect(api.health()).rejects.toThrow(/unexpected redirect/);
   });
 
   it.each([

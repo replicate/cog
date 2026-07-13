@@ -12,6 +12,7 @@ export type JsonEditorProps = {
   invalid?: boolean;
   describedBy?: string;
   followTail?: boolean;
+  active?: boolean;
   className?: string;
   label: string;
   autoHeight?: boolean;
@@ -29,6 +30,7 @@ export function JsonEditor({
   invalid = false,
   describedBy,
   followTail = false,
+  active = true,
   className = "",
   label,
   autoHeight = false,
@@ -44,8 +46,15 @@ export function JsonEditor({
   const onChangeRef = useRef(onChange);
   const updatingValue = useRef(false);
   const followRef = useRef(true);
+  const followEnabled = useRef(followTail);
+  const scrollingToTail = useRef(false);
+  const scrollRequest = useRef(0);
+  const activeRef = useRef(active);
+  const followTailRef = useRef(followTail);
   const behavior = useRef(new Compartment());
   onChangeRef.current = onChange;
+  activeRef.current = active;
+  followTailRef.current = followTail;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -74,12 +83,35 @@ export function JsonEditor({
     });
     editorRef.current = editor;
     const updateFollow = () => {
+      if (scrollingToTail.current) return;
       const { clientHeight, scrollHeight, scrollTop } = editor.scrollDOM;
       followRef.current = scrollHeight - scrollTop - clientHeight < 48;
     };
+    const stopFollowing = () => {
+      followRef.current = false;
+      scrollingToTail.current = false;
+      scrollRequest.current += 1;
+    };
+    const stopFollowingFromWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) stopFollowing();
+    };
+    const stopFollowingFromPointer = (event: PointerEvent) => {
+      if (event.target === editor.scrollDOM) stopFollowing();
+    };
+    const stopFollowingFromKey = (event: KeyboardEvent) => {
+      if (["ArrowUp", "Home", "PageUp"].includes(event.key)) stopFollowing();
+    };
     editor.scrollDOM.addEventListener("scroll", updateFollow, { passive: true });
+    editor.scrollDOM.addEventListener("wheel", stopFollowingFromWheel, { passive: true });
+    editor.scrollDOM.addEventListener("touchstart", stopFollowing, { passive: true });
+    editor.scrollDOM.addEventListener("pointerdown", stopFollowingFromPointer, { passive: true });
+    editor.scrollDOM.addEventListener("keydown", stopFollowingFromKey);
     return () => {
       editor.scrollDOM.removeEventListener("scroll", updateFollow);
+      editor.scrollDOM.removeEventListener("wheel", stopFollowingFromWheel);
+      editor.scrollDOM.removeEventListener("touchstart", stopFollowing);
+      editor.scrollDOM.removeEventListener("pointerdown", stopFollowingFromPointer);
+      editor.scrollDOM.removeEventListener("keydown", stopFollowingFromKey);
       editor.destroy();
       editorRef.current = undefined;
     };
@@ -97,22 +129,45 @@ export function JsonEditor({
     const editor = editorRef.current;
     if (!editor) return;
     const current = editor.state.doc.toString();
-    const scroll = followTail && followRef.current;
+    if (followTail && !followEnabled.current) followRef.current = true;
+    followEnabled.current = followTail;
+    const scroll = followTail && active && followRef.current;
     if (current !== value) {
       updatingValue.current = true;
       editor.dispatch({
-        changes: { from: 0, to: current.length, insert: value },
+        changes: changedRange(current, value),
         annotations: Transaction.addToHistory.of(false),
         selection: readOnly
           ? undefined
           : { anchor: Math.min(editor.state.selection.main.head, value.length) },
-        effects: scroll ? EditorView.scrollIntoView(value.length, { y: "end" }) : undefined,
       });
       updatingValue.current = false;
-    } else if (scroll) {
-      editor.dispatch({ effects: EditorView.scrollIntoView(value.length, { y: "end" }) });
     }
-  }, [followTail, readOnly, value]);
+    if (!scroll) return;
+
+    const request = ++scrollRequest.current;
+    scrollingToTail.current = true;
+    editor.requestMeasure({
+      read(view) {
+        return view.scrollDOM.scrollHeight;
+      },
+      write(scrollHeight, view) {
+        if (
+          scrollRequest.current !== request ||
+          !activeRef.current ||
+          !followTailRef.current ||
+          !followRef.current
+        ) {
+          if (scrollRequest.current === request) scrollingToTail.current = false;
+          return;
+        }
+        view.scrollDOM.scrollTop = scrollHeight;
+        window.requestAnimationFrame(() => {
+          if (scrollRequest.current === request) scrollingToTail.current = false;
+        });
+      },
+    });
+  }, [active, followTail, readOnly, value]);
 
   const copy = async () => {
     try {
@@ -146,4 +201,17 @@ export function JsonEditor({
 
 function editorHeight(value: string): number {
   return Math.min(320, Math.max(80, value.split("\n").length * 18 + 18));
+}
+
+function changedRange(current: string, value: string) {
+  let from = 0;
+  while (from < current.length && from < value.length && current[from] === value[from]) from += 1;
+
+  let currentTo = current.length;
+  let valueTo = value.length;
+  while (currentTo > from && valueTo > from && current[currentTo - 1] === value[valueTo - 1]) {
+    currentTo -= 1;
+    valueTo -= 1;
+  }
+  return { from, to: currentTo, insert: value.slice(from, valueTo) };
 }

@@ -53,11 +53,10 @@ export class CogApi {
   async submit(options: SubmitOptions): Promise<PredictionEnvelope> {
     const headers = this.#headers({ "Content-Type": "application/json" });
     if (options.async) headers.set("Prefer", "respond-async");
-    const response = await fetch(this.#url(options.endpoint, options.id), {
+    const response = await this.#proxyFetch(this.#url(options.endpoint, options.id), {
       method: options.id ? "PUT" : "POST",
       headers,
       body: JSON.stringify(this.#body(options.input, options.webhook, options.webhookEvents)),
-      credentials: "omit",
       signal: options.signal,
     });
     options.onResponse?.(response);
@@ -66,11 +65,10 @@ export class CogApi {
 
   /** Requests SSE and exposes each frame only after bounded incremental parsing. */
   async *stream(options: StreamOptions): AsyncGenerator<StreamEvent> {
-    const response = await fetch(this.#url(options.endpoint, options.id), {
+    const response = await this.#proxyFetch(this.#url(options.endpoint, options.id), {
       method: options.id ? "PUT" : "POST",
       headers: this.#headers({ "Content-Type": "application/json", Accept: "text/event-stream" }),
       body: JSON.stringify(this.#body(options.input)),
-      credentials: "omit",
       signal: options.signal,
     });
     options.onResponse?.(response);
@@ -79,12 +77,14 @@ export class CogApi {
 
   /** URL-encodes the run ID before posting to its cancellation endpoint. */
   async cancel(endpoint: string, id: string, signal?: AbortSignal): Promise<void> {
-    const response = await fetch(`${PROXY_PREFIX}${endpoint}/${encodeURIComponent(id)}/cancel`, {
-      method: "POST",
-      headers: this.#headers(),
-      credentials: "omit",
-      signal,
-    });
+    const response = await this.#proxyFetch(
+      `${PROXY_PREFIX}${endpoint}/${encodeURIComponent(id)}/cancel`,
+      {
+        method: "POST",
+        headers: this.#headers(),
+        signal,
+      },
+    );
     if (!response.ok) throw await responseError(response);
   }
 
@@ -107,12 +107,26 @@ export class CogApi {
   }
 
   async #jsonRequest<T>(endpoint: string, signal?: AbortSignal): Promise<T> {
-    const response = await fetch(PROXY_PREFIX + endpoint, {
+    const response = await this.#proxyFetch(PROXY_PREFIX + endpoint, {
       headers: this.#headers(),
-      credentials: "omit",
       signal,
     });
     if (!response.ok) throw await responseError(response);
     return parseJSONResponse<T>(response);
+  }
+
+  /** Never follows redirects so a hostile target cannot pivot the browser off-origin. */
+  async #proxyFetch(url: string, init: RequestInit): Promise<Response> {
+    const response = await fetch(url, {
+      ...init,
+      credentials: "omit",
+      redirect: "manual",
+    });
+    if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+      throw new Error(
+        `Target API returned an unexpected redirect (${response.status || "opaque"})`,
+      );
+    }
+    return response;
   }
 }

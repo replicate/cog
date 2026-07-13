@@ -45,6 +45,38 @@ export function boundedTerminalEnvelope(next: PredictionEnvelope): PredictionEnv
   };
 }
 
+/** Applies a streamed metric event using replace, increment, or append semantics. */
+export function applyMetric(
+  metrics: Record<string, unknown> | undefined,
+  name: string,
+  value: unknown,
+  mode: unknown,
+): Record<string, unknown> | undefined {
+  const current = metrics ?? {};
+  if (!Object.hasOwn(current, name) && Object.keys(current).length >= MAX_METRICS) {
+    return metrics;
+  }
+  const next = { ...current };
+  const metricMode = typeof mode === "string" ? mode : "replace";
+  if (metricMode === "increment") {
+    const previous = Number(next[name] ?? 0);
+    const delta = Number(value);
+    if (!Number.isFinite(previous) || !Number.isFinite(delta)) return metrics ?? current;
+    next[name] = previous + delta;
+    return next;
+  }
+  if (metricMode === "append") {
+    const existing = next[name];
+    if (Array.isArray(existing)) next[name] = [...existing, value];
+    else if (existing === undefined) next[name] = [value];
+    else next[name] = [existing, value];
+    return next;
+  }
+  if (value === null) delete next[name];
+  else next[name] = value;
+  return next;
+}
+
 /** Estimates an arbitrary value's serialized character length without throwing. */
 export function valueLength(value: unknown): number {
   if (typeof value === "string") return value.length;
