@@ -23,7 +23,7 @@ use crate::prediction::SharedPredictionStreamEvent;
 use crate::predictor::PredictionError;
 use crate::service::{
     CreatePredictionError, HealthSnapshot, PredictionService, PredictionStreamSubscription,
-    SubscribePredictionStreamError,
+    SubscribePredictionStreamError, validate_prediction_id,
 };
 use crate::version::VersionInfo;
 use crate::webhook::{TraceContext, WebhookConfig, WebhookEventType, WebhookSender};
@@ -288,6 +288,20 @@ fn extract_trace_context(headers: &HeaderMap) -> TraceContext {
     }
 }
 
+fn invalid_prediction_id_response(msg: &str) -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        Json(serde_json::json!({
+            "detail": [{
+                "loc": ["body", "id"],
+                "msg": msg,
+                "type": "value_error"
+            }]
+        })),
+    )
+        .into_response()
+}
+
 async fn create_prediction(
     State(service): State<Arc<PredictionService>>,
     headers: HeaderMap,
@@ -300,7 +314,15 @@ async fn create_prediction(
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
-    let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
+    let prediction_id = match request.id {
+        Some(id) => {
+            if let Err(msg) = validate_prediction_id(&id) {
+                return invalid_prediction_id_response(msg);
+            }
+            id
+        }
+        None => generate_prediction_id(),
+    };
     let response_mode = prediction_response_mode(&headers);
     let trace_context = extract_trace_context(&headers);
     create_prediction_with_id(
@@ -323,6 +345,10 @@ async fn create_prediction_idempotent(
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
 ) -> Response {
+    if let Err(msg) = validate_prediction_id(&prediction_id) {
+        return invalid_prediction_id_response(msg);
+    }
+
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
@@ -331,20 +357,23 @@ async fn create_prediction_idempotent(
         webhook_events_filter: default_webhook_events_filter(),
     });
 
-    if let Some(ref req_id) = request.id
-        && req_id != &prediction_id
-    {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(serde_json::json!({
-                "detail": [{
-                    "loc": ["body", "id"],
-                    "msg": "prediction ID must match the ID supplied in the URL",
-                    "type": "value_error"
-                }]
-            })),
-        )
-            .into_response();
+    if let Some(ref req_id) = request.id {
+        if let Err(msg) = validate_prediction_id(req_id) {
+            return invalid_prediction_id_response(msg);
+        }
+        if req_id != &prediction_id {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(serde_json::json!({
+                    "detail": [{
+                        "loc": ["body", "id"],
+                        "msg": "prediction ID must match the ID supplied in the URL",
+                        "type": "value_error"
+                    }]
+                })),
+            )
+                .into_response();
+        }
     }
 
     let response_mode = prediction_response_mode(&headers);
@@ -487,6 +516,19 @@ async fn create_prediction_with_id(
                 })),
             )
                 .into_response();
+        }
+        Err(CreatePredictionError::DuplicateId) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "error": "A prediction with this ID already exists",
+                    "status": "failed"
+                })),
+            )
+                .into_response();
+        }
+        Err(CreatePredictionError::InvalidId(msg)) => {
+            return invalid_prediction_id_response(msg);
         }
     };
 
@@ -823,7 +865,15 @@ async fn create_training(
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
-    let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
+    let prediction_id = match request.id {
+        Some(id) => {
+            if let Err(msg) = validate_prediction_id(&id) {
+                return invalid_prediction_id_response(msg);
+            }
+            id
+        }
+        None => generate_prediction_id(),
+    };
     let response_mode = json_response_mode(&headers);
     let trace_context = extract_trace_context(&headers);
     create_prediction_with_id(
@@ -850,6 +900,10 @@ async fn create_training_idempotent(
         return training_streaming_not_supported_response();
     }
 
+    if let Err(msg) = validate_prediction_id(&training_id) {
+        return invalid_prediction_id_response(msg);
+    }
+
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
@@ -858,20 +912,23 @@ async fn create_training_idempotent(
         webhook_events_filter: default_webhook_events_filter(),
     });
 
-    if let Some(ref req_id) = request.id
-        && req_id != &training_id
-    {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(serde_json::json!({
-                "detail": [{
-                    "loc": ["body", "id"],
-                    "msg": "training ID must match the ID supplied in the URL",
-                    "type": "value_error"
-                }]
-            })),
-        )
-            .into_response();
+    if let Some(ref req_id) = request.id {
+        if let Err(msg) = validate_prediction_id(req_id) {
+            return invalid_prediction_id_response(msg);
+        }
+        if req_id != &training_id {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(serde_json::json!({
+                    "detail": [{
+                        "loc": ["body", "id"],
+                        "msg": "training ID must match the ID supplied in the URL",
+                        "type": "value_error"
+                    }]
+                })),
+            )
+                .into_response();
+        }
     }
 
     // Idempotent: return existing state if already submitted
@@ -1576,6 +1633,82 @@ mod tests {
                 .unwrap()
                 .contains("must match")
         );
+    }
+
+    #[tokio::test]
+    async fn prediction_rejects_invalid_id_in_body() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"id":"foo/bar","input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn prediction_rejects_invalid_id_in_url() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/predictions/.hidden")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn prediction_rejects_duplicate_id() {
+        // Use an orchestrator that never completes so the first prediction stays
+        // registered long enough for the duplicate request to be rejected.
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(2).await;
+        let orchestrator = Arc::new(MockOrchestrator::never_complete());
+        service.set_orchestrator(pool, orchestrator).await;
+        service.set_health(Health::Ready).await;
+
+        let app = routes(Arc::clone(&service));
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .header("prefer", "respond-async")
+                    .body(Body::from(r#"{"id":"dup-1","input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+        // Small delay to let the async task register the prediction
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        let app2 = routes(service);
+        let response = app2
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"id":"dup-1","input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
     }
 
     #[tokio::test]

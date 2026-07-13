@@ -189,13 +189,15 @@ fn send_output_item(
         .map_err(|e| PredictionError::Failed(format!("Failed to get io.IOBase: {}", e)))?;
 
     if item.is_instance(&pathlike).unwrap_or(false) {
-        // Path output — file already on disk, send path reference
+        // Path output — file already on disk. send_user_file_output copies
+        // external paths into the managed output directory and deletes them
+        // after upload, so Coglet never deletes arbitrary user-owned files.
         let path_str: String = item
             .call_method0("__fspath__")
             .and_then(|p| p.extract())
             .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
         slot_sender
-            .send_file_output(std::path::PathBuf::from(path_str), None, false)
+            .send_user_file_output(std::path::PathBuf::from(path_str), None)
             .map_err(|e| PredictionError::Failed(format!("Failed to send file output: {}", e)))?;
         return Ok(());
     }
@@ -954,7 +956,7 @@ impl PythonPredictor {
                 .and_then(|p| p.extract())
                 .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
             slot_sender
-                .send_file_output(std::path::PathBuf::from(path_str), None, false)
+                .send_user_file_output(std::path::PathBuf::from(path_str), None)
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to send file output: {}", e))
                 })?;

@@ -51,6 +51,10 @@ pub enum CreatePredictionError {
     NotReady,
     #[error("At capacity (no slots available)")]
     AtCapacity,
+    #[error("A prediction with this ID already exists")]
+    DuplicateId,
+    #[error("Invalid prediction ID: {0}")]
+    InvalidId(&'static str),
 }
 
 const MAX_STREAM_SUBSCRIBERS: usize = STREAM_CHANNEL_CAPACITY;
@@ -518,6 +522,8 @@ impl PredictionService {
         webhook: Option<WebhookSender>,
         cancel_on_stream_drop: bool,
     ) -> Result<(PredictionHandle, UnregisteredPredictionSlot), CreatePredictionError> {
+        validate_prediction_id(&id).map_err(CreatePredictionError::InvalidId)?;
+
         let health = *self.health.read().await;
         if health != Health::Ready {
             return Err(CreatePredictionError::NotReady);
@@ -537,16 +543,21 @@ impl PredictionService {
         let slot = PredictionSlot::new(prediction, permit, idle_rx);
         let prediction_arc = slot.prediction();
 
-        // Register in DashMap — this is the single source of truth
-        self.predictions.insert(
-            id.clone(),
-            PredictionEntry {
-                prediction: prediction_arc,
-                cancel_token: cancel_token.clone(),
-                input,
-                cancel_on_stream_drop,
-            },
-        );
+        // Register atomically in DashMap — duplicate active IDs are rejected to
+        // prevent one prediction from clobbering or deleting another's state.
+        match self.predictions.entry(id.clone()) {
+            dashmap::Entry::Vacant(entry) => {
+                entry.insert(PredictionEntry {
+                    prediction: prediction_arc,
+                    cancel_token: cancel_token.clone(),
+                    input,
+                    cancel_on_stream_drop,
+                });
+            }
+            dashmap::Entry::Occupied(_) => {
+                return Err(CreatePredictionError::DuplicateId);
+            }
+        }
 
         let handle = PredictionHandle { id, cancel_token };
 
@@ -802,7 +813,18 @@ impl PredictionService {
     /// predictions).
     pub fn remove_prediction(&self, id: &str) {
         self.predictions.remove(id);
+
+        // Defense in depth: validate the ID and ensure we only delete a direct
+        // child of the prediction root, even though the HTTP layer also validates.
+        if let Err(e) = validate_prediction_id(id) {
+            tracing::warn!(prediction_id = %id, error = e, "Refusing to remove prediction dir: invalid ID");
+            return;
+        }
         let dir = prediction_dir_for(id);
+        if !is_direct_prediction_child(&dir) {
+            tracing::warn!(prediction_id = %id, dir = %dir.display(), "Refusing to remove prediction dir: not a direct child of prediction root");
+            return;
+        }
         match std::fs::remove_dir_all(&dir) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -821,8 +843,48 @@ impl PredictionService {
     }
 }
 
+const PREDICTION_ROOT: &str = "/tmp/coglet/predictions";
+
+/// Validate a client-supplied prediction ID.
+///
+/// IDs must be non-empty, must not contain path separators or traversal
+/// sequences, and must not start with a dot. This prevents client-controlled
+/// IDs from escaping the prediction root directory.
+pub fn validate_prediction_id(id: &str) -> Result<(), &'static str> {
+    if id.is_empty() {
+        return Err("prediction ID must not be empty");
+    }
+    if id.starts_with('.') {
+        return Err("prediction ID must not start with a dot");
+    }
+    if id.contains('/') || id.contains('\\') {
+        return Err("prediction ID must not contain path separators");
+    }
+    if id.contains("..") {
+        return Err("prediction ID must not contain traversal sequences");
+    }
+    Ok(())
+}
+
 fn prediction_dir_for(id: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from("/tmp/coglet/predictions").join(id)
+    std::path::PathBuf::from(PREDICTION_ROOT).join(id)
+}
+
+/// Verify that `dir` is a direct child of the prediction root.
+///
+/// Used as a defense-in-depth check before recursive deletion. Returns true if
+/// the canonicalized parent equals the canonicalized prediction root.
+fn is_direct_prediction_child(dir: &std::path::Path) -> bool {
+    let Ok(canonical_dir) = std::fs::canonicalize(dir) else {
+        return false;
+    };
+    let Some(parent) = canonical_dir.parent() else {
+        return false;
+    };
+    let Ok(root) = std::fs::canonicalize(PREDICTION_ROOT) else {
+        return false;
+    };
+    parent == root
 }
 
 fn spawn_orchestrator_cancel(orch: Arc<dyn Orchestrator>, id: String) {
@@ -1755,6 +1817,117 @@ mod tests {
         let svc = PredictionService::new_no_pool();
         // Should not panic or error when the prediction dir doesn't exist
         svc.remove_prediction("nonexistent-prediction");
+    }
+
+    #[test]
+    fn remove_prediction_does_not_delete_outside_prediction_root() {
+        let svc = PredictionService::new_no_pool();
+        // Create a directory that looks like it could be a prediction dir but
+        // is outside the prediction root.
+        let outside_dir = std::path::PathBuf::from("/tmp/coglet_outside_test");
+        std::fs::create_dir_all(&outside_dir).unwrap();
+        std::fs::write(outside_dir.join("file.txt"), b"keep").unwrap();
+
+        // Absolute ID that would resolve to /tmp/coglet_outside_test if not defended.
+        svc.remove_prediction("/tmp/coglet_outside_test");
+
+        assert!(
+            outside_dir.exists(),
+            "directory outside prediction root should not be removed"
+        );
+
+        // Cleanup
+        std::fs::remove_dir_all(&outside_dir).unwrap();
+    }
+
+    #[test]
+    fn remove_prediction_does_not_delete_traversal_targets() {
+        let svc = PredictionService::new_no_pool();
+        let victim = std::path::PathBuf::from("/tmp/coglet_victim_test");
+        std::fs::create_dir_all(&victim).unwrap();
+
+        svc.remove_prediction("../coglet_victim_test");
+
+        assert!(victim.exists(), "traversal target should not be removed");
+
+        std::fs::remove_dir_all(&victim).unwrap();
+    }
+
+    #[tokio::test]
+    async fn submit_prediction_rejects_duplicate_id() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(2).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (_handle, _slot) = svc
+            .submit_prediction(
+                "duplicate-id".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        let result = svc
+            .submit_prediction(
+                "duplicate-id".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
+            .await;
+
+        assert!(matches!(result, Err(CreatePredictionError::DuplicateId)));
+    }
+
+    #[tokio::test]
+    async fn submit_prediction_rejects_invalid_id() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let invalid_ids = vec![
+            "",
+            "foo/bar",
+            "foo\\bar",
+            "../escape",
+            ".hidden",
+            "foo..bar",
+        ];
+
+        for id in invalid_ids {
+            let result = svc
+                .submit_prediction(id.to_string(), serde_json::json!({}), None, false)
+                .await;
+            assert!(
+                matches!(result, Err(CreatePredictionError::InvalidId(_))),
+                "expected invalid ID error for {:?}",
+                id
+            );
+        }
+    }
+
+    #[test]
+    fn validate_prediction_id_accepts_safe_ids() {
+        assert!(validate_prediction_id("pred_123").is_ok());
+        assert!(validate_prediction_id("uuid-style-id").is_ok());
+        assert!(validate_prediction_id("with.dots").is_ok());
+    }
+
+    #[test]
+    fn validate_prediction_id_rejects_dangerous_ids() {
+        assert!(validate_prediction_id("").is_err());
+        assert!(validate_prediction_id("foo/bar").is_err());
+        assert!(validate_prediction_id("foo\\bar").is_err());
+        assert!(validate_prediction_id("../up").is_err());
+        assert!(validate_prediction_id(".hidden").is_err());
     }
 
     #[test]
