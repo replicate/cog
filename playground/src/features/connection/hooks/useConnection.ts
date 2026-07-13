@@ -3,11 +3,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CogApi } from "@/services/cog";
 import type { HealthResponse } from "@/types/health";
 import type { OpenAPIDocument } from "@/types/openapi";
-import { inputAndOutputSchemas } from "@/utils/openapi";
+import { playgroundCapabilities } from "@/utils/openapi";
 
 const DEFAULT_TARGET = "http://localhost:8393";
 const REQUEST_TIMEOUT = 10_000;
-type ConnectionApi = Pick<CogApi, "config" | "health" | "schema" | "setTarget">;
+type ConnectionApi = Pick<CogApi, "config" | "health" | "schema">;
 
 /**
  * Loads playground configuration, retries schema discovery, polls model health, and exposes
@@ -23,7 +23,7 @@ export function useConnection(api: ConnectionApi) {
   const [cogVersion, setCogVersion] = useState("");
   const targetTouched = useRef(false);
   const capabilities = useMemo(
-    () => (schema ? inputAndOutputSchemas(schema) : undefined),
+    () => (schema ? playgroundCapabilities(schema) : undefined),
     [schema],
   );
 
@@ -54,7 +54,6 @@ export function useConnection(api: ConnectionApi) {
 
   useEffect(() => {
     if (!target) return;
-    api.setTarget(target);
     setHealth({ status: "unknown" });
     setSchema(undefined);
     setSchemaError("Loading schema...");
@@ -64,6 +63,7 @@ export function useConnection(api: ConnectionApi) {
     const loadSchema = async () => {
       try {
         const document = await api.schema(
+          target,
           AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT)]),
         );
         if (canceled) return;
@@ -92,6 +92,7 @@ export function useConnection(api: ConnectionApi) {
     const poll = async () => {
       try {
         const next = await api.health(
+          target,
           AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT)]),
         );
         if (!canceled) setHealth(next);

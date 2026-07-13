@@ -12,7 +12,8 @@ type Props = {
 /** Submits the target on Enter as well as button activation without owning connection state. */
 export function ConnectionBar({ draft, status, disabled, onDraftChange, onConnect }: Props) {
   return (
-    <div id="target-bar">
+    <fieldset id="target-bar">
+      <legend className="sr-only">Target connection</legend>
       <div className="target-input">
         <Input
           label="Target"
@@ -25,10 +26,10 @@ export function ConnectionBar({ draft, status, disabled, onDraftChange, onConnec
           }}
         />
       </div>
-      <Button disabled={disabled || !draft.trim()} onClick={onConnect}>
+      <Button variant="primary" disabled={disabled || !draft.trim()} onClick={onConnect}>
         Connect
       </Button>
       <output className="muted">{status}</output>
-    </div>
+    </fieldset>
   );
 }

@@ -18,6 +18,7 @@ import type { CogApi } from "@/services/cog";
 import type { PredictionEnvelope } from "@/types/prediction";
 
 type ActiveRun = TraceRun & {
+  target: string;
   endpoint: string;
   predictionId?: string;
   abort: AbortController;
@@ -26,6 +27,7 @@ type ActiveRun = TraceRun & {
 };
 
 type RunOptions = {
+  target: string;
   endpoint: string;
   predictionId?: string;
   input: Record<string, unknown>;
@@ -58,7 +60,6 @@ export function usePrediction(api: PredictionApi) {
   const {
     trace,
     beginTrace,
-    finishTrace,
     recordTraceEvent,
     appendFinishedTraceEvent,
     captureResponse,
@@ -78,16 +79,12 @@ export function usePrediction(api: PredictionApi) {
     [],
   );
 
-  const finish = useCallback(
-    (token: string) => {
-      if (activeRun.current?.token !== token) return;
-      finishTrace(token);
-      activeRun.current.events?.close();
-      activeRun.current = undefined;
-      setRunning(false);
-    },
-    [finishTrace],
-  );
+  const finish = useCallback((token: string) => {
+    if (activeRun.current?.token !== token) return;
+    activeRun.current.events?.close();
+    activeRun.current = undefined;
+    setRunning(false);
+  }, []);
 
   const applyEnvelope = useCallback(
     (next: PredictionEnvelope) => {
@@ -103,6 +100,7 @@ export function usePrediction(api: PredictionApi) {
     const abort = new AbortController();
     activeRun.current = {
       token,
+      target: options.target,
       endpoint: options.endpoint,
       predictionId: options.predictionId,
       abort,
@@ -130,6 +128,7 @@ export function usePrediction(api: PredictionApi) {
 
   const runSync = async (token: string, options: RunOptions, signal: AbortSignal) => {
     const response = await api.submit({
+      target: options.target,
       endpoint: options.endpoint,
       id: options.predictionId,
       input: options.input,
@@ -148,6 +147,7 @@ export function usePrediction(api: PredictionApi) {
     const rawFrames: string[] = [];
     let terminal = false;
     for await (const event of api.stream({
+      target: options.target,
       endpoint: options.endpoint,
       id: options.predictionId,
       input: options.input,
@@ -247,6 +247,7 @@ export function usePrediction(api: PredictionApi) {
       finish(token);
     };
     const response = await api.submit({
+      target: options.target,
       endpoint: options.endpoint,
       id: options.predictionId,
       input: options.input,
@@ -277,7 +278,7 @@ export function usePrediction(api: PredictionApi) {
     finish(current.token);
     if (current.predictionId) {
       void api
-        .cancel(current.endpoint, current.predictionId, AbortSignal.timeout(10_000))
+        .cancel(current.target, current.endpoint, current.predictionId, AbortSignal.timeout(10_000))
         .catch((cancelError: unknown) => {
           if (!mounted.current || !isCurrentTrace(current.token)) return;
           const message = `Cancellation failed: ${errorMessage(cancelError)}`;

@@ -43,7 +43,6 @@ describe("prediction trace bounding", () => {
       data: `${index}:${"x".repeat(MAX_TRACE_PAYLOAD_TEXT)}`,
     }));
     const trace: RequestTrace = {
-      startedAt: 0,
       startedAtLabel: "now",
       method: "POST",
       endpoint: "/predictions",

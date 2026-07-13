@@ -30,7 +30,7 @@ export function InputPanel({ document, schema, schemaError, state }: Props) {
           onChange={state.changeInputMode}
         />
       </div>
-      {schemaError && <output className="notice visible">{schemaError}</output>}
+      {schemaError && <output className="notice">{schemaError}</output>}
       <div
         id={tabPanelId("input-mode", state.inputMode)}
         role="tabpanel"

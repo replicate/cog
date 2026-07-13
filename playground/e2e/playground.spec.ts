@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { createServer } from "node:http";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -35,6 +36,20 @@ test("keeps Form and CodeMirror JSON input synchronized", async ({ page }) => {
     '"text": "from json"',
   );
   await expect(run).toBeEnabled();
+});
+
+test("folds JSON objects in CodeMirror", async ({ page }) => {
+  await page.getByRole("tab", { name: "JSON" }).click();
+  await replaceEditor(
+    page,
+    "Prediction input JSON",
+    '{\n  "text": "folded",\n  "metadata": {\n    "count": 1\n  }\n}',
+  );
+
+  const fold = page.locator('.json-input .cm-foldGutter [title="Fold line"]').first();
+  await expect(fold).toBeVisible();
+  await fold.click();
+  await expect(page.locator(".json-input .cm-foldPlaceholder")).toBeVisible();
 });
 
 test("validates Form and JSON input against OpenAPI before running", async ({ page }) => {
@@ -88,6 +103,43 @@ test("runs a synchronous prediction and inspects its response", async ({ page })
   await page.getByRole("tab", { name: "Request" }).click();
   await expect(page.getByText("Prediction time")).toBeVisible();
   await expect(page.getByText("200", { exact: true })).toBeVisible();
+  await page.getByText("Response headers", { exact: true }).click();
+  const responseHeaders = page.getByLabel("Response headers", { exact: true });
+  await expect(responseHeaders).toContainText("content-type");
+  await expect(responseHeaders).not.toContainText("content-security-policy");
+  await expect(responseHeaders).not.toContainText("x-frame-options");
+});
+
+test("keeps model targets isolated across browser workspaces", async ({ context, page }) => {
+  const firstModel = await startTestModel("first model");
+  const secondModel = await startTestModel("second model");
+  const secondPage = await context.newPage();
+  const thirdPage = await context.newPage();
+
+  try {
+    await Promise.all([secondPage.goto("/"), thirdPage.goto("/")]);
+    await Promise.all([
+      connectTarget(page, firstModel.url),
+      connectTarget(secondPage, secondModel.url),
+      connectTarget(thirdPage, firstModel.url),
+    ]);
+
+    await page.getByRole("textbox", { name: "text" }).fill("one");
+    await secondPage.getByRole("textbox", { name: "text" }).fill("two");
+    await thirdPage.getByRole("textbox", { name: "text" }).fill("three");
+    await Promise.all([
+      page.getByRole("button", { name: "Run" }).click(),
+      secondPage.getByRole("button", { name: "Run" }).click(),
+      thirdPage.getByRole("button", { name: "Run" }).click(),
+    ]);
+
+    await expect(predictionOutput(page)).toContainText("first model: one");
+    await expect(predictionOutput(secondPage)).toContainText("second model: two");
+    await expect(predictionOutput(thirdPage)).toContainText("first model: three");
+  } finally {
+    await Promise.all([secondPage.close(), thirdPage.close()]);
+    await Promise.all([firstModel.close(), secondModel.close()]);
+  }
 });
 
 test("shows progressive streaming output before completion", async ({ page }) => {
@@ -203,7 +255,7 @@ test("uses a custom prediction ID and resets the playground", async ({ page }) =
 });
 
 test("fits every primary control on a narrow viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 360, height: 800 });
+  await page.setViewportSize({ width: 320, height: 800 });
 
   const widths = await page.evaluate(() => ({
     document: document.documentElement.scrollWidth,
@@ -231,4 +283,70 @@ async function expectPredictionStatus(page: Page, status: string): Promise<void>
 
 function predictionOutput(page: Page) {
   return page.getByRole("region", { name: "Prediction output" });
+}
+
+async function connectTarget(page: Page, target: string): Promise<void> {
+  const schema = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/proxy/openapi.json" &&
+      response.request().headers()["x-cog-target"] === target,
+  );
+  await page.getByRole("textbox", { name: "Target" }).fill(target);
+  await page.getByRole("button", { name: "Connect" }).click();
+  expect((await schema).ok()).toBe(true);
+  await expect(page.getByRole("textbox", { name: "text" })).toBeVisible();
+}
+
+async function startTestModel(name: string): Promise<{ url: string; close: () => Promise<void> }> {
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    if (request.url === "/health-check") {
+      response.end(JSON.stringify({ status: "READY" }));
+      return;
+    }
+    if (request.url === "/openapi.json") {
+      response.end(
+        JSON.stringify({
+          components: {
+            schemas: {
+              Input: {
+                type: "object",
+                required: ["text"],
+                properties: { text: { type: "string" } },
+              },
+            },
+          },
+          paths: { "/predictions": { post: {} } },
+        }),
+      );
+      return;
+    }
+    if (request.url === "/predictions" && request.method === "POST") {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => (body += chunk));
+      request.on("end", () => {
+        const prediction = JSON.parse(body) as { input: { text: string } };
+        response.end(
+          JSON.stringify({ status: "succeeded", output: `${name}: ${prediction.input.text}` }),
+        );
+      });
+      return;
+    }
+    response.statusCode = 404;
+    response.end(JSON.stringify({ error: "not found" }));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Test model did not bind a port");
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      ),
+  };
 }

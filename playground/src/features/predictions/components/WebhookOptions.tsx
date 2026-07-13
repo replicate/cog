@@ -14,7 +14,10 @@ type Props = {
 export function WebhookOptions({ value, webhookBase, disabled, onChange }: Props) {
   return (
     <fieldset id="webhook-options" disabled={disabled}>
-      <legend className="muted">Webhook events</legend>
+      <legend className="sr-only">Webhook events</legend>
+      <span className="webhook-title" aria-hidden="true">
+        Webhook events
+      </span>
       {WEBHOOK_EVENTS.map((event) => (
         <Checkbox
           key={event}

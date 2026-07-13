@@ -30,7 +30,8 @@ export function RunToolbar(props: Props) {
       (mode === "async" && props.async),
   );
   return (
-    <div id="action-bar">
+    <fieldset id="action-bar">
+      <legend className="sr-only">Prediction controls</legend>
       {(props.streaming || props.async) && (
         <fieldset className="playground-options" disabled={controlsDisabled}>
           <legend className="sr-only">Prediction mode</legend>
@@ -53,24 +54,26 @@ export function RunToolbar(props: Props) {
         disabled={controlsDisabled}
         onInput={(event) => props.onPredictionIdChange(event.currentTarget.value)}
       />
-      <Button
-        variant="primary"
-        disabled={!props.runnable}
-        loading={props.running}
-        onClick={props.onRun}
-      >
-        Run
-      </Button>
-      <Button variant="secondary-destructive" disabled={!props.running} onClick={props.onStop}>
-        Stop
-      </Button>
-      <Button
-        variant="ghost"
-        disabled={props.running || !props.schemaLoaded}
-        onClick={props.onReset}
-      >
-        Reset
-      </Button>
-    </div>
+      <div className="run-actions">
+        <Button
+          variant="primary"
+          disabled={!props.runnable}
+          loading={props.running}
+          onClick={props.onRun}
+        >
+          Run
+        </Button>
+        <Button variant="secondary-destructive" disabled={!props.running} onClick={props.onStop}>
+          Stop
+        </Button>
+        <Button
+          variant="ghost"
+          disabled={props.running || !props.schemaLoaded}
+          onClick={props.onReset}
+        >
+          Reset
+        </Button>
+      </div>
+    </fieldset>
   );
 }

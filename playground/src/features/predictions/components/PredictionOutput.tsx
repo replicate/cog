@@ -62,56 +62,40 @@ function formatMetricValue(value: unknown): string {
   }
 }
 
-type RenderedValue =
-  | { kind: "empty" }
-  | { kind: "string"; text: string }
-  | { kind: "mediaList"; items: string[] }
-  | { kind: "text"; text: string };
-
-/** Classifies output once per value change; the string join can be multi-MB during streaming. */
-function classifyOutput(value: unknown): RenderedValue {
-  if (value === undefined || value === null) return { kind: "empty" };
-  if (typeof value === "string") return { kind: "string", text: value };
-  if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
-    const strings = value as string[];
-    if (strings.some(isMediaValue)) return { kind: "mediaList", items: strings };
-    return { kind: "text", text: strings.join("") };
-  }
-  return { kind: "text", text: JSON.stringify(value, null, 2) };
-}
-
 function RenderedOutput({ value, running }: { value: unknown; running: boolean }) {
-  const rendered = useMemo(() => classifyOutput(value), [value]);
-  switch (rendered.kind) {
-    case "empty":
-      return (
-        <div className="empty-output">
-          {running ? "Waiting for output..." : "Prediction returned no output."}
-        </div>
-      );
-    case "string":
-      return <StringOutput value={rendered.text} running={running} />;
-    case "mediaList":
-      return (
-        <div>
-          {rendered.items.map((item, index) => (
-            <div className="output-item" key={index}>
-              {media(item) ?? <TextOutput value={item} />}
-            </div>
-          ))}
-        </div>
-      );
-    case "text":
-      return <TextOutput value={rendered.text} running={running} />;
+  // Joining streamed chunks can be multi-MB, so only repeat it when the value changes.
+  const rendered = useMemo(
+    () => (isStringArray(value) && !value.some(isMediaValue) ? value.join("") : value),
+    [value],
+  );
+  if (rendered === undefined || rendered === null) {
+    return (
+      <div className="empty-output">
+        {running ? "Waiting for output..." : "Prediction returned no output."}
+      </div>
+    );
   }
-}
-
-function StringOutput({ value, running }: { value: string; running: boolean }) {
-  const mediaNode = media(value);
-  return mediaNode ? (
-    <div className="output-item">{mediaNode}</div>
-  ) : (
-    <TextOutput value={value} running={running} />
+  if (isStringArray(rendered)) {
+    return (
+      <div>
+        {rendered.map((item, index) => (
+          <div className="output-item" key={index}>
+            {media(item) ?? <TextOutput value={item} />}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (typeof rendered === "string") {
+    const mediaNode = media(rendered);
+    return mediaNode ? (
+      <div className="output-item">{mediaNode}</div>
+    ) : (
+      <TextOutput value={rendered} running={running} />
+    );
+  }
+  return (
+    <TextOutput value={JSON.stringify(rendered, null, 2) ?? String(rendered)} running={running} />
   );
 }
 
@@ -126,6 +110,10 @@ function TextOutput({ value, running = false }: { value: string; running?: boole
 
 function isMediaValue(value: string): boolean {
   return /^data:[^,]*,/i.test(value) || /^https?:\/\//i.test(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 function media(value: string): ReactNode {

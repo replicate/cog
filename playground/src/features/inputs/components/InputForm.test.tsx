@@ -7,35 +7,10 @@ const { mockFileToDataURI } = vi.hoisted(() => ({ mockFileToDataURI: vi.fn() }))
 
 vi.mock("@/services/cog/files", () => ({ fileToDataURI: mockFileToDataURI }));
 
-vi.mock("@/components/editor/LazyJsonEditor", () => ({
-  LazyJsonEditor: ({
-    label,
-    onChange,
-    describedBy,
-    disabled,
-    invalid,
-    readOnly,
-    value,
-  }: {
-    label: string;
-    onChange: (value: string) => void;
-    describedBy?: string;
-    disabled?: boolean;
-    invalid?: boolean;
-    readOnly?: boolean;
-    value: string;
-  }) => (
-    <textarea
-      aria-label={label}
-      aria-describedby={describedBy}
-      aria-invalid={invalid}
-      disabled={disabled}
-      readOnly={readOnly}
-      value={value}
-      onChange={(event) => onChange(event.currentTarget.value)}
-    />
-  ),
-}));
+vi.mock("@/components/editor/LazyJsonEditor", async () => {
+  const { FakeJsonEditor } = await import("@/test/FakeJsonEditor");
+  return { LazyJsonEditor: FakeJsonEditor };
+});
 
 import { InputForm } from "@/features/inputs/components/InputForm";
 

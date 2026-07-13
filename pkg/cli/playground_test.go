@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -216,6 +218,7 @@ func TestPlaygroundProxyForwardsRequestAndResponse(t *testing.T) {
 		assert.Empty(t, r.Header.Get("Authorization"))
 		assert.Empty(t, r.Header.Get("Cookie"))
 		w.Header().Set("X-Upstream", "preserved")
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Set-Cookie", "session=upstream")
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_, _ = w.Write([]byte(`{"detail":"invalid input"}`))
@@ -237,7 +240,79 @@ func TestPlaygroundProxyForwardsRequestAndResponse(t *testing.T) {
 	assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
 	assert.Equal(t, "preserved", resp.Header.Get("X-Upstream"))
 	assert.Empty(t, resp.Header.Get("Set-Cookie"))
+	encodedHeaders, err := base64.RawURLEncoding.DecodeString(resp.Header.Get(playgroundUpstreamHeaders))
+	require.NoError(t, err)
+	var upstreamHeaders http.Header
+	require.NoError(t, json.Unmarshal(encodedHeaders, &upstreamHeaders))
+	assert.Equal(t, "preserved", upstreamHeaders.Get("X-Upstream"))
+	assert.Equal(t, "SAMEORIGIN", upstreamHeaders.Get("X-Frame-Options"))
+	assert.Empty(t, upstreamHeaders.Get("Set-Cookie"))
 	assert.JSONEq(t, `{"detail":"invalid input"}`, string(body))
+}
+
+func TestPlaygroundProxyRoutesConcurrentWorkspacesIndependently(t *testing.T) {
+	ts := newTestPlayground(t)
+	models := map[string]*httptest.Server{}
+	for _, name := range []string{"first", "second"} {
+		models[name] = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = fmt.Fprint(w, name)
+		}))
+		t.Cleanup(models[name].Close)
+	}
+
+	errs := make(chan error, 40)
+	var requests sync.WaitGroup
+	for name, model := range models {
+		for range 20 {
+			requests.Go(func() {
+				req, err := http.NewRequest(http.MethodGet, ts.URL+"/proxy/identity", nil)
+				if err != nil {
+					errs <- err
+					return
+				}
+				req.Header.Set("X-Cog-Target", model.URL)
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					errs <- err
+					return
+				}
+				body, readErr := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if readErr != nil {
+					errs <- readErr
+					return
+				}
+				if string(body) != name {
+					errs <- fmt.Errorf("request for %s reached %q", name, body)
+				}
+			})
+		}
+	}
+	requests.Wait()
+	close(errs)
+	for err := range errs {
+		assert.NoError(t, err)
+	}
+}
+
+func TestPlaygroundProxyOmitsOversizedHeaderMetadata(t *testing.T) {
+	ts := newTestPlayground(t)
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Large", strings.Repeat("x", maxPlaygroundHeaderMetadata))
+		w.Header().Set(playgroundUpstreamHeaders, "spoofed")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(stub.Close)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/proxy/health-check", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Cog-Target", stub.URL)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, strings.Repeat("x", maxPlaygroundHeaderMetadata), resp.Header.Get("X-Large"))
+	assert.Empty(t, resp.Header.Get(playgroundUpstreamHeaders))
 }
 
 func TestPlaygroundProxyMissingTarget(t *testing.T) {

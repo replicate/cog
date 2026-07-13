@@ -28,9 +28,7 @@ export type TraceEvent = {
 };
 
 export type RequestTrace = {
-  startedAt: number;
   startedAtLabel: string;
-  finishedAt?: number;
   method: "POST" | "PUT";
   endpoint: string;
   requestHeaders: Record<string, string>;

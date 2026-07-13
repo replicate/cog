@@ -1,16 +1,16 @@
 import { memo, useEffect, useState } from "react";
 
+import { LazyJsonEditor } from "@/components/editor/LazyJsonEditor";
 import { SegmentedTabs, tabId, tabPanelId } from "@/components/SegmentedTabs";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PredictionOutput } from "@/features/predictions/components/PredictionOutput";
-import {
-  type InspectorView,
-  RequestInspector,
-} from "@/features/predictions/components/RequestInspector";
-import { RawResponse } from "@/features/predictions/components/RawResponse";
+import { PredictionTimeline } from "@/features/predictions/components/PredictionTimeline";
+import { RequestDetails } from "@/features/predictions/components/RequestDetails";
+import { useFollowTail } from "@/features/predictions/hooks/useFollowTail";
 import type { PredictionEnvelope, RequestTrace } from "@/types/prediction";
+import { renderTerminalText } from "@/utils/terminal";
 
-type PanelView = "output" | "raw" | InspectorView;
+type PanelView = "output" | "raw" | "logs" | "timeline" | "request";
 
 type Props = {
   envelope?: PredictionEnvelope;
@@ -139,26 +139,58 @@ const PanelContent = memo(
     }
     if (view === "raw") {
       return hasResult ? (
-        <RawResponse
-          envelope={envelope}
-          live={streaming}
-          rawEvents={rawEvents}
-          running={running}
+        <LazyJsonEditor
+          value={
+            streaming
+              ? rawEvents.join("\n\n")
+              : (rawEvents[0] ?? JSON.stringify(envelope ?? {}, null, 2))
+          }
+          label="Raw prediction response"
+          className="response-editor"
+          readOnly
+          followTail={streaming && running}
           active={active}
+          autoHeight
         />
       ) : (
         <div className="empty-output">Run a prediction to see its raw response.</div>
       );
     }
-    return (
-      <RequestInspector
-        view={view}
-        trace={trace}
-        envelope={envelope}
-        running={running}
-        active={active}
-      />
-    );
+    if (view === "logs") {
+      return envelope?.logs ? (
+        <Logs logs={envelope.logs} running={running} active={active} />
+      ) : null;
+    }
+    if (!trace) {
+      return (
+        <div className="empty-output">
+          {view === "timeline"
+            ? "Run a prediction to see its event timeline."
+            : "Run a prediction to inspect its request and response metadata."}
+        </div>
+      );
+    }
+    if (view === "timeline") {
+      return <PredictionTimeline trace={trace} running={running} active={active} />;
+    }
+    return <RequestDetails trace={trace} envelope={envelope} />;
   },
   (previous, next) => !previous.active && !next.active && previous.running === next.running,
 );
+
+function Logs({ logs, running, active }: { logs: string; running: boolean; active: boolean }) {
+  const displayLogs = renderTerminalText(logs);
+  const { ref, onScroll } = useFollowTail<HTMLPreElement>(running, displayLogs, active);
+  return (
+    <pre
+      ref={ref}
+      className="inspector-logs"
+      aria-label="Prediction logs"
+      // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- scrollable logs must be keyboard reachable
+      tabIndex={0}
+      onScroll={onScroll}
+    >
+      {displayLogs}
+    </pre>
+  );
+}

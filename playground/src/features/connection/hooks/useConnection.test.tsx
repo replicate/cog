@@ -47,10 +47,10 @@ describe("useConnection", () => {
         endpoint: "/predictions",
         streaming: true,
         input: document.components?.schemas?.Input,
-        output: document.components?.schemas?.Output,
       },
     });
-    expect(api.setTarget).toHaveBeenCalledWith("http://localhost:9000");
+    expect(api.schema).toHaveBeenCalledWith("http://localhost:9000", expect.any(AbortSignal));
+    expect(api.health).toHaveBeenCalledWith("http://localhost:9000", expect.any(AbortSignal));
   });
 
   it("trims manually entered targets and ignores empty targets", async () => {
@@ -61,7 +61,12 @@ describe("useConnection", () => {
     act(() => result.current.setTargetDraft("  http://localhost:9001/  "));
     act(() => result.current.connect());
     await waitFor(() => expect(result.current.target).toBe("http://localhost:9001/"));
-    expect(api.setTarget).toHaveBeenLastCalledWith("http://localhost:9001/");
+    await waitFor(() =>
+      expect(api.schema).toHaveBeenLastCalledWith(
+        "http://localhost:9001/",
+        expect.any(AbortSignal),
+      ),
+    );
 
     act(() => result.current.setTargetDraft("  "));
     act(() => result.current.connect());
@@ -75,7 +80,9 @@ describe("useConnection", () => {
 
     act(() => result.current.setTargetDraft("http://manual.example"));
     act(() => result.current.connect());
-    await waitFor(() => expect(api.setTarget).toHaveBeenCalledWith("http://manual.example"));
+    await waitFor(() =>
+      expect(api.schema).toHaveBeenCalledWith("http://manual.example", expect.any(AbortSignal)),
+    );
 
     config.resolve({
       target: "http://configured.example",
@@ -85,7 +92,10 @@ describe("useConnection", () => {
 
     expect(result.current.target).toBe("http://manual.example");
     expect(result.current.targetDraft).toBe("http://manual.example");
-    expect(api.setTarget).not.toHaveBeenCalledWith("http://configured.example");
+    expect(api.schema).not.toHaveBeenCalledWith(
+      "http://configured.example",
+      expect.any(AbortSignal),
+    );
   });
 
   it("reports failures and retries schema and health requests", async () => {
@@ -118,14 +128,13 @@ describe("useConnection", () => {
   });
 });
 
-type ConnectionApi = Pick<CogApi, "config" | "health" | "schema" | "setTarget">;
+type ConnectionApi = Pick<CogApi, "config" | "health" | "schema">;
 
 function fakeApi(overrides: Partial<ConnectionApi> = {}): ConnectionApi {
   return {
     config: vi.fn(async () => ({})),
     health: vi.fn(async () => ({ status: "healthy" })),
     schema: vi.fn(async () => document),
-    setTarget: vi.fn(),
     ...overrides,
   };
 }

@@ -6,8 +6,6 @@ const VALIDATION_TIMEOUT_MS = 10_000;
 type PendingRequest = {
   resolve: (issues: ValidationIssue[]) => void;
   timeout: ReturnType<typeof setTimeout>;
-  signal?: AbortSignal;
-  onAbort: () => void;
 };
 
 type WorkerResponse = { requestId: number; issues: ValidationIssue[] };
@@ -24,7 +22,6 @@ function settle(requestId: number, issues: ValidationIssue[]): void {
   if (!request) return;
   pending.delete(requestId);
   clearTimeout(request.timeout);
-  request.signal?.removeEventListener("abort", request.onAbort);
   request.resolve(issues);
 }
 
@@ -56,13 +53,8 @@ export function validateInput(
   schema: OpenAPISchema,
   value: unknown,
   schemaId: number,
-  signal?: AbortSignal,
 ): Promise<ValidationIssue[]> {
   return new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve([]);
-      return;
-    }
     let active: Worker;
     try {
       active = ensureWorker();
@@ -71,13 +63,11 @@ export function validateInput(
       return;
     }
     const requestId = nextRequestId++;
-    const onAbort = () => settle(requestId, []);
     const timeout = setTimeout(
       () => settle(requestId, [schemaIssue(new Error("validation timed out"))]),
       VALIDATION_TIMEOUT_MS,
     );
-    signal?.addEventListener("abort", onAbort, { once: true });
-    pending.set(requestId, { resolve, timeout, signal, onAbort });
+    pending.set(requestId, { resolve, timeout });
     try {
       active.postMessage({ requestId, schemaId, document, schema, value });
     } catch (error) {

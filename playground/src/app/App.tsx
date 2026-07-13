@@ -61,6 +61,7 @@ export function App() {
     if (!validated) return;
 
     void prediction.run({
+      target: connection.target,
       endpoint: connection.capabilities.endpoint,
       predictionId: predictionId.trim() || undefined,
       input: validated.input,
@@ -117,6 +118,7 @@ export function App() {
         <StatusBadge status={connection.health.status} />
         <span className="spacer" />
         <span className="muted">{version}</span>
+        <SetupPanel setup={connection.health.setup} />
         <Button size="sm" variant="ghost" onClick={toggleTheme}>
           {theme === "dark" ? "Light" : "Dark"}
         </Button>
@@ -125,28 +127,30 @@ export function App() {
         </Button>
       </header>
 
-      <ConnectionBar
-        draft={connection.targetDraft}
-        status={connection.health.user_healthcheck_error}
-        disabled={prediction.running || input.validating}
-        onDraftChange={connection.setTargetDraft}
-        onConnect={connection.connect}
-      />
-      <RunToolbar
-        runMode={runMode}
-        predictionId={predictionId}
-        streaming={connection.capabilities?.streaming ?? false}
-        async={connection.capabilities?.async ?? false}
-        running={prediction.running}
-        validating={input.validating}
-        runnable={runnable}
-        schemaLoaded={Boolean(connection.schema)}
-        onRunModeChange={setRunMode}
-        onPredictionIdChange={setPredictionId}
-        onRun={run}
-        onStop={() => void prediction.stop()}
-        onReset={reset}
-      />
+      <div id="playground-toolbar">
+        <ConnectionBar
+          draft={connection.targetDraft}
+          status={connection.health.user_healthcheck_error}
+          disabled={prediction.running || input.validating}
+          onDraftChange={connection.setTargetDraft}
+          onConnect={connection.connect}
+        />
+        <RunToolbar
+          runMode={runMode}
+          predictionId={predictionId}
+          streaming={connection.capabilities?.streaming ?? false}
+          async={connection.capabilities?.async ?? false}
+          running={prediction.running}
+          validating={input.validating}
+          runnable={runnable}
+          schemaLoaded={Boolean(connection.schema)}
+          onRunModeChange={setRunMode}
+          onPredictionIdChange={setPredictionId}
+          onRun={run}
+          onStop={() => void prediction.stop()}
+          onReset={reset}
+        />
+      </div>
       {runMode === "async" && (
         <WebhookOptions
           value={webhookEvents}
@@ -155,8 +159,6 @@ export function App() {
           onChange={setWebhookEvents}
         />
       )}
-      <SetupPanel setup={connection.health.setup} />
-
       <main>
         <InputPanel
           document={connection.schema}

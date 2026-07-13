@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,8 +28,14 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-// maxWebhookBody caps a single webhook payload relayed to the browser.
-const maxWebhookBody = 10 * 1024 * 1024
+const (
+	// maxWebhookBody caps a single webhook payload relayed to the browser.
+	maxWebhookBody = 10 * 1024 * 1024
+	// maxPlaygroundHeaderMetadata keeps inspector metadata below browser header limits.
+	maxPlaygroundHeaderMetadata = 32 * 1024
+	// playgroundUpstreamHeaders identifies model response headers for the request inspector.
+	playgroundUpstreamHeaders = "X-Cog-Upstream-Headers"
+)
 
 var (
 	playgroundPort        = 0
@@ -415,6 +422,17 @@ func handlePlaygroundProxy(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
+			upstreamHeaders := resp.Header.Clone()
+			upstreamHeaders.Del(playgroundUpstreamHeaders)
+			resp.Header.Del(playgroundUpstreamHeaders)
+			encodedHeaders, err := json.Marshal(upstreamHeaders)
+			if err != nil {
+				return fmt.Errorf("encode upstream response headers: %w", err)
+			}
+			metadata := base64.RawURLEncoding.EncodeToString(encodedHeaders)
+			if len(metadata) <= maxPlaygroundHeaderMetadata {
+				resp.Header.Set(playgroundUpstreamHeaders, metadata)
+			}
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -497,15 +515,10 @@ func (h *eventHub) unsubscribe(token string, ch chan []byte) {
 // single-user tool.
 func (h *eventHub) publish(token string, msg []byte) bool {
 	h.mu.Lock()
-	// Snapshot under the lock so slow subscribers cannot stall the hub.
-	channels := make([]chan []byte, 0, len(h.subs[token]))
-	for ch := range h.subs[token] {
-		channels = append(channels, ch)
-	}
-	h.mu.Unlock()
+	defer h.mu.Unlock()
 
 	delivered := false
-	for _, ch := range channels {
+	for ch := range h.subs[token] {
 		select {
 		case ch <- msg:
 			delivered = true

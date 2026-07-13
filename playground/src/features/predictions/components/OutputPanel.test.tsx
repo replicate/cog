@@ -1,33 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/components/editor/LazyJsonEditor", () => ({
-  LazyJsonEditor: ({
-    label,
-    readOnly,
-    value,
-    autoHeight,
-    followTail,
-    active,
-  }: {
-    label: string;
-    readOnly?: boolean;
-    value: string;
-    autoHeight?: boolean;
-    followTail?: boolean;
-    active?: boolean;
-  }) => (
-    <pre
-      aria-label={label}
-      aria-readonly={readOnly}
-      data-auto-height={autoHeight}
-      data-follow-tail={followTail}
-      data-active={active}
-    >
-      {value}
-    </pre>
-  ),
-}));
+vi.mock("@/components/editor/LazyJsonEditor", async () => {
+  const { FakeJsonEditor } = await import("@/test/FakeJsonEditor");
+  return { LazyJsonEditor: FakeJsonEditor };
+});
 
 import { OutputPanel } from "@/features/predictions/components/OutputPanel";
 
@@ -71,22 +48,20 @@ describe("OutputPanel", () => {
     expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
-  it("pretty-prints sync JSON in Raw and opens request details", () => {
+  it("shows the sync response and request details", () => {
     render(
       <OutputPanel
-        envelope={{ status: "succeeded" }}
+        envelope={{ status: "succeeded", metrics: { predict_time: 0.25 } }}
         output={{ answer: 42 }}
-        rawEvents={['{"answer":42}']}
+        rawEvents={[JSON.stringify({ answer: 42 }, null, 2)]}
         running={false}
         streaming={false}
         trace={{
-          startedAt: 0,
           startedAtLabel: "10:00:00",
-          finishedAt: 120,
           method: "POST",
           endpoint: "/predictions",
           requestHeaders: { Accept: "application/json" },
-          requestBody: { input: {} },
+          requestBody: { input: { prompt: "hello" } },
           responseStatus: 200,
           responseBody: { answer: 42 },
           events: [],
@@ -106,7 +81,11 @@ describe("OutputPanel", () => {
     );
     fireEvent.click(screen.getByRole("tab", { name: "Request" }));
     expect(screen.getByText("Started")).toBeVisible();
-    expect(screen.queryByText("Total duration")).toBeNull();
+    expect(screen.getByText("250 ms")).toBeVisible();
+    expect(screen.getByLabelText("Request body")).toHaveTextContent('"prompt": "hello"');
+    expect(screen.getByLabelText("Response body")).toHaveTextContent('"answer": 42');
+    toggleDetails(screen.getByText("Request headers"));
+    expect(screen.getByLabelText("Request headers")).toHaveTextContent("application/json");
   });
 
   it("shows live Raw frames exactly as received", () => {
@@ -135,7 +114,6 @@ describe("OutputPanel", () => {
 
   it("preserves visited panels while switching tabs during a stream", () => {
     const trace = {
-      startedAt: 0,
       startedAtLabel: "10:00:00",
       method: "POST" as const,
       endpoint: "/predictions",
@@ -181,6 +159,7 @@ describe("OutputPanel", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Request" }));
     fireEvent.click(screen.getByRole("tab", { name: "Timeline" }));
     expect(details).toHaveAttribute("open");
+    expect(screen.getByText("output × 2")).toBeVisible();
 
     fireEvent.click(screen.getByRole("tab", { name: "Raw" }));
     expect(screen.getByLabelText("Raw prediction response")).toBe(rawEditor);
@@ -207,7 +186,7 @@ describe("OutputPanel", () => {
   it("shows logs when the prediction has log output", () => {
     render(
       <OutputPanel
-        envelope={{ status: "succeeded", logs: "model log line" }}
+        envelope={{ status: "succeeded", logs: "model log line\rprogress 1\rprogress 2\n" }}
         output="done"
         rawEvents={[]}
         running={false}
@@ -216,7 +195,12 @@ describe("OutputPanel", () => {
     );
 
     fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
-    expect(screen.getByText("model log line")).toBeVisible();
+    expect(screen.getByLabelText("Prediction logs")).toHaveTextContent("model log line");
+    expect(screen.getByLabelText("Prediction logs")).toHaveTextContent("progress 1");
+    expect(screen.getByLabelText("Prediction logs")).toHaveTextContent("progress 2");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Timeline" }));
+    expect(screen.getByText(/event timeline/)).toBeVisible();
   });
 });
 

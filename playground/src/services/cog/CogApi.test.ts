@@ -4,6 +4,7 @@ import { CogApi } from "@/services/cog/CogApi";
 import { parseSSE } from "@/services/cog/sse";
 
 const signal = new AbortController().signal;
+const target = "http://localhost:5000";
 
 describe("CogApi", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -12,10 +13,10 @@ describe("CogApi", () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse({ id: "p1", status: "starting" }));
     vi.stubGlobal("fetch", fetch);
     const api = new CogApi();
-    api.setTarget("http://localhost:5000/");
 
     await expect(
       api.submit({
+        target: `${target}/`,
         endpoint: "/predictions",
         id: "custom/id",
         input: { prompt: "hello" },
@@ -50,9 +51,8 @@ describe("CogApi", () => {
       ),
     );
     const api = new CogApi();
-    api.setTarget("http://localhost:5000");
 
-    await expect(api.health()).rejects.toThrow(/unexpected redirect/);
+    await expect(api.health(target)).rejects.toThrow(/unexpected redirect/);
   });
 
   it.each([
@@ -64,7 +64,7 @@ describe("CogApi", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
     const api = new CogApi();
 
-    await expect(api.health()).rejects.toMatchObject({ status: response.status, message });
+    await expect(api.health(target)).rejects.toMatchObject({ status: response.status, message });
   });
 
   it("preserves validation details", async () => {
@@ -74,7 +74,7 @@ describe("CogApi", () => {
     );
     const api = new CogApi();
 
-    await expect(api.schema()).rejects.toMatchObject({ detail: [{ loc: ["input"] }] });
+    await expect(api.schema(target)).rejects.toMatchObject({ detail: [{ loc: ["input"] }] });
   });
 
   it("parses chunked CRLF SSE frames and preserves raw frames", async () => {
@@ -94,7 +94,7 @@ describe("CogApi", () => {
     const api = new CogApi();
     const events = [];
 
-    for await (const event of api.stream({ endpoint: "/predictions", input: {}, signal }))
+    for await (const event of api.stream({ target, endpoint: "/predictions", input: {}, signal }))
       events.push(event);
 
     expect(events).toEqual([
@@ -116,7 +116,7 @@ describe("CogApi", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("busy", { status: 409 })));
     const api = new CogApi();
     await expect(
-      collect(api.stream({ endpoint: "/predictions", input: {}, signal })),
+      collect(api.stream({ target, endpoint: "/predictions", input: {}, signal })),
     ).rejects.toMatchObject({
       status: 409,
       message: "busy",
@@ -124,7 +124,7 @@ describe("CogApi", () => {
 
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, body: null }));
     await expect(
-      collect(api.stream({ endpoint: "/predictions", input: {}, signal })),
+      collect(api.stream({ target, endpoint: "/predictions", input: {}, signal })),
     ).rejects.toThrow("Streaming response has no body");
   });
 
@@ -140,7 +140,7 @@ describe("CogApi", () => {
     const api = new CogApi();
 
     await expect(
-      collect(api.stream({ endpoint: "/predictions", input: {}, signal })),
+      collect(api.stream({ target, endpoint: "/predictions", input: {}, signal })),
     ).rejects.toThrow("SSE event is too large");
   });
 
@@ -155,7 +155,7 @@ describe("CogApi", () => {
     );
     const api = new CogApi();
 
-    await expect(api.schema()).rejects.toThrow("Response body exceeds 16777216 bytes");
+    await expect(api.schema(target)).rejects.toThrow("Response body exceeds 16777216 bytes");
   });
 });
 

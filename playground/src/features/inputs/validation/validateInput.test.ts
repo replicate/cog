@@ -93,13 +93,4 @@ describe("validateInput", () => {
       }),
     ]);
   });
-
-  it("resolves empty when canceled", async () => {
-    const controller = new AbortController();
-    const result = validateInput(document, schema, { prompt: "hello" }, 1, controller.signal);
-
-    controller.abort();
-
-    await expect(result).resolves.toEqual([]);
-  });
 });

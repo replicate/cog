@@ -7,6 +7,7 @@ import { deferred } from "@/test/deferred";
 import type { StreamEvent } from "@/types/prediction";
 
 const options = {
+  target: "http://localhost:5000",
   endpoint: "/predictions",
   input: { prompt: "hello" },
   mode: "sync" as const,
@@ -21,7 +22,24 @@ describe("usePrediction", () => {
     const response = { id: "p1", status: "succeeded", output: "hello" };
     const api = fakeApi({
       submit: vi.fn(async (request: { onResponse?: (response: Response) => void }) => {
-        request.onResponse?.(new Response(JSON.stringify(response), { status: 200 }));
+        request.onResponse?.(
+          new Response(JSON.stringify(response), {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "X-Cog-Upstream-Headers": upstreamHeaders(
+                Object.fromEntries([
+                  ["Content-Type", ["application/json"]],
+                  ["X-Frame-Options", ["SAMEORIGIN"]],
+                  ["X-Model", ["predictor"]],
+                  ["__proto__", ["preserved"]],
+                ]),
+              ),
+              "X-Model": "predictor",
+              "X-Frame-Options": "DENY, SAMEORIGIN",
+            },
+          }),
+        );
         return response;
       }),
     });
@@ -44,6 +62,14 @@ describe("usePrediction", () => {
         expect.objectContaining({ kind: "response" }),
       ]),
     });
+    expect(result.current.trace?.responseHeaders).toEqual(
+      Object.fromEntries([
+        ["content-type", "application/json"],
+        ["x-frame-options", "SAMEORIGIN"],
+        ["x-model", "predictor"],
+        ["__proto__", "preserved"],
+      ]),
+    );
   });
 
   it("recursively bounds large values retained in request traces", async () => {
@@ -264,7 +290,12 @@ describe("usePrediction", () => {
     await act(() => result.current.stop());
     releaseStream();
 
-    expect(api.cancel).toHaveBeenCalledWith("/predictions", "p1", expect.any(AbortSignal));
+    expect(api.cancel).toHaveBeenCalledWith(
+      "http://localhost:5000",
+      "/predictions",
+      "p1",
+      expect.any(AbortSignal),
+    );
     expect(result.current.envelope?.status).toBe("canceled");
     expect(result.current.running).toBe(false);
   });
@@ -308,17 +339,7 @@ describe("usePrediction", () => {
   });
 
   it("completes an asynchronous prediction from its webhook event stream", async () => {
-    const sources: MockEventSource[] = [];
-    vi.stubGlobal(
-      "EventSource",
-      class extends MockEventSource {
-        constructor(url: string) {
-          super(url);
-          sources.push(this);
-          queueMicrotask(() => this.onopen?.(new Event("open")));
-        }
-      },
-    );
+    const sources = stubEventSources();
     const api = fakeApi({
       submit: vi.fn(async (request: { onResponse?: (response: Response) => void }) => {
         request.onResponse?.(new Response("{}", { status: 201 }));
@@ -351,17 +372,7 @@ describe("usePrediction", () => {
   });
 
   it("aborts a pending async submission after a terminal webhook", async () => {
-    const sources: MockEventSource[] = [];
-    vi.stubGlobal(
-      "EventSource",
-      class extends MockEventSource {
-        constructor(url: string) {
-          super(url);
-          sources.push(this);
-          queueMicrotask(() => this.onopen?.(new Event("open")));
-        }
-      },
-    );
+    const sources = stubEventSources();
     let requestSignal: AbortSignal | undefined;
     const api = fakeApi({
       submit: vi.fn(
@@ -399,17 +410,7 @@ describe("usePrediction", () => {
   });
 
   it("aborts a pending async submission when the event stream fails", async () => {
-    const sources: MockEventSource[] = [];
-    vi.stubGlobal(
-      "EventSource",
-      class extends MockEventSource {
-        constructor(url: string) {
-          super(url);
-          sources.push(this);
-          queueMicrotask(() => this.onopen?.(new Event("open")));
-        }
-      },
-    );
+    const sources = stubEventSources();
     let requestSignal: AbortSignal | undefined;
     const api = fakeApi({
       submit: vi.fn(
@@ -443,17 +444,7 @@ describe("usePrediction", () => {
   });
 
   it("fails and unblocks after an invalid webhook payload", async () => {
-    const sources: MockEventSource[] = [];
-    vi.stubGlobal(
-      "EventSource",
-      class extends MockEventSource {
-        constructor(url: string) {
-          super(url);
-          sources.push(this);
-          queueMicrotask(() => this.onopen?.(new Event("open")));
-        }
-      },
-    );
+    const sources = stubEventSources();
     const api = fakeApi({
       submit: vi.fn(async () => ({ id: "p1", status: "starting" })),
     });
@@ -501,17 +492,7 @@ describe("usePrediction", () => {
   });
 
   it("does not overwrite newer webhook state with a submit acknowledgement", async () => {
-    const sources: MockEventSource[] = [];
-    vi.stubGlobal(
-      "EventSource",
-      class extends MockEventSource {
-        constructor(url: string) {
-          super(url);
-          sources.push(this);
-          queueMicrotask(() => this.onopen?.(new Event("open")));
-        }
-      },
-    );
+    const sources = stubEventSources();
     const response = deferred<{ id: string; status: string; output: null }>();
     const api = fakeApi({ submit: vi.fn(() => response.promise) });
     const { result } = renderHook(() => usePrediction(api));
@@ -544,17 +525,7 @@ describe("usePrediction", () => {
   });
 
   it("ignores a late response from a finished run after a new run starts", async () => {
-    const sources: MockEventSource[] = [];
-    vi.stubGlobal(
-      "EventSource",
-      class extends MockEventSource {
-        constructor(url: string) {
-          super(url);
-          sources.push(this);
-          queueMicrotask(() => this.onopen?.(new Event("open")));
-        }
-      },
-    );
+    const sources = stubEventSources();
     const firstResponse = deferred<{ id: string; status: string }>();
     let firstRequest: { onResponse?: (response: Response) => void } | undefined;
     const submit = vi
@@ -565,7 +536,13 @@ describe("usePrediction", () => {
       })
       .mockImplementationOnce(async (request: { onResponse?: (response: Response) => void }) => {
         request.onResponse?.(
-          new Response("{}", { status: 201, headers: { "X-Prediction": "second" } }),
+          new Response("{}", {
+            status: 201,
+            headers: {
+              "X-Cog-Upstream-Headers": upstreamHeaders({ "X-Prediction": ["second"] }),
+              "X-Prediction": "second",
+            },
+          }),
         );
         return { id: "p2", status: "succeeded", output: "second" };
       });
@@ -588,7 +565,13 @@ describe("usePrediction", () => {
 
     act(() => {
       firstRequest?.onResponse?.(
-        new Response("{}", { status: 202, headers: { "X-Prediction": "first" } }),
+        new Response("{}", {
+          status: 202,
+          headers: {
+            "X-Cog-Upstream-Headers": upstreamHeaders({ "X-Prediction": ["first"] }),
+            "X-Prediction": "first",
+          },
+        }),
       );
     });
     expect(result.current.trace).toMatchObject({
@@ -602,18 +585,9 @@ describe("usePrediction", () => {
 
   it("closes an asynchronous event stream when connecting times out", async () => {
     vi.useFakeTimers();
-    const sources: MockEventSource[] = [];
+    const sources = stubEventSources({ autoOpen: false });
     const addAbortListener = vi.spyOn(AbortSignal.prototype, "addEventListener");
     const removeAbortListener = vi.spyOn(AbortSignal.prototype, "removeEventListener");
-    vi.stubGlobal(
-      "EventSource",
-      class extends MockEventSource {
-        constructor(url: string) {
-          super(url);
-          sources.push(this);
-        }
-      },
-    );
     const api = fakeApi({ submit: vi.fn() });
     const { result } = renderHook(() => usePrediction(api));
 
@@ -642,18 +616,8 @@ describe("usePrediction", () => {
   });
 
   it("closes an asynchronous event stream when stopped during setup", async () => {
-    const sources: MockEventSource[] = [];
     let stop: () => void = () => undefined;
-    vi.stubGlobal(
-      "EventSource",
-      class extends MockEventSource {
-        constructor(url: string) {
-          super(url);
-          sources.push(this);
-          stop();
-        }
-      },
-    );
+    const sources = stubEventSources({ autoOpen: false, onCreate: () => stop() });
     const api = fakeApi({ submit: vi.fn() });
     const { result } = renderHook(() => usePrediction(api));
     stop = result.current.stop;
@@ -678,6 +642,10 @@ function fakeApi(overrides: Partial<PredictionApi>): PredictionApi {
     cancel: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
+}
+
+function upstreamHeaders(headers: Record<string, string[]>): string {
+  return btoa(JSON.stringify(headers)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
 async function* eventStream(events: StreamEvent[]): AsyncGenerator<StreamEvent> {
@@ -709,4 +677,23 @@ class MockEventSource {
   constructor(readonly url: string) {}
 
   readonly close = vi.fn();
+}
+
+function stubEventSources({
+  autoOpen = true,
+  onCreate,
+}: { autoOpen?: boolean; onCreate?: (source: MockEventSource) => void } = {}): MockEventSource[] {
+  const sources: MockEventSource[] = [];
+  vi.stubGlobal(
+    "EventSource",
+    class extends MockEventSource {
+      constructor(url: string) {
+        super(url);
+        sources.push(this);
+        onCreate?.(this);
+        if (autoOpen) queueMicrotask(() => this.onopen?.(new Event("open")));
+      }
+    },
+  );
+  return sources;
 }

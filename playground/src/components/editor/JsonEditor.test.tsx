@@ -6,13 +6,14 @@ import { JsonEditor } from "@/components/editor/JsonEditor";
 describe("JsonEditor", () => {
   it("renders highlighted read-only JSON and follows controlled updates", async () => {
     const { container, rerender } = render(
-      <JsonEditor value={'{"answer":42}'} label="Response JSON" readOnly />,
+      <JsonEditor value={'{\n  "answer": 42\n}'} label="Response JSON" readOnly />,
     );
 
     const editor = screen.getByRole("textbox", { name: "Response JSON" });
     expect(editor).toHaveAttribute("aria-readonly", "true");
     expect(editor).toHaveAttribute("contenteditable", "false");
     expect(container.querySelector(".cm-gutters")).toBeInTheDocument();
+    expect(container.querySelector(".cm-foldGutter")).toBeInTheDocument();
     expect(container.querySelector(".cm-content span")).toBeInTheDocument();
 
     rerender(<JsonEditor value={'{"answer":43}'} label="Response JSON" readOnly />);

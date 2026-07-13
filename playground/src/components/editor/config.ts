@@ -1,6 +1,12 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { json } from "@codemirror/lang-json";
-import { bracketMatching, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import {
+  bracketMatching,
+  foldGutter,
+  foldKeymap,
+  HighlightStyle,
+  syntaxHighlighting,
+} from "@codemirror/language";
 import { EditorState, type Extension } from "@codemirror/state";
 import {
   drawSelection,
@@ -17,13 +23,14 @@ import { tags } from "@lezer/highlight";
 export function jsonEditorExtensions(): Extension[] {
   return [
     lineNumbers(),
+    foldGutter(),
     highlightSpecialChars(),
     history(),
     drawSelection(),
     bracketMatching(),
     highlightActiveLine(),
     highlightActiveLineGutter(),
-    keymap.of([...defaultKeymap, ...historyKeymap]),
+    keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
     json(),
     syntaxHighlighting(kumoHighlightStyle),
     kumoEditorTheme,

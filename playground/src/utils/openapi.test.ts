@@ -5,7 +5,7 @@ import {
   defaultInput,
   effectiveSchema,
   enumValues,
-  inputAndOutputSchemas,
+  playgroundCapabilities,
   orderedProperties,
 } from "@/utils/openapi";
 import type { OpenAPIDocument } from "@/types/openapi";
@@ -68,7 +68,7 @@ describe("schema helpers", () => {
   });
 
   it("derives prediction capabilities", () => {
-    expect(inputAndOutputSchemas(document)).toMatchObject({
+    expect(playgroundCapabilities(document)).toMatchObject({
       endpoint: "/predictions",
       streaming: true,
       async: true,
@@ -83,7 +83,7 @@ describe("schema helpers", () => {
       },
       paths: { "/trainings": { post: {} } },
     };
-    expect(inputAndOutputSchemas(training)).toMatchObject({
+    expect(playgroundCapabilities(training)).toMatchObject({
       endpoint: "/trainings",
       streaming: false,
       async: false,

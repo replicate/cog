@@ -73,26 +73,23 @@ export function constraintText(schema: OpenAPISchema): string {
   return parts.join(" · ");
 }
 
-export type PlaygroundSchemas = {
+export type PlaygroundCapabilities = {
   endpoint: "/predictions" | "/trainings";
   input: OpenAPISchema;
-  output: OpenAPISchema;
   streaming: boolean;
   async: boolean;
 };
 
-/** Derives the model endpoint, schemas, streaming support, and cancellation capability. */
-export function inputAndOutputSchemas(document: OpenAPIDocument): PlaygroundSchemas {
+/** Derives the model endpoint, input schema, streaming support, and cancellation capability. */
+export function playgroundCapabilities(document: OpenAPIDocument): PlaygroundCapabilities {
   const schemas = document.components?.schemas ?? {};
   const training = Boolean(document.paths?.["/trainings"]);
   const endpoint = training ? "/trainings" : "/predictions";
   const input = resolveRef(document, schemas[training ? "TrainingInput" : "Input"] ?? {});
-  const output = resolveRef(document, schemas[training ? "TrainingOutput" : "Output"] ?? {});
   const operation = document.paths?.[endpoint]?.post;
   return {
     endpoint,
     input,
-    output,
     streaming: operation?.["x-cog-streaming"] === true,
     async: Boolean(
       document.paths?.[`${endpoint}/{${training ? "training" : "prediction"}_id}/cancel`],

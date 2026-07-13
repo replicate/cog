@@ -9,6 +9,8 @@ import {
 } from "@/features/predictions/utils/trace";
 import type { RequestTrace, TraceEventKind } from "@/types/prediction";
 
+const UPSTREAM_HEADERS = "X-Cog-Upstream-Headers";
+
 export type TraceRun = {
   token: string;
   startedAt: number;
@@ -36,7 +38,6 @@ export function usePredictionTrace<T extends TraceRun>(activeRun: RefObject<T | 
     traceToken.current = options.token;
     setTrace(
       enforceTraceBudget({
-        startedAt: Date.now(),
         startedAtLabel: new Date().toLocaleTimeString(),
         method: options.predictionId ? "PUT" : "POST",
         endpoint: options.predictionId
@@ -56,14 +57,6 @@ export function usePredictionTrace<T extends TraceRun>(activeRun: RefObject<T | 
       }),
     );
   }, []);
-
-  const finishTrace = useCallback(
-    (token: string) => {
-      if (activeRun.current?.token !== token) return;
-      updateTrace((current) => ({ ...current, finishedAt: Date.now() }));
-    },
-    [activeRun, updateTrace],
-  );
 
   const recordTraceEvent = useCallback(
     (token: string, kind: TraceEventKind, label: string, data?: unknown) => {
@@ -113,7 +106,7 @@ export function usePredictionTrace<T extends TraceRun>(activeRun: RefObject<T | 
       updateTrace((current) => ({
         ...current,
         responseStatus: response.status,
-        responseHeaders: Object.fromEntries(response.headers.entries()),
+        responseHeaders: modelResponseHeaders(response),
       }));
     },
     [recordTraceEvent, updateTrace],
@@ -157,7 +150,6 @@ export function usePredictionTrace<T extends TraceRun>(activeRun: RefObject<T | 
   return {
     trace,
     beginTrace,
-    finishTrace,
     recordTraceEvent,
     appendFinishedTraceEvent,
     captureResponse,
@@ -166,4 +158,28 @@ export function usePredictionTrace<T extends TraceRun>(activeRun: RefObject<T | 
     resetTrace,
     isCurrentTrace,
   };
+}
+
+function modelResponseHeaders(response: Response): Record<string, string> {
+  const encoded = response.headers.get(UPSTREAM_HEADERS);
+  if (!encoded) return {};
+  try {
+    const base64 = encoded.replaceAll("-", "+").replaceAll("_", "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    const bytes = Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    const headers: [string, string][] = [];
+    for (const [name, value] of Object.entries(parsed)) {
+      if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) continue;
+      const normalized = name.trim().toLowerCase();
+      if (normalized && normalized !== UPSTREAM_HEADERS.toLowerCase()) {
+        headers.push([normalized, value.join(", ")]);
+      }
+    }
+    return Object.fromEntries(headers);
+  } catch {
+    return {};
+  }
 }

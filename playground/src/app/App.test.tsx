@@ -93,23 +93,10 @@ vi.mock("@/features/inputs/components/InputForm", () => ({
   },
 }));
 
-vi.mock("@/components/editor/LazyJsonEditor", () => ({
-  LazyJsonEditor: ({
-    label,
-    onChange,
-    value,
-  }: {
-    label: string;
-    onChange?: (value: string) => void;
-    value: string;
-  }) => (
-    <textarea
-      aria-label={label}
-      value={value}
-      onChange={(event) => onChange?.(event.currentTarget.value)}
-    />
-  ),
-}));
+vi.mock("@/components/editor/LazyJsonEditor", async () => {
+  const { FakeJsonEditor } = await import("@/test/FakeJsonEditor");
+  return { LazyJsonEditor: FakeJsonEditor };
+});
 
 import { App } from "@/app/App";
 
@@ -203,17 +190,15 @@ describe("App", () => {
     expect(screen.getByRole("textbox", { name: "Target" })).toBeEnabled();
   });
 
-  it("cancels pending validation when input changes", async () => {
+  it("ignores pending validation when input changes", async () => {
     const validation = deferred<ValidationIssue[]>();
     mockValidateInput.mockReturnValueOnce(validation.promise);
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "Run" }));
     await waitFor(() => expect(mockValidateInput).toHaveBeenCalled());
-    const signal = mockValidateInput.mock.calls[0][4] as AbortSignal;
 
     fireEvent.change(screen.getByLabelText("Form prompt"), { target: { value: "changed" } });
-    expect(signal.aborted).toBe(true);
     validation.resolve([]);
     await waitFor(() => expect(screen.getByRole("button", { name: "Run" })).toBeEnabled());
     expect(run).not.toHaveBeenCalled();

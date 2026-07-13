@@ -5,12 +5,12 @@ import { errorMessage, parseInputObject, serializeInput } from "@/features/input
 import { disposeValidationWorker, validateInput } from "@/features/inputs/validation/validateInput";
 import type { ValidationIssue } from "@/features/inputs/validation/inputValidation";
 import type { OpenAPIDocument } from "@/types/openapi";
-import { defaultInput, type PlaygroundSchemas } from "@/utils/openapi";
+import { defaultInput, type PlaygroundCapabilities } from "@/utils/openapi";
 
 type Options = {
   target: string;
   document?: OpenAPIDocument;
-  capabilities?: PlaygroundSchemas;
+  capabilities?: PlaygroundCapabilities;
 };
 
 type ValidatedInput = {
@@ -18,8 +18,8 @@ type ValidatedInput = {
 };
 
 /**
- * Keeps form and JSON input synchronized with schema defaults and exposes an abortable,
- * stale-result-safe validation lifecycle for prediction runs.
+ * Keeps form and JSON input synchronized with schema defaults and exposes a stale-result-safe
+ * validation lifecycle for prediction runs.
  */
 export function usePlaygroundInput({ target, document, capabilities }: Options) {
   const [input, setInput] = useState<Record<string, unknown>>({});
@@ -32,7 +32,6 @@ export function usePlaygroundInput({ target, document, capabilities }: Options) 
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [formRevision, setFormRevision] = useState(0);
   const validationAttempt = useRef(0);
-  const validationController = useRef<AbortController | undefined>(undefined);
   const connectionState = useRef({ target, document, capabilities });
   connectionState.current = { target, document, capabilities };
   // Identifies the connected schema so the validation worker compiles it once
@@ -42,15 +41,12 @@ export function usePlaygroundInput({ target, document, capabilities }: Options) 
   useEffect(
     () => () => {
       validationAttempt.current += 1;
-      validationController.current?.abort();
       disposeValidationWorker();
     },
     [],
   );
 
   useEffect(() => {
-    validationController.current?.abort();
-    validationController.current = undefined;
     validationAttempt.current += 1;
     setValidationIssues([]);
     setValidating(false);
@@ -71,8 +67,6 @@ export function usePlaygroundInput({ target, document, capabilities }: Options) 
   }, [capabilities, document, target]);
 
   const clearValidation = () => {
-    validationController.current?.abort();
-    validationController.current = undefined;
     validationAttempt.current += 1;
     setValidating(false);
     setValidationIssues([]);
@@ -97,8 +91,6 @@ export function usePlaygroundInput({ target, document, capabilities }: Options) 
     const validationDocument = document;
     const validationCapabilities = capabilities;
     const attempt = ++validationAttempt.current;
-    const controller = new AbortController();
-    validationController.current = controller;
     setValidationIssues([]);
     setValidating(true);
     const issues = await validateInput(
@@ -106,9 +98,7 @@ export function usePlaygroundInput({ target, document, capabilities }: Options) 
       validationCapabilities.input,
       nextInput,
       schemaId.current,
-      controller.signal,
     );
-    if (validationController.current === controller) validationController.current = undefined;
     if (
       attempt !== validationAttempt.current ||
       validationTarget !== connectionState.current.target ||
@@ -159,20 +149,9 @@ export function usePlaygroundInput({ target, document, capabilities }: Options) 
   const changeInputMode = (next: InputMode) => {
     if (next === inputMode) return;
     clearValidation();
-    if (next === "json") {
-      setJsonInput(serializeInput(input));
-      setJsonError("");
-      setInputMode("json");
-      return;
-    }
-    try {
-      setInput(parseInputObject(jsonInput));
-      setJsonError("");
-    } catch {
-      setJsonInput(serializeInput(input));
-      setJsonError("");
-    }
-    setInputMode("form");
+    setJsonInput(serializeInput(input));
+    setJsonError("");
+    setInputMode(next);
   };
 
   const formatJsonInput = () => {
