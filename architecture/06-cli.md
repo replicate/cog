@@ -6,15 +6,16 @@ The Cog CLI is a Go binary that provides commands for the full model lifecycle: 
 
 ## Commands Overview
 
-| Command     | Job To Be Done                        |
-| ----------- | ------------------------------------- |
-| `cog init`  | Bootstrap a new model project         |
-| `cog build` | Create a container image              |
-| `cog run`   | Run a prediction in a container       |
-| `cog exec`  | Run arbitrary commands in a container |
-| `cog serve` | Start HTTP server in a container      |
-| `cog push`  | Deploy to Replicate                   |
-| `cog login` | Authenticate with Replicate           |
+| Command          | Job To Be Done                        |
+| ---------------- | ------------------------------------- |
+| `cog init`       | Bootstrap a new model project         |
+| `cog build`      | Create a container image              |
+| `cog run`        | Run a prediction in a container       |
+| `cog exec`       | Run arbitrary commands in a container |
+| `cog serve`      | Start HTTP server in a container      |
+| `cog playground` | Open a local UI for a model API       |
+| `cog push`       | Deploy to Replicate                   |
+| `cog login`      | Authenticate with Replicate           |
 
 ## Development Commands
 
@@ -97,6 +98,21 @@ Builds the image (if needed) and starts a container running the [Container Runti
 - Check health at `/health-check`
 
 **Code**: `pkg/cli/serve.go`
+
+### cog playground
+
+**Job**: Explore and call a running Cog HTTP API from a browser.
+
+```bash
+cog serve -p 8393
+cog playground --target http://localhost:8393
+```
+
+The command serves an embedded React application and reverse-proxies its requests to the selected model API. Each browser tab is an independent workspace: every request carries that tab's target, and the proxy keeps no shared current-target state, so tabs can use the same or different models concurrently. The UI and proxy accept only loopback connections, even when `--host 0.0.0.0` is used so a container can deliver webhooks. The proxy snapshots upstream response headers into encoded metadata so the request inspector can show model values without including or merging playground security and transport headers. Webhook URLs contain an opaque per-prediction token, which also isolates concurrent tab subscriptions, and payloads are relayed to the browser over server-sent events.
+
+The proxy is intentionally user-directed: this is a local development tool for APIs selected by the user, not a remotely hosted gateway. CLI and release builds compile `playground/` into ignored assets under `pkg/cli/playground/`, then embed them in the Go binary. Ordinary Go tests use a build-time stub, so a clean Go checkout does not require Node; binaries built without the asset tag reject the playground command with build instructions.
+
+**Code**: `pkg/cli/` owns the server and embedded assets; `playground/` owns the frontend source.
 
 ## Build Commands
 
@@ -219,6 +235,7 @@ pkg/cli/
 ├── predict.go      # prediction execution and legacy cog predict
 ├── exec.go         # cog exec
 ├── serve.go        # cog serve
+├── playground.go   # cog playground and local proxy
 ├── push.go         # cog push
 ├── login.go        # cog login
 └── init.go         # cog init
