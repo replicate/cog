@@ -149,7 +149,7 @@ describe("CogApi", () => {
     const reader = {
       read: vi.fn().mockResolvedValue({
         done: false,
-        value: new TextEncoder().encode("event: output\\ndata: {}\\n\\n"),
+        value: new TextEncoder().encode("event: output\ndata: {}\n\n"),
       }),
       cancel: vi.fn().mockRejectedValue(new Error("cancel failed")),
       releaseLock,
