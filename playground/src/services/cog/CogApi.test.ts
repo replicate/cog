@@ -147,12 +147,10 @@ describe("CogApi", () => {
   it("releases an SSE reader lock when cancellation fails", async () => {
     const releaseLock = vi.fn();
     const reader = {
-      read: vi
-        .fn()
-        .mockResolvedValue({
-          done: false,
-          value: new TextEncoder().encode("event: output\\ndata: {}\\n\\n"),
-        }),
+      read: vi.fn().mockResolvedValue({
+        done: false,
+        value: new TextEncoder().encode("event: output\\ndata: {}\\n\\n"),
+      }),
       cancel: vi.fn().mockRejectedValue(new Error("cancel failed")),
       releaseLock,
     };
