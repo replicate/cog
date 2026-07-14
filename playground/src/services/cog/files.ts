@@ -1,5 +1,10 @@
-/** Converts a browser file to a data URI and rejects if the file cannot be read. */
+const MAX_LOCAL_FILE_SIZE = 16 * 1024 * 1024;
+
+/** Converts a browser file up to 16 MiB to a data URI and rejects if it cannot be read. */
 export function fileToDataURI(file: File): Promise<string> {
+  if (file.size > MAX_LOCAL_FILE_SIZE) {
+    return Promise.reject(new Error("Local files must be 16 MiB or smaller"));
+  }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));

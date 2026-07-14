@@ -35,8 +35,11 @@ export async function* readSSE(response: Response): AsyncGenerator<StreamEvent> 
       if (event) yield event;
     }
   } finally {
-    if (!done) await reader.cancel();
-    reader.releaseLock();
+    try {
+      if (!done) await reader.cancel();
+    } finally {
+      reader.releaseLock();
+    }
   }
 }
 

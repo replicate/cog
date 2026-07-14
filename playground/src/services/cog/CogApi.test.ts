@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CogApi } from "@/services/cog/CogApi";
-import { parseSSE } from "@/services/cog/sse";
+import { parseSSE, readSSE } from "@/services/cog/sse";
 
 const signal = new AbortController().signal;
 const target = "http://localhost:5000";
@@ -144,6 +144,22 @@ describe("CogApi", () => {
     ).rejects.toThrow("SSE event is too large");
   });
 
+  it("releases an SSE reader lock when cancellation fails", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("event: output\\ndata: {}\\n\\n"));
+      },
+      cancel() {
+        return Promise.reject(new Error("cancel failed"));
+      },
+    });
+    const iterator = readSSE(new Response(stream))[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toMatchObject({ value: { type: "output" } });
+    await expect(iterator.return?.()).rejects.toThrow("cancel failed");
+    expect(stream.locked).toBe(false);
+  });
+
   it("rejects oversized JSON responses before reading them", async () => {
     vi.stubGlobal(
       "fetch",
@@ -176,6 +192,19 @@ describe("parseSSE", () => {
 
   it("ignores frames without an event type", () => {
     expect(parseSSE("data: no-event")).toBeUndefined();
+  });
+});
+
+describe("fileToDataURI", () => {
+  it("rejects files over 16 MiB before creating a FileReader", async () => {
+    const FileReader = vi.fn();
+    vi.stubGlobal("FileReader", FileReader);
+    const { fileToDataURI } = await import("@/services/cog/files");
+
+    await expect(fileToDataURI({ size: 16 * 1024 * 1024 + 1 } as File)).rejects.toThrow(
+      "Local files must be 16 MiB or smaller",
+    );
+    expect(FileReader).not.toHaveBeenCalled();
   });
 });
 
