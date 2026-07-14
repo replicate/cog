@@ -156,7 +156,7 @@ describe("CogApi", () => {
     const iterator = readSSE(new Response(stream))[Symbol.asyncIterator]();
 
     await expect(iterator.next()).resolves.toMatchObject({ value: { type: "output" } });
-    await expect(iterator.return?.()).rejects.toThrow("cancel failed");
+    await expect(iterator.return(undefined)).rejects.toThrow("cancel failed");
     expect(stream.locked).toBe(false);
   });
 
