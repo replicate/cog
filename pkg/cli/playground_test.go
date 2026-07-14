@@ -585,10 +585,12 @@ func TestPlaygroundWebhookRejectsMissingSubscriber(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
 
-func TestPlaygroundProxyStripsExternalRedirectLocation(t *testing.T) {
+func TestPlaygroundProxyStripsRedirectLocation(t *testing.T) {
 	for name, location := range map[string]string{
 		"absolute":          "http://169.254.169.254/latest/meta-data/",
 		"protocol-relative": "//169.254.169.254/latest/meta-data/",
+		"triple-slash":      "///169.254.169.254/latest/meta-data/",
+		"backslash":         `\\169.254.169.254\latest\meta-data\`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			ts := newTestPlayground(t)

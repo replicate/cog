@@ -413,14 +413,10 @@ func handlePlaygroundProxy(w http.ResponseWriter, r *http.Request) {
 			resp.Header.Del("Clear-Site-Data")
 			resp.Header.Del("Service-Worker-Allowed")
 			resp.Header.Del("Set-Cookie")
-			// Drop external redirects so the browser cannot be pivoted off the
+			// Drop redirects so browser URL normalization cannot pivot off the
 			// intended target (fetch uses redirect: "manual" as a second line).
 			if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-				if location := resp.Header.Get("Location"); location != "" {
-					if parsed, err := url.Parse(location); err != nil || parsed.IsAbs() || parsed.Host != "" {
-						resp.Header.Del("Location")
-					}
-				}
+				resp.Header.Del("Location")
 			}
 			upstreamHeaders := resp.Header.Clone()
 			upstreamHeaders.Del(playgroundUpstreamHeaders)
