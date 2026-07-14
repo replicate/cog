@@ -290,6 +290,34 @@ describe("InputForm", () => {
     expect(onBusyChange).toHaveBeenLastCalledWith(false);
   });
 
+  it("clears busy state when unmounted during a file read", async () => {
+    const pending = deferred<string>();
+    mockFileToDataURI.mockReturnValue(pending.promise);
+    const onBusyChange = vi.fn();
+    const { container, unmount } = render(
+      <InputForm
+        document={document}
+        schema={{
+          required: ["file"],
+          properties: { file: { type: "string", format: "uri" } },
+        }}
+        value={{ file: "" }}
+        onChange={vi.fn()}
+        onBusyChange={onBusyChange}
+        onValidityChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [new File(["data"], "pending.txt")] },
+    });
+    await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(true));
+
+    unmount();
+
+    expect(onBusyChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("invalidates a file control when reading the selected file fails", async () => {
     mockFileToDataURI.mockRejectedValue(new Error("read failed"));
     const onBusyChange = vi.fn();

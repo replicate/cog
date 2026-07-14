@@ -45,6 +45,7 @@ export function InputForm({
     onValidityChange(controlsValid);
   }, [onValidityChange, properties, required, validity, value]);
   useEffect(() => onBusyChange(Object.values(busy).some(Boolean)), [busy, onBusyChange]);
+  useEffect(() => () => onBusyChange(false), [onBusyChange]);
 
   if (properties.length === 0) return <p className="muted">This model takes no inputs.</p>;
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { InputMode } from "@/features/inputs/types";
 import { errorMessage, parseInputObject, serializeInput } from "@/features/inputs/utils/input";
@@ -33,10 +33,13 @@ export function usePlaygroundInput({ target, document, capabilities }: Options) 
   const [formRevision, setFormRevision] = useState(0);
   const validationAttempt = useRef(0);
   const connectionState = useRef({ target, document, capabilities });
-  connectionState.current = { target, document, capabilities };
   // Identifies the connected schema so the validation worker compiles it once
   // and reuses the compiled validator across runs.
   const schemaId = useRef(0);
+
+  useLayoutEffect(() => {
+    connectionState.current = { target, document, capabilities };
+  }, [capabilities, document, target]);
 
   useEffect(
     () => () => {
