@@ -145,19 +145,26 @@ describe("CogApi", () => {
   });
 
   it("releases an SSE reader lock when cancellation fails", async () => {
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode("event: output\\ndata: {}\\n\\n"));
-      },
-      cancel() {
-        return Promise.reject(new Error("cancel failed"));
-      },
-    });
-    const iterator = readSSE(new Response(stream))[Symbol.asyncIterator]();
+    const releaseLock = vi.fn();
+    const reader = {
+      read: vi
+        .fn()
+        .mockResolvedValue({
+          done: false,
+          value: new TextEncoder().encode("event: output\\ndata: {}\\n\\n"),
+        }),
+      cancel: vi.fn().mockRejectedValue(new Error("cancel failed")),
+      releaseLock,
+    };
+    const response = {
+      ok: true,
+      body: { getReader: () => reader },
+    } as unknown as Response;
+    const iterator = readSSE(response)[Symbol.asyncIterator]();
 
     await expect(iterator.next()).resolves.toMatchObject({ value: { type: "output" } });
     await expect(iterator.return(undefined)).rejects.toThrow("cancel failed");
-    expect(stream.locked).toBe(false);
+    expect(releaseLock).toHaveBeenCalledOnce();
   });
 
   it("rejects oversized JSON responses before reading them", async () => {
