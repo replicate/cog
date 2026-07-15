@@ -1,0 +1,27 @@
+playground/src/services/cog/CogApi.test.ts
+  s_f48937d9b17e54::t_09b6178e2abe70 13-17,47-69,208-248
+playground/src/services/cog/CogApi.ts
+  s_f48937d9b17e54::t_a82d0349449074 1-3,14,27-32,36,39-41,46,51,107,110,114-120,126-128,146-154
+playground/src/types/health.ts
+  s_f48937d9b17e54::t_26283db6714200 1-2,9-40
+playground/src/types/openapi.ts
+  s_f48937d9b17e54::t_f848ee29762e88 1,5,9-10,14,21-22,33,42-161
+playground/src/utils/openapi.ts
+  s_f48937d9b17e54::t_a0c87c2f0d1efd 1,18,26,37-38,42,49,80-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "5d69c06cea8870bdd420d07f87477e52c413503d",
+  "prompts": {},
+  "sessions": {
+    "s_f48937d9b17e54": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0987370faffezOlt0TFoBzYlJY",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
