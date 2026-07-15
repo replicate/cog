@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "react", "import", "vitest", "jsx-a11y"],
+  "rules": {
+    "vitest/require-mock-type-parameters": "off"
+  },
+  "env": {
+    "browser": true
+  },
+  "ignorePatterns": ["coverage", "playwright-report", "test-results"]
+}

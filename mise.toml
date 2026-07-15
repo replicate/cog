@@ -33,6 +33,8 @@ config_roots = ["."]
 [tools]
 
 go = "latest"
+node = "24.18.0"
+"npm:pnpm" = "11.11.0"
 uv = "0.9.26"
 "pipx:nox" = { version = "2025.11.12", uvx = true, uvx_args = "--python-preference=managed -p 3.13" }
 "rust" = { version = "1.93.0", components = "rustfmt,clippy,rust-analyzer", targets = "x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin" }
@@ -148,7 +150,8 @@ echo "Installed $DEST/cog -> $BINARY"
 
 [tasks."build:cog"]
 description = "Build cog CLI (development)"
-sources = ["cmd/**/*.go", "pkg/**/*.go", "go.mod", "go.sum", "VERSION.txt"]
+depends = ["build:playground"]
+sources = ["cmd/**/*.go", "pkg/**/*.go", "pkg/cli/playground/**", ".goreleaser.yaml", "go.mod", "go.sum", "mise.toml", "mise.lock", "VERSION.txt"]
 outputs = ["dist/go/*/cog"]
 run = """
 #!/usr/bin/env bash
@@ -158,8 +161,27 @@ set -e
 GOFLAGS=-buildvcs=false go run github.com/goreleaser/goreleaser/v2@latest build --clean --snapshot --single-target --id cog --output cog
 """
 
+[tasks."playground:install"]
+description = "Install playground dependencies"
+dir = "playground"
+sources = ["package.json", "pnpm-lock.yaml", "../mise.toml", "../mise.lock"]
+outputs = ["node_modules/.cog-playground-installed"]
+run = "pnpm install --frozen-lockfile && touch node_modules/.cog-playground-installed"
+
+[tasks."build:playground"]
+description = "Build embedded playground assets"
+depends = ["playground:install"]
+dir = "playground"
+sources = ["src/**/*", "scripts/**/*", "index.html", "package.json", "pnpm-lock.yaml", "tsconfig.json", "vite.config.ts", "../mise.toml", "../mise.lock"]
+outputs = ["../pkg/cli/playground/index.html", "../pkg/cli/playground/THIRD_PARTY_LICENSES.md", "../pkg/cli/playground/assets/*"]
+run = [
+  "pnpm run build",
+  "test -s ../pkg/cli/playground/THIRD_PARTY_LICENSES.md",
+]
+
 [tasks."build:cog:release"]
 description = "Build cog CLI (release)"
+depends = ["build:playground"]
 run = "go run github.com/goreleaser/goreleaser/v2@latest build --clean --single-target --id cog --output cog"
 
 [tasks."build:rust"]
@@ -292,6 +314,7 @@ set -e
 mise run test:go
 mise run test:rust
 mise run test:python
+mise run test:playground
 if [ "${INTEGRATION_TESTS:-}" = "1" ]; then
   mise run test:integration
 fi
@@ -309,6 +332,27 @@ run = "cargo nextest run --manifest-path crates/Cargo.toml --workspace --exclude
 description = "Run Python SDK tests (latest supported Python)"
 depends = ["build:coglet:wheel"]
 run = "nox -s tests -p 3.13"
+
+[tasks."test:playground"]
+description = "Run playground tests with coverage"
+depends = ["playground:install"]
+dir = "playground"
+run = "pnpm run test:coverage"
+
+[tasks."test:playground:e2e"]
+description = "Run playground browser tests against a real Cog server"
+depends = ["build:cog", "build:sdk", "build:coglet:wheel:linux-x64", "playground:install"]
+dir = "playground"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd .. && pwd)"
+BINARY="${COG_BINARY:-$(ls "$ROOT"/dist/go/*/cog | head -1)}"
+COG_BINARY="$BINARY" \
+COG_SDK_WHEEL="${COG_SDK_WHEEL:-$ROOT/dist}" \
+COGLET_WHEEL="${COGLET_WHEEL:-$ROOT/dist}" \
+pnpm run test:e2e
+"""
 
 [tasks."test:python:all"]
 description = "Run Python SDK tests on all supported Python versions"
@@ -388,7 +432,7 @@ fi
 [tasks.fmt]
 alias = ["format", "fmt:check", "format:check"]
 description = "Check formatting for all languages (non-destructive)"
-run = [{ tasks = ["fmt:go", "fmt:rust", "fmt:python", "fmt:docs"] }]
+run = [{ tasks = ["fmt:go", "fmt:rust", "fmt:python", "fmt:playground", "fmt:docs"] }]
 
 [tasks."fmt:fix"]
 alias = "format:fix"
@@ -398,6 +442,7 @@ run = [
     "fmt:go:fix",
     "fmt:rust:fix",
     "fmt:python:fix",
+    "fmt:playground:fix",
     "fmt:docs:fix",
   ] },
 ]
@@ -437,6 +482,19 @@ run = "ruff format --check ."
 description = "Fix Python formatting"
 run = "ruff format ."
 
+[tasks."fmt:playground"]
+alias = "fmt:playground:check"
+description = "Check playground formatting"
+depends = ["playground:install"]
+dir = "playground"
+run = "pnpm run fmt:check"
+
+[tasks."fmt:playground:fix"]
+description = "Fix playground formatting"
+depends = ["playground:install"]
+dir = "playground"
+run = "pnpm run fmt"
+
 # Docs formatting
 [tasks."fmt:docs"]
 alias = "fmt:docs:check"
@@ -454,7 +512,7 @@ run = ["bash ./tools/format-markdown.sh --write", "markdownlint-cli2 --fix"]
 [tasks.lint]
 alias = "lint:check"
 description = "Run linters for all languages (non-destructive)"
-run = [{ tasks = ["lint:go", "lint:rust", "lint:python", "lint:docs"] }]
+run = [{ tasks = ["lint:go", "lint:rust", "lint:python", "lint:playground", "lint:docs"] }]
 
 [tasks."lint:fix"]
 description = "Fix lint issues for all languages"
@@ -463,6 +521,7 @@ run = [
     "lint:go:fix",
     "lint:rust:fix",
     "lint:python:fix",
+    "lint:playground:fix",
     "lint:docs:fix",
   ] },
 ]
@@ -520,13 +579,26 @@ mise run typecheck:python
 description = "Fix Python lint issues"
 run = "ruff check --fix ."
 
+[tasks."lint:playground"]
+alias = "lint:playground:check"
+description = "Lint playground code"
+depends = ["playground:install"]
+dir = "playground"
+run = "pnpm run lint"
+
+[tasks."lint:playground:fix"]
+description = "Fix playground lint issues"
+depends = ["playground:install"]
+dir = "playground"
+run = "pnpm run lint:fix"
+
 # =============================================================================
 # Typecheck tasks
 # =============================================================================
 
 [tasks.typecheck]
 description = "Run type checking for all languages"
-run = [{ tasks = ["typecheck:rust", "typecheck:python"] }]
+run = [{ tasks = ["typecheck:rust", "typecheck:python", "typecheck:playground"] }]
 
 [tasks."typecheck:rust"]
 description = "Type check Rust code (cargo check)"
@@ -535,6 +607,12 @@ run = "cargo check --manifest-path crates/Cargo.toml --workspace"
 [tasks."typecheck:python"]
 description = "Type check Python code"
 run = "nox -s typecheck"
+
+[tasks."typecheck:playground"]
+description = "Type check playground code"
+depends = ["playground:install"]
+dir = "playground"
+run = "pnpm run typecheck"
 
 # =============================================================================
 # Generate tasks
