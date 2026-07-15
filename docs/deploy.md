@@ -50,7 +50,11 @@ with your project directory mounted in:
 cog serve
 ```
 
-By default the server runs on port 8393.
+By default the server runs on port 8393 and the container port is published on
+`127.0.0.1` (localhost), so it is only reachable from your local machine. The
+server process inside the container binds to `0.0.0.0`; use `--host` to control
+which host interface the Docker port mapping is published on.
+
 Use `-p` to choose a different port:
 
 ```console
