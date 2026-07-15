@@ -10,7 +10,11 @@ describe("CogApi", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("submits asynchronous predictions through the proxy", async () => {
-    const fetch = vi.fn().mockResolvedValue(jsonResponse({ id: "p1", status: "starting" }));
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ id: "p1", status: "starting", error: null, metrics: null }),
+      );
     vi.stubGlobal("fetch", fetch);
     const api = new CogApi();
 
@@ -38,6 +42,29 @@ describe("CogApi", () => {
       webhook: "http://callback/webhook/token",
       webhook_events_filter: ["start", "completed"],
     });
+  });
+
+  it("cancels a prediction through the proxy", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    const api = new CogApi();
+
+    await api.cancel(target, "/predictions", "custom/id");
+
+    const [url, request] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/proxy/predictions/custom%2Fid/cancel");
+    expect(request.method).toBe("POST");
+    expect(new Headers(request.headers).get("X-Cog-Target")).toBe(target);
+  });
+
+  it("reads playground configuration", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ target: "http://api", cogVersion: "0.9.0" })),
+    );
+    const api = new CogApi();
+
+    await expect(api.config()).resolves.toEqual({ target: "http://api", cogVersion: "0.9.0" });
   });
 
   it("rejects proxy redirects instead of following them", async () => {
@@ -177,6 +204,47 @@ describe("CogApi", () => {
     const api = new CogApi();
 
     await expect(api.schema(target)).rejects.toThrow("Response body exceeds 16777216 bytes");
+  });
+
+  it("accepts OpenAPI 3.1 schemas and path-level metadata", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          components: {
+            schemas: {
+              Input: { type: ["array", "null"], exclusiveMinimum: 0, items: false },
+            },
+          },
+          paths: {
+            "/predictions": {
+              parameters: [],
+              summary: "Create a prediction",
+              post: { "x-cog-streaming": true },
+            },
+          },
+        }),
+      ),
+    );
+
+    await expect(new CogApi().schema(target)).resolves.toMatchObject({
+      paths: { "/predictions": { post: { "x-cog-streaming": true } } },
+    });
+  });
+
+  it.each([
+    ["configuration", { target: true }, (api: CogApi) => api.config()],
+    ["health", { status: 200 }, (api: CogApi) => api.health(target)],
+    ["OpenAPI", { paths: [] }, (api: CogApi) => api.schema(target)],
+    [
+      "prediction",
+      { id: 1 },
+      (api: CogApi) => api.submit({ target, endpoint: "/predictions", input: {}, signal }),
+    ],
+  ])("rejects invalid %s response shapes", async (_name, body, request) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(body)));
+
+    await expect(request(new CogApi())).rejects.toThrow(/Invalid/);
   });
 });
 

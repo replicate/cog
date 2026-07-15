@@ -1,5 +1,5 @@
 import { responseError } from "@/services/cog/http";
-import { isJsonObject, type JsonObject, type JsonValue } from "@/types/json";
+import { isJsonObject, isJsonValue, type JsonObject } from "@/types/json";
 import type { StreamEvent } from "@/types/prediction";
 
 const MAX_SSE_FRAME_LENGTH = 1024 * 1024;
@@ -79,10 +79,4 @@ function lineBreakLength(value: string, index: number): number {
   if (value[index] !== "\r") return 0;
   if (index + 1 === value.length) return 0;
   return value[index + 1] === "\n" ? 2 : 1;
-}
-
-function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null || ["boolean", "number", "string"].includes(typeof value)) return true;
-  if (Array.isArray(value)) return value.every(isJsonValue);
-  return isJsonObject(value) && Object.values(value).every(isJsonValue);
 }

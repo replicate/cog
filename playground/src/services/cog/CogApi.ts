@@ -1,5 +1,6 @@
-import type { HealthResponse } from "@/types/health";
-import type { OpenAPIDocument } from "@/types/openapi";
+import { isHealthResponse, type HealthResponse } from "@/types/health";
+import { isJsonObject, type JsonObject } from "@/types/json";
+import { isOpenAPIDocument, type OpenAPIDocument } from "@/types/openapi";
 import type { PredictionEnvelope, StreamEvent } from "@/types/prediction";
 import { parseJSONResponse, parsePredictionResponse, responseError } from "@/services/cog/http";
 import { readSSE } from "@/services/cog/sse";
@@ -10,7 +11,7 @@ type SubmitOptions = {
   target: string;
   endpoint: string;
   id?: string;
-  input: Record<string, unknown>;
+  input: JsonObject;
   signal: AbortSignal;
   async?: boolean;
   webhook?: string;
@@ -23,27 +24,31 @@ type StreamOptions = Pick<
   "target" | "endpoint" | "id" | "input" | "signal" | "onResponse"
 >;
 
+type PlaygroundConfig = {
+  target?: string;
+  webhookBase?: string;
+  cogVersion?: string;
+};
+
 /** Routes model requests through the same-origin proxy rather than exposing cross-origin access. */
 export class CogApi {
   /** Loads the playground's optional target, webhook, and version configuration. */
-  async config(
-    signal?: AbortSignal,
-  ): Promise<{ target?: string; webhookBase?: string; cogVersion?: string }> {
+  async config(signal?: AbortSignal): Promise<PlaygroundConfig> {
     const response = await fetch("/config", { credentials: "omit", signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return parseJSONResponse<{ target?: string; webhookBase?: string; cogVersion?: string }>(
-      response,
-    );
+    const config = await parseJSONResponse(response);
+    if (!isPlaygroundConfig(config)) throw new Error("Invalid playground configuration response");
+    return config;
   }
 
   /** Reads size-limited health JSON from the configured target. */
   async health(target: string, signal?: AbortSignal): Promise<HealthResponse> {
-    return this.#jsonRequest<HealthResponse>(target, "/health-check", signal);
+    return this.#jsonRequest(target, "/health-check", signal, "health", isHealthResponse);
   }
 
   /** Reads the size-limited OpenAPI document from the configured target. */
   async schema(target: string, signal?: AbortSignal): Promise<OpenAPIDocument> {
-    return this.#jsonRequest<OpenAPIDocument>(target, "/openapi.json", signal);
+    return this.#jsonRequest(target, "/openapi.json", signal, "OpenAPI", isOpenAPIDocument);
   }
 
   /** Uses PUT for caller-supplied IDs and adds `Prefer: respond-async` for async submissions. */
@@ -99,20 +104,28 @@ export class CogApi {
   }
 
   #body(
-    input: Record<string, unknown>,
+    input: JsonObject,
     webhook?: string,
     webhookEvents?: string[],
-  ): { input: Record<string, unknown>; webhook?: string; webhook_events_filter?: string[] } {
+  ): { input: JsonObject; webhook?: string; webhook_events_filter?: string[] } {
     return webhook ? { input, webhook, webhook_events_filter: webhookEvents } : { input };
   }
 
-  async #jsonRequest<T>(target: string, endpoint: string, signal?: AbortSignal): Promise<T> {
+  async #jsonRequest<T>(
+    target: string,
+    endpoint: string,
+    signal: AbortSignal | undefined,
+    responseName: string,
+    validate: (value: unknown) => value is T,
+  ): Promise<T> {
     const response = await this.#proxyFetch(PROXY_PREFIX + endpoint, {
       headers: this.#headers(target),
       signal,
     });
     if (!response.ok) throw await responseError(response);
-    return parseJSONResponse<T>(response);
+    const body = await parseJSONResponse(response);
+    if (!validate(body)) throw new Error(`Invalid ${responseName} response`);
+    return body;
   }
 
   /** Never follows redirects so a hostile target cannot pivot the browser off-origin. */
@@ -129,4 +142,13 @@ export class CogApi {
     }
     return response;
   }
+}
+
+function isPlaygroundConfig(value: unknown): value is PlaygroundConfig {
+  return (
+    isJsonObject(value) &&
+    ["target", "webhookBase", "cogVersion"].every(
+      (key) => value[key] === undefined || typeof value[key] === "string",
+    )
+  );
 }
