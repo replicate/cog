@@ -18,6 +18,8 @@ builds:
       - amd64
       - arm64
     main: ./cmd/cog
+    tags:
+      - playground_assets
     ldflags:
       # COG_VERSION (from VERSION.txt via mise build:cog or CI) overrides git-derived version for snapshots.
       # For tagged releases, COG_VERSION is unset and envOrDefault falls back to .Version (from tag).
