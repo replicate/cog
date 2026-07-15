@@ -10,6 +10,10 @@ updates:
       interval: "weekly"
     allow:
       - dependency-type: "direct"
+  - package-ecosystem: "npm"
+    directory: "/playground"
+    schedule:
+      interval: "weekly"
   - package-ecosystem: "cargo"
     directory: "/crates"
     schedule:
