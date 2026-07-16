@@ -1,0 +1,19 @@
+pkg/predict/input_test.go
+  s_b27b1f64231802::t_79a7967ebf0aa5 247-288
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "7f82a6187cd57245f111aeb7561b76006f3030e6",
+  "prompts": {},
+  "sessions": {
+    "s_b27b1f64231802": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_093fb4159ffeFGdG2zm0LCV3db",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
