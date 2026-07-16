@@ -1,7 +1,6 @@
 package predict
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +15,7 @@ import (
 // runtime schema for images with minimal or missing labels.
 func HasInputComponent(schema *openapi3.T, isTrain bool) bool {
 	_, err := inputComponentForMode(schema, isTrain)
-	return err == nil && schema.Validate(context.Background()) == nil
+	return err == nil
 }
 
 // ValidateInputsForMode validates CLI inputs after schema-directed coercion.

@@ -1,6 +1,7 @@
 package predict
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -230,12 +231,11 @@ func TestInputComponentForModeTrainingAndInputMissing(t *testing.T) {
 		"OpenAPI schema is missing Input component")
 }
 
-func TestHasInputComponentRejectsInvalidComponent(t *testing.T) {
+func TestHasInputComponentAcceptsIncompleteDocument(t *testing.T) {
 	schema := validationTestSchema(t)
-	schema.Components.Schemas["Input"].Value.Properties["broken"] = &openapi3.SchemaRef{Value: &openapi3.Schema{
-		Type: &openapi3.Types{"invalid"},
-	}}
-	require.False(t, HasInputComponent(schema, false))
+	schema.Paths = nil
+	require.Error(t, schema.Validate(context.Background()))
+	require.True(t, HasInputComponent(schema, false))
 }
 
 func TestHasInputComponentFallbacks(t *testing.T) {

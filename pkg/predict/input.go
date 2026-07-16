@@ -33,25 +33,11 @@ func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain b
 		schemaKey = "TrainingInput"
 	}
 	var inputComponent *openapi3.SchemaRef
-	// Defensive: callers guard against a schema without components (build paths
-	// generate+validate it, existing images gate on HasInputComponent), but
-	// guard here too so a future caller can't trip a nil-map deref.
-	if schema == nil || schema.Components == nil {
-		return Inputs{}, nil
-	}
-	for name, component := range schema.Components.Schemas {
-		if name == schemaKey {
-			inputComponent = component
-			break
-		}
-	}
-	// Fallback: if TrainingInput not found, try Input (legacy schemas)
-	if inputComponent == nil && isTrain {
-		for name, component := range schema.Components.Schemas {
-			if name == "Input" {
-				inputComponent = component
-				break
-			}
+	if schema != nil && schema.Components != nil {
+		inputComponent = schema.Components.Schemas[schemaKey]
+		// Fallback: if TrainingInput not found, try Input (legacy schemas)
+		if inputComponent == nil && isTrain {
+			inputComponent = schema.Components.Schemas["Input"]
 		}
 	}
 
@@ -93,10 +79,10 @@ func newSingleInput(value string, schema *openapi3.Schema) Input {
 
 	resolved := resolveSchemaType(schema)
 	switch {
-	case resolved.Type.Is("object"):
+	case resolved.Type != nil && resolved.Type.Is("object"):
 		raw := json.RawMessage(value)
 		return Input{Json: &raw}
-	case resolved.Type.Is("array"):
+	case resolved.Type != nil && resolved.Type.Is("array"):
 		return newSingleArrayInput(value, schema)
 	default:
 		return newScalarInput(value, schema)

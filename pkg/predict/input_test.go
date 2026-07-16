@@ -244,6 +244,48 @@ func TestNewInputsForMode_ArrayStringUnionPreservesString(t *testing.T) {
 	require.NotNil(t, inputs["value"].Json)
 }
 
+func TestNewInputsForModeWithoutComponentsPreservesValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		schema *openapi3.T
+	}{
+		{name: "nil schema"},
+		{name: "missing components", schema: &openapi3.T{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inputs, err := NewInputsForMode(map[string][]string{
+				"prompt": {"hello"},
+				"image":  {"@image.png"},
+				"values": {"one", "two"},
+			}, tt.schema, false)
+			require.NoError(t, err)
+			require.NotNil(t, inputs["prompt"].String)
+			require.Equal(t, "hello", *inputs["prompt"].String)
+			require.NotNil(t, inputs["image"].File)
+			require.Equal(t, "image.png", *inputs["image"].File)
+			require.NotNil(t, inputs["values"].Array)
+			require.Equal(t, []any{"one", "two"}, *inputs["values"].Array)
+		})
+	}
+}
+
+func TestNewInputsForModeCoercesOneOfValue(t *testing.T) {
+	t.Parallel()
+
+	schema := validationTestSchema(t)
+	schema.Components.Schemas["Input"].Value.Properties["choice"] = &openapi3.SchemaRef{Value: &openapi3.Schema{OneOf: openapi3.SchemaRefs{
+		{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+		{Value: &openapi3.Schema{Type: &openapi3.Types{"integer"}}},
+	}}}
+	inputs, err := NewInputsForMode(map[string][]string{"choice": {"1"}}, schema, false)
+	require.NoError(t, err)
+	require.NotNil(t, inputs["choice"].Int)
+	require.Equal(t, int32(1), *inputs["choice"].Int)
+}
+
 func TestSchemaAcceptsNumber(t *testing.T) {
 	t.Parallel()
 
