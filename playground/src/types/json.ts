@@ -6,3 +6,10 @@ export type JsonObject = { [key: string]: JsonValue };
 export function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+/** Narrows values that can be represented by JSON. */
+export function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null || ["boolean", "number", "string"].includes(typeof value)) return true;
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return isJsonObject(value) && Object.values(value).every(isJsonValue);
+}
