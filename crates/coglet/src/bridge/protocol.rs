@@ -327,8 +327,7 @@ pub enum SlotResponse {
         /// Explicit MIME type from the predictor. Falls back to mime_guess when None.
         #[serde(skip_serializing_if = "Option::is_none")]
         mime_type: Option<String>,
-        /// True if Coglet created this file (IOBase write or oversized spill).
-        /// False for user-authored Path outputs — must not be deleted.
+        /// True if Coglet owns this file and may delete it after consumption.
         #[serde(default)]
         managed: bool,
     },

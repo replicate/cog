@@ -164,11 +164,6 @@ impl SlotSender {
         }
     }
 
-    /// Directory where Coglet-managed output files for this prediction live.
-    pub fn output_dir(&self) -> &std::path::Path {
-        &self.output_dir
-    }
-
     fn next_output_index(&self) -> u64 {
         self.output_counter.fetch_add(1, Ordering::Relaxed)
     }
@@ -213,8 +208,7 @@ impl SlotSender {
     ///
     /// The file is already on disk at `path` — we just send the path reference.
     /// `mime_type` is an explicit MIME type; when None the parent guesses from extension.
-    /// `managed` is true when Coglet created the file (safe to delete after consumption);
-    /// false for user-authored Path outputs.
+    /// `managed` is true when Coglet owns the file and may delete it after consumption.
     pub fn send_file_output(
         &self,
         path: PathBuf,
@@ -236,30 +230,30 @@ impl SlotSender {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
     }
 
-    /// Send a user-returned file path, ensuring Coglet only deletes files it owns.
+    /// Transfer a user-returned file into Coglet's managed output directory.
     ///
-    /// If the path is already inside the Cog-managed output directory, send it as
-    /// `managed: true` so the orchestrator deletes it after upload. If it lives
-    /// outside the output directory, copy it to a unique path inside the output
-    /// directory and send the copy as managed. This preserves the documented
-    /// behavior that returned files are cleaned up while never deleting arbitrary
-    /// user-owned paths.
+    /// Returning a path hands ownership to Coglet. Copying before unlinking works
+    /// across filesystems while ensuring the source is only removed after the
+    /// managed copy has been written successfully.
     pub fn send_user_file_output(
         &self,
         path: PathBuf,
         mime_type: Option<String>,
     ) -> io::Result<()> {
-        if path.starts_with(&self.output_dir) {
-            return self.send_file_output(path, mime_type, true);
-        }
-
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("bin")
             .to_string();
-        let dest = self.next_output_path(&ext);
+        let mut dest = self.next_output_path(&ext);
+        while dest == path || dest.exists() {
+            dest = self.next_output_path(&ext);
+        }
         std::fs::copy(&path, &dest)?;
+        if let Err(e) = std::fs::remove_file(&path) {
+            let _ = std::fs::remove_file(&dest);
+            return Err(e);
+        }
         self.send_file_output(dest, mime_type, true)
     }
 
@@ -1016,19 +1010,20 @@ mod tests {
     }
 
     #[test]
-    fn send_user_file_output_copies_external_path() {
+    fn send_user_file_output_transfers_external_path() {
         let output_dir = tempfile::tempdir().unwrap();
         let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
         let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
 
-        // Create a file outside the managed output dir
         let external = tempfile::NamedTempFile::with_suffix(".txt").unwrap();
         std::fs::write(external.path(), b"hello").unwrap();
+        let external_path = external.path().to_path_buf();
 
         sender
-            .send_user_file_output(external.path().to_path_buf(), None)
+            .send_user_file_output(external_path.clone(), None)
             .unwrap();
 
+        assert!(!external_path.exists(), "returned path should be removed");
         let msg = rx.try_recv().unwrap();
         match msg {
             SlotResponse::FileOutput {
@@ -1045,10 +1040,13 @@ mod tests {
             }
             _ => panic!("expected managed FileOutput"),
         }
+
+        assert!(sender.send_user_file_output(external_path, None).is_err());
+        assert!(rx.try_recv().is_err(), "stale path must not be sent again");
     }
 
     #[test]
-    fn send_user_file_output_passes_through_output_dir_path() {
+    fn send_user_file_output_transfers_output_dir_path() {
         let output_dir = tempfile::tempdir().unwrap();
         let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
         let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
@@ -1058,6 +1056,7 @@ mod tests {
 
         sender.send_user_file_output(inside.clone(), None).unwrap();
 
+        assert!(!inside.exists(), "returned path should be removed");
         let msg = rx.try_recv().unwrap();
         match msg {
             SlotResponse::FileOutput {
@@ -1065,9 +1064,10 @@ mod tests {
                 managed: true,
                 ..
             } => {
-                assert_eq!(filename, inside.to_str().unwrap());
+                assert_ne!(filename, inside.to_str().unwrap());
+                assert_eq!(std::fs::read(filename).unwrap(), b"world");
             }
-            _ => panic!("expected managed FileOutput for path inside output dir"),
+            _ => panic!("expected managed FileOutput"),
         }
     }
 }

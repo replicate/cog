@@ -1660,7 +1660,7 @@ mod tests {
 
         let response = app
             .oneshot(
-                Request::put("/predictions/.hidden")
+                Request::put("/predictions/foo%5Cbar")
                     .header("content-type", "application/json")
                     .body(Body::from(r#"{"input":{}}"#))
                     .unwrap(),

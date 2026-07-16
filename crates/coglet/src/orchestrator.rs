@@ -84,6 +84,14 @@ fn ensure_trailing_slash(s: &str) -> String {
     }
 }
 
+fn read_file_output(filename: &str, managed: bool) -> std::io::Result<Vec<u8>> {
+    let bytes = std::fs::read(filename)?;
+    if managed && let Err(e) = std::fs::remove_file(filename) {
+        tracing::debug!(%filename, error = %e, "Failed to delete managed output file");
+    }
+    Ok(bytes)
+}
+
 /// Try to lock a prediction mutex.
 /// On poison: logs error, recovers to fail the prediction, returns None.
 /// Caller should remove the prediction from tracking if None is returned.
@@ -1074,18 +1082,13 @@ async fn run_event_loop(
                     }
                     Ok(SlotResponse::FileOutput { filename, kind, mime_type, managed }) => {
                         tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");
-                        let bytes = match std::fs::read(&filename) {
+                        let bytes = match read_file_output(&filename, managed) {
                             Ok(b) => b,
                             Err(e) => {
                                 tracing::error!(%slot_id, %filename, error = %e, "Failed to read FileOutput");
                                 continue;
                             }
                         };
-                        if managed
-                            && let Err(e) = std::fs::remove_file(&filename)
-                        {
-                            tracing::debug!(%slot_id, %filename, error = %e, "Failed to delete managed output file");
-                        }
                         match kind {
                             FileOutputKind::Oversized => {
                                 let output: serde_json::Value = match serde_json::from_slice(&bytes) {
@@ -1312,6 +1315,30 @@ mod tests {
 
         assert_eq!(pending.len(), MAX_PENDING_CANCELLATIONS);
         assert!(!pending.contains("overflow"));
+    }
+
+    #[test]
+    fn read_file_output_deletes_managed_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("managed.txt");
+        std::fs::write(&path, b"managed").unwrap();
+
+        let bytes = read_file_output(path.to_str().unwrap(), true).unwrap();
+
+        assert_eq!(bytes, b"managed");
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn read_file_output_preserves_unmanaged_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unmanaged.txt");
+        std::fs::write(&path, b"unmanaged").unwrap();
+
+        let bytes = read_file_output(path.to_str().unwrap(), false).unwrap();
+
+        assert_eq!(bytes, b"unmanaged");
+        assert!(path.exists());
     }
 
     #[test]
