@@ -15,13 +15,14 @@ const document: OpenAPIDocument = {
     schemas: {
       Choice: { enum: [1, 2] },
       Input: {
-        required: ["prompt", "enabled", "choice"],
+        required: ["prompt", "enabled", "nullableEnabled", "choice"],
         properties: {
           late: { type: "string", "x-order": 2 },
           prompt: { type: "string", default: "hello", "x-order": 1 },
           optional: { type: "boolean", default: false },
           nullable: { type: "string", nullable: true, default: null },
           enabled: { type: "boolean" },
+          nullableEnabled: { type: ["boolean", "null"] },
           choice: { allOf: [{ $ref: "#/components/schemas/Choice" }] },
         },
       },
@@ -39,7 +40,7 @@ describe("schema helpers", () => {
     expect(
       effectiveSchema(document, {
         title: "Nullable choice",
-        anyOf: [{ $ref: "#/components/schemas/Choice" }, { type: "null" }],
+        anyOf: [{ $ref: "#/components/schemas/Choice" }, { type: ["null"] }],
       }),
     ).toEqual({ title: "Nullable choice", enum: [1, 2] });
   });
@@ -52,6 +53,7 @@ describe("schema helpers", () => {
       "optional",
       "nullable",
       "enabled",
+      "nullableEnabled",
       "choice",
     ]);
     expect(defaultInput(document, input)).toEqual({
@@ -59,6 +61,7 @@ describe("schema helpers", () => {
       optional: false,
       nullable: null,
       enabled: false,
+      nullableEnabled: false,
       choice: 1,
     });
   });

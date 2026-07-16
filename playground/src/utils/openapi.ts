@@ -1,3 +1,4 @@
+import type { JsonObject, JsonValue } from "@/types/json";
 import type { OpenAPIDocument, OpenAPISchema } from "@/types/openapi";
 
 const REF_PREFIX = "#/components/schemas/";
@@ -14,7 +15,7 @@ export function effectiveSchema(root: OpenAPIDocument, value: OpenAPISchema): Op
   if (!schema.anyOf) return schema;
   const nonNull = schema.anyOf
     .map((item) => resolveRef(root, item))
-    .filter((item) => item.type !== "null");
+    .filter((item) => !hasOnlyType(item, "null"));
   if (nonNull.length !== 1) return schema;
   const merged: OpenAPISchema = { ...schema, ...nonNull[0] };
   delete merged.anyOf;
@@ -22,7 +23,7 @@ export function effectiveSchema(root: OpenAPIDocument, value: OpenAPISchema): Op
 }
 
 /** Finds enum choices declared directly or through a referenced `allOf` branch. */
-export function enumValues(root: OpenAPIDocument, value: OpenAPISchema): unknown[] | undefined {
+export function enumValues(root: OpenAPIDocument, value: OpenAPISchema): JsonValue[] | undefined {
   const schema = effectiveSchema(root, value);
   if (schema.enum) return schema.enum;
   for (const item of schema.allOf ?? []) {
@@ -33,22 +34,19 @@ export function enumValues(root: OpenAPIDocument, value: OpenAPISchema): unknown
 }
 
 /** Builds initial input from explicit defaults and required enum or Boolean properties. */
-export function defaultInput(
-  root: OpenAPIDocument,
-  schema: OpenAPISchema,
-): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
+export function defaultInput(root: OpenAPIDocument, schema: OpenAPISchema): JsonObject {
+  const result: JsonObject = {};
   const required = new Set(schema.required ?? []);
   for (const [name, raw] of orderedProperties(schema)) {
     const property = effectiveSchema(root, raw);
-    if (Object.hasOwn(property, "default")) {
+    if (property.default !== undefined) {
       result[name] = property.default;
       continue;
     }
     if (!required.has(name)) continue;
     const choices = enumValues(root, property);
     if (choices?.length) result[name] = choices[0];
-    else if (property.type === "boolean") result[name] = false;
+    else if (hasType(property, "boolean")) result[name] = false;
   }
   return result;
 }
@@ -77,6 +75,17 @@ export function constraintText(schema: OpenAPISchema): string {
 function formatSchemaValue(value: unknown): string {
   if (typeof value === "string") return value;
   return JSON.stringify(value);
+}
+
+function hasType(schema: OpenAPISchema, type: string): boolean {
+  return schema.type === type || (Array.isArray(schema.type) && schema.type.includes(type));
+}
+
+function hasOnlyType(schema: OpenAPISchema, type: string): boolean {
+  return (
+    schema.type === type ||
+    (Array.isArray(schema.type) && schema.type.length === 1 && schema.type[0] === type)
+  );
 }
 
 export type PlaygroundCapabilities = {
