@@ -9,7 +9,6 @@ A Cog base image is a Docker image maintained by Replicate that includes:
 - **Python runtime** — the Python version specified in your `cog.yaml`.
 - **System libraries** — common dependencies for machine learning and media processing, including `ffmpeg`, `git`, `curl`, `build-essential`, `cmake`, OpenCV libraries, audio libraries (`sox`, `libsndfile1`), and graphics libraries (`libgl1`, `libsm6`, `libxext6`).
 - **CUDA and PyTorch** (GPU images only) — the appropriate CUDA toolkit and PyTorch stack for your configuration.
-- **Cog runtime** — the Cog SDK and coglet prediction server.
 
 Base images are tagged by their configuration, for example:
 
