@@ -44,6 +44,10 @@ func TestParseLocalArtifactRequirement(t *testing.T) {
 		{name: "LocalRecursiveRequirement", line: "-r requirements-local.txt", expectsErr: true},
 		{name: "InlineHash", line: "./pkg.whl --hash=sha256:abc", expectsErr: true},
 		{name: "LocalDirectory", line: "./pkg", expectsErr: true},
+		{name: "DirectRefRelative", line: "name @ ./pkg.whl", expectsErr: true},
+		{name: "DirectRefAbsolute", line: "name @ /tmp/pkg.whl", expectsErr: true},
+		{name: "DirectRefBareRelative", line: "name @ pkg.whl", expectsErr: true},
+		{name: "DirectRefRemote", line: "name @ https://example.com/pkg.whl"},
 	}
 
 	for _, tc := range testCases {

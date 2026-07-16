@@ -27,6 +27,12 @@ func ParseLocalArtifactRequirement(line string) (string, bool, error) {
 	if strings.HasPrefix(line, "file:") || strings.Contains(line, " @ file:") {
 		return "", false, fmt.Errorf("local file URL requirements are not supported: %s", line)
 	}
+	if _, path, ok := strings.Cut(line, " @ "); ok {
+		path = strings.TrimSpace(path)
+		if !isRemoteRequirement(path) && (isLocalPath(path) || hasLocalArtifactSuffix(path)) {
+			return "", false, fmt.Errorf("local direct reference requirements (\"name @ path\") are not supported; list the path directly instead: %s", line)
+		}
+	}
 	if option, ok := parseUnsupportedLocalOption(line); ok {
 		return "", false, fmt.Errorf("local requirements option %q is not supported: %s", option, line)
 	}
