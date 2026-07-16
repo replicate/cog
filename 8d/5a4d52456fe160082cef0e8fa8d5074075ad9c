@@ -1,0 +1,33 @@
+crates/coglet-python/src/predictor.rs
+  s_5739ff38ee3331::t_67a81c739061fc 169,172-184,205-207,960,1381,1439-1469
+crates/coglet/src/bridge/protocol.rs
+  s_5739ff38ee3331::t_331c58c2ca9be7 330
+crates/coglet/src/orchestrator.rs
+  s_5739ff38ee3331::t_730249c50a500a 87-94,1085,1320-1343
+crates/coglet/src/service.rs
+  s_5739ff38ee3331::t_59fdc41e32ea7e 536-544,555-560,821-824,826-827,829-830,832-855,872-874,882-883,1875-1915,1922,1945-1955,1967,1986,1995-1996
+crates/coglet/src/transport/http/routes.rs
+  s_5739ff38ee3331::t_81bddda937048f 1663
+crates/coglet/src/worker.rs
+  s_5739ff38ee3331::t_f4e722ab051ceb 211,233,235-237,248-251,253-256,1013,1020,1023,1026,1043-1045,1049,1059,1067-1068,1070
+docs/llms.txt
+  s_5739ff38ee3331::t_8014fe6dcc109f 2787
+docs/python.md
+  s_5739ff38ee3331::t_1f9b6762dcb81a 540
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "8d5a4d52456fe160082cef0e8fa8d5074075ad9c",
+  "prompts": {},
+  "sessions": {
+    "s_5739ff38ee3331": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_093812df8ffejXge4Eaqj2S76a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
