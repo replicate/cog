@@ -1,0 +1,241 @@
+.github/dependabot.yml
+  s_05c9e7c6a258a3::t_8ba432d35db0a7 13-16
+.github/workflows/bonk.yml
+  s_05c9e7c6a258a3::t_da02df246ea1c8 27
+.github/workflows/codeql.yml
+  s_05c9e7c6a258a3::t_9d8046c2868eda 41
+.github/workflows/docs.yaml
+  s_05c9e7c6a258a3::t_877b234f153adf 15
+.github/workflows/homebrew-tap.yaml
+  s_05c9e7c6a258a3::t_6b492e7c39145b 58
+.github/workflows/mirror-cog-base-images.yaml
+  s_05c9e7c6a258a3::t_259f6896eb0532 25
+.github/workflows/new-pr-review.yml
+  s_05c9e7c6a258a3::t_8ecdd0f0f0f325 22
+.github/workflows/release-build.yaml
+  s_05c9e7c6a258a3::t_dad6c17ae1f68d 28,44,126,251-269,295,320-322,330,351-356
+.github/workflows/release-publish.yaml
+  s_05c9e7c6a258a3::t_57cb82f4d93860 112
+.github/workflows/rust-advisories.yaml
+  s_05c9e7c6a258a3::t_582596672438ef 21
+.github/workflows/update-compatibility-matrices.yaml
+  s_05c9e7c6a258a3::t_93e394b468ba36 25
+.gitignore
+  s_05c9e7c6a258a3::t_ca2ed47f468349 61-67
+.golangci.yaml
+  s_05c9e7c6a258a3::t_f4588a4a00a73f 67-68
+.goreleaser.yaml
+  s_05c9e7c6a258a3::t_60fc5dce9611a5 21-22
+.markdownlint-cli2.yaml
+  s_05c9e7c6a258a3::t_57dd49fe96e9dc 10-11
+architecture/06-cli.md
+  s_05c9e7c6a258a3::t_ef651edd43fbc5 9-18,102-116,238
+crates/Cargo.lock
+  s_05c9e7c6a258a3::t_bf7a8646583855 275,1215,1217,1363,1365
+docs/cli.md
+  s_05c9e7c6a258a3::t_e3525c3dc43200 178-220
+docs/llms.txt
+  s_05c9e7c6a258a3::t_61ecb04a7f78a0 424-466
+examples/experimental/resnet-managed-weights/requirements.txt
+  s_05c9e7c6a258a3::t_4c90f685295657 3
+examples/streaming-text/requirements.txt
+  s_05c9e7c6a258a3::t_c9d3767abf7b8d 2
+examples/z-image-turbo/requirements.txt
+  s_05c9e7c6a258a3::t_8f16eb418a4beb 2
+go.mod
+  s_05c9e7c6a258a3::t_30e401687cf303 12,38,42,140,142
+go.sum
+  s_05c9e7c6a258a3::t_399f606e032601 99-100,330-331,343-344,361-362,365-366
+mise.lock
+  s_05c9e7c6a258a3::t_056221514c43d2 19-22,27-30,39-42,47-50,70-74,80-84,95-99,105-109,126-129,134-137,146-149,154-157,177-181,187-191,202-206,212-216,225-228,233-236,245-248,253-256,273-276,281-284,293-296,301-304,321-324,329-332,341-344,349-352,369-372,377-380,389-392,397-400,417-420,425-428,437-440,445-448,465-468,473-476,485-488,493-496,521-524,529-532,541-544,549-552,557-604,609-612,641-644,649-652,661-664,669-680,701-704,709-712,721-724,729-732,752-756,762-766,777-781,787-791,808-811,816-819,829-832,836-839
+mise.toml
+  s_05c9e7c6a258a3::t_a5d9ca56057a0f 36-37,153-154,164-181,184,317,336-356,435,445,485-497,515,524,582-594,601,611-616
+pkg/cli/playground.go
+  s_05c9e7c6a258a3::t_9e02a61d61de20 1-525
+pkg/cli/playground_assets.go
+  s_05c9e7c6a258a3::t_12c0cd040efedb 1-10
+pkg/cli/playground_assets_stub.go
+  s_05c9e7c6a258a3::t_6e65573fd0d70e 1-11
+pkg/cli/root.go
+  s_05c9e7c6a258a3::t_fdf43a3ef58735 63
+playground/.gitignore
+  s_05c9e7c6a258a3::t_684684d3a6f14c 1-5
+playground/.oxfmtrc.json
+  s_05c9e7c6a258a3::t_d05ec5fae071db 1-5
+playground/.oxlintrc.json
+  s_05c9e7c6a258a3::t_740c38225cf935 1-11
+playground/index.html
+  s_05c9e7c6a258a3::t_5388c0943e0e70 1-21
+playground/package.json
+  s_05c9e7c6a258a3::t_152017505e05c8 1-56
+playground/pnpm-lock.yaml
+  s_05c9e7c6a258a3::t_aad073dffd0dd8 1-3345
+playground/scripts/check-bundle-size.ts
+  s_05c9e7c6a258a3::t_49ec9d06d67960 1-17
+playground/scripts/worker-license-plugin.ts
+  s_05c9e7c6a258a3::t_74fc77c0dd568a 1-74
+playground/src/components/SegmentedTabs.test.tsx
+  s_05c9e7c6a258a3::t_a3647e380e8828 1-33
+playground/src/components/SegmentedTabs.tsx
+  s_05c9e7c6a258a3::t_7a28a6a9c485d0 1-65
+playground/src/components/StatusBadge.test.tsx
+  s_05c9e7c6a258a3::t_67bf66af079725 1-16
+playground/src/components/StatusBadge.tsx
+  s_05c9e7c6a258a3::t_44664b99f57663 1-28
+playground/src/components/editor/JsonEditor.test.tsx
+  s_05c9e7c6a258a3::t_0839238656b271 1-157
+playground/src/components/editor/JsonEditor.tsx
+  s_05c9e7c6a258a3::t_f55c0f962f1eef 1-217
+playground/src/components/editor/LazyJsonEditor.tsx
+  s_05c9e7c6a258a3::t_51007a02cce5b4 1-19
+playground/src/components/editor/config.ts
+  s_05c9e7c6a258a3::t_c5e9f7182e47c7 1-107
+playground/src/config/theme.ts
+  s_05c9e7c6a258a3::t_4eed19e52408a4 1-12
+playground/src/features/connection/components/ConnectionBar.test.tsx
+  s_05c9e7c6a258a3::t_5d2790a21a4c49 1-47
+playground/src/features/connection/components/ConnectionBar.tsx
+  s_05c9e7c6a258a3::t_3c35c929e5b40f 1-35
+playground/src/features/connection/components/SetupPanel.test.tsx
+  s_05c9e7c6a258a3::t_730bfe08e5f8a5 1-22
+playground/src/features/connection/components/SetupPanel.tsx
+  s_05c9e7c6a258a3::t_a6926d2c1d8fdc 1-19
+playground/src/features/connection/hooks/useConnection.test.tsx
+  s_05c9e7c6a258a3::t_b741800c434055 1-148
+playground/src/features/connection/hooks/useConnection.ts
+  s_05c9e7c6a258a3::t_4ffce2110e322c 1-144
+playground/src/features/connection/index.ts
+  s_05c9e7c6a258a3::t_2a2c16bdeae999 1-3
+playground/src/features/inputs/components/FileInputControl.tsx
+  s_05c9e7c6a258a3::t_1fd876d01308d4 1-120
+playground/src/features/inputs/components/InputField.tsx
+  s_05c9e7c6a258a3::t_83d334c7115b1d 1-156
+playground/src/features/inputs/components/InputForm.test.tsx
+  s_05c9e7c6a258a3::t_843e930558d406 1-370
+playground/src/features/inputs/components/InputForm.tsx
+  s_05c9e7c6a258a3::t_620d0235fe4291 1-94
+playground/src/features/inputs/components/InputPanel.tsx
+  s_05c9e7c6a258a3::t_b76dd5f525ca0c 1-96
+playground/src/features/inputs/components/StructuredInputControl.tsx
+  s_05c9e7c6a258a3::t_b35a4d64e2198d 1-63
+playground/src/features/inputs/index.ts
+  s_05c9e7c6a258a3::t_fa1cead3d7c2d6 1-2
+playground/src/features/inputs/types.ts
+  s_05c9e7c6a258a3::t_ac39ae33ac8344 1
+playground/src/features/inputs/utils/input.ts
+  s_05c9e7c6a258a3::t_8a155f906e3e6e 1-20
+playground/src/features/inputs/utils/inputControl.ts
+  s_05c9e7c6a258a3::t_17e7e63e7e6831 1-21
+playground/src/features/inputs/validation/inputValidation.test.ts
+  s_05c9e7c6a258a3::t_f8cd91801a5aed 1-201
+playground/src/features/inputs/validation/inputValidation.ts
+  s_05c9e7c6a258a3::t_ff419390d088c9 1-286
+playground/src/features/inputs/validation/validateInput.test.ts
+  s_05c9e7c6a258a3::t_5b5f74647bfcdd 1-96
+playground/src/features/inputs/validation/validateInput.ts
+  s_05c9e7c6a258a3::t_49c184d699daaa 1-93
+playground/src/features/inputs/validation/validation.worker.ts
+  s_05c9e7c6a258a3::t_e46e2773866733 1-37
+playground/src/features/predictions/components/OutputPanel.test.tsx
+  s_05c9e7c6a258a3::t_e0d86e10445149 1-212
+playground/src/features/predictions/components/OutputPanel.tsx
+  s_05c9e7c6a258a3::t_e340d1dbc72290 1-196
+playground/src/features/predictions/components/PredictionOutput.test.tsx
+  s_05c9e7c6a258a3::t_3442bc0ae60b36 1-77
+playground/src/features/predictions/components/PredictionOutput.tsx
+  s_05c9e7c6a258a3::t_252cc616373bd4 1-142
+playground/src/features/predictions/components/PredictionTimeline.tsx
+  s_05c9e7c6a258a3::t_e9c8b92e701a87 1-60
+playground/src/features/predictions/components/RequestDetails.tsx
+  s_05c9e7c6a258a3::t_9193ca3421ddd6 1-75
+playground/src/features/predictions/components/RunToolbar.test.tsx
+  s_05c9e7c6a258a3::t_120c83fa8165df 1-112
+playground/src/features/predictions/components/RunToolbar.tsx
+  s_05c9e7c6a258a3::t_55ddf7a03579f5 1-79
+playground/src/features/predictions/components/WebhookOptions.test.tsx
+  s_05c9e7c6a258a3::t_ee63424ac32f8e 1-31
+playground/src/features/predictions/components/WebhookOptions.tsx
+  s_05c9e7c6a258a3::t_15dc52a3e206d9 1-38
+playground/src/features/predictions/constants.ts
+  s_05c9e7c6a258a3::t_d02b82a6c179e7 1-2
+playground/src/features/predictions/hooks/useFollowTail.ts
+  s_05c9e7c6a258a3::t_380640b5bc9417 1-39
+playground/src/features/predictions/hooks/usePrediction.test.tsx
+  s_05c9e7c6a258a3::t_8b428aa82de0cf 1-699
+playground/src/features/predictions/hooks/usePrediction.ts
+  s_05c9e7c6a258a3::t_9790028ec67998 1-307
+playground/src/features/predictions/hooks/usePredictionOutputState.ts
+  s_05c9e7c6a258a3::t_3b554450bf9cc3 1-90
+playground/src/features/predictions/hooks/usePredictionTrace.ts
+  s_05c9e7c6a258a3::t_af1439a536afe9 1-185
+playground/src/features/predictions/index.ts
+  s_05c9e7c6a258a3::t_67272116c8124e 1-6
+playground/src/features/predictions/types.ts
+  s_05c9e7c6a258a3::t_f5d2fa6e4a4b80 1-4
+playground/src/features/predictions/utils/format.ts
+  s_05c9e7c6a258a3::t_a2b86a59dae57c 1-11
+playground/src/features/predictions/utils/runtime.ts
+  s_05c9e7c6a258a3::t_e70fe4e4b9033b 1-134
+playground/src/features/predictions/utils/trace.test.ts
+  s_05c9e7c6a258a3::t_f4b24570948caf 1-91
+playground/src/features/predictions/utils/trace.ts
+  s_05c9e7c6a258a3::t_a11ddae7d9249e 1-143
+playground/src/services/cog/CogApi.test.ts
+  s_05c9e7c6a258a3::t_75e33b87022418 1-305
+playground/src/services/cog/CogApi.ts
+  s_05c9e7c6a258a3::t_40c20a49ecc3f0 1-154
+playground/src/services/cog/files.ts
+  s_05c9e7c6a258a3::t_bbe91125086935 1-14
+playground/src/services/cog/http.ts
+  s_05c9e7c6a258a3::t_4c606811a87c74 1-76
+playground/src/services/cog/index.ts
+  s_05c9e7c6a258a3::t_08951f073474b7 1-3
+playground/src/services/cog/sse.ts
+  s_05c9e7c6a258a3::t_bcbb5eb32e839c 1-82
+playground/src/styles/app.css
+  s_05c9e7c6a258a3::t_f7746c5e073852 1-5
+playground/src/styles/playground.css
+  s_05c9e7c6a258a3::t_6ec1b84bea9b59 1-869
+playground/src/test/FakeJsonEditor.tsx
+  s_05c9e7c6a258a3::t_808a7929eadecb 1-39
+playground/src/test/deferred.ts
+  s_05c9e7c6a258a3::t_75990d13179371 1-14
+playground/src/test/setup.ts
+  s_05c9e7c6a258a3::t_06068569ad138c 1-27
+playground/src/types/health.ts
+  s_05c9e7c6a258a3::t_a460d78d741d4d 1-40
+playground/src/types/openapi.ts
+  s_05c9e7c6a258a3::t_0ec6479530a02f 1-161
+playground/src/types/prediction.ts
+  s_05c9e7c6a258a3::t_5b4c2005706718 1-63
+playground/src/utils/openapi.test.ts
+  s_05c9e7c6a258a3::t_477c5875d1788b 1-111
+playground/src/utils/openapi.ts
+  s_05c9e7c6a258a3::t_2ff703cc96e6b3 1-113
+playground/src/utils/terminal.test.ts
+  s_05c9e7c6a258a3::t_629e76f31fb785 1-15
+playground/src/utils/terminal.ts
+  s_05c9e7c6a258a3::t_f047efd5b5d331 1-4
+playground/tsconfig.json
+  s_05c9e7c6a258a3::t_34e5dfbf4d7631 1-31
+playground/vite.config.ts
+  s_05c9e7c6a258a3::t_a0bfdad67e79da 1-33
+playground/vitest.config.ts
+  s_05c9e7c6a258a3::t_92253d175ba8e3 1-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "13e3ca5fd2ee070b4907de3ccb78fb4857e256f5",
+  "prompts": {},
+  "sessions": {
+    "s_05c9e7c6a258a3": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_08e854d45ffeVE5wXYZwoMqcls",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
