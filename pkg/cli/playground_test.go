@@ -25,8 +25,6 @@ import (
 	"github.com/replicate/cog/pkg/global"
 )
 
-var _ = newPlaygroundCommand
-
 func newTestPlayground(t *testing.T) *httptest.Server {
 	t.Helper()
 	uiFS, err := fs.Sub(playgroundUI, "playground")

@@ -9,7 +9,8 @@ export function isJsonObject(value: unknown): value is JsonObject {
 
 /** Narrows values that can be represented by JSON. */
 export function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null || ["boolean", "number", "string"].includes(typeof value)) return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (value === null || ["boolean", "string"].includes(typeof value)) return true;
   if (Array.isArray(value)) return value.every(isJsonValue);
   return isJsonObject(value) && Object.values(value).every(isJsonValue);
 }

@@ -4,6 +4,7 @@ import type { InputMode } from "@/features/inputs/types";
 import { errorMessage, parseInputObject, serializeInput } from "@/features/inputs/utils/input";
 import { disposeValidationWorker, validateInput } from "@/features/inputs/validation/validateInput";
 import type { ValidationIssue } from "@/features/inputs/validation/inputValidation";
+import { isJsonObject, isJsonValue, type JsonObject } from "@/types/json";
 import type { OpenAPIDocument } from "@/types/openapi";
 import { defaultInput, type PlaygroundCapabilities } from "@/utils/openapi";
 
@@ -14,7 +15,7 @@ type Options = {
 };
 
 type ValidatedInput = {
-  input: Record<string, unknown>;
+  input: JsonObject;
 };
 
 /**
@@ -113,6 +114,12 @@ export function usePlaygroundInput({ target, document, capabilities }: Options) 
     setValidating(false);
     if (issues.length > 0) {
       setValidationIssues(issues);
+      return undefined;
+    }
+    if (!isJsonObject(nextInput) || !isJsonValue(nextInput)) {
+      setValidationIssues([
+        { keyword: "type", message: "Input must contain only JSON values.", path: "input" },
+      ]);
       return undefined;
     }
     return { input: nextInput };

@@ -1,3 +1,7 @@
 import { createRoot } from "react-dom/client";
 
-createRoot(document.getElementById("root")!).render("Cog Playground");
+import { App } from "@/app/App";
+import "@/styles/app.css";
+import "@/styles/playground.css";
+
+createRoot(document.getElementById("root")!).render(<App />);

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 
 // THIRD_PARTY_LICENSES.md is not used at runtime. Playground JS (React, editor
 // deps, ajv in the validation worker, etc.) is bundled into assets embedded in
@@ -8,7 +8,6 @@ const outputDirectory = new URL("../../pkg/cli/playground/", import.meta.url);
 const mainPath = new URL("THIRD_PARTY_LICENSES.md", outputDirectory);
 const workerPath = new URL("WORKER_LICENSES.md", outputDirectory);
 const main = readFileSync(mainPath, "utf8").trimEnd();
-if (!existsSync(workerPath)) process.exit(0);
 const worker = readFileSync(workerPath, "utf8");
 const existing = new Set([...main.matchAll(/^## (.+?) - .+$/gm)].map((match) => match[1]));
 const workerSections = worker
