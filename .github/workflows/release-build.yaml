@@ -25,7 +25,7 @@ on:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -41,7 +41,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       pep440: ${{ steps.check.outputs.pep440 }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -123,7 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -248,6 +248,25 @@ jobs:
           name: sdk-dist
           path: dist/*
 
+  build-playground:
+    name: Build playground assets
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.4.27
+          cache_key_prefix: mise-rel-${{ github.job }}
+      - name: Build embedded playground assets
+        run: mise run --force build:playground
+      - name: Upload playground assets
+        uses: actions/upload-artifact@v6
+        with:
+          name: playground-assets
+          path: pkg/cli/playground
+
   build-coglet-wheels:
     name: Build coglet wheel (${{ matrix.target }})
     needs: verify-tag
@@ -273,7 +292,7 @@ jobs:
             manylinux: "off"
             zig: false
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -298,7 +317,9 @@ jobs:
 
   create-release:
     name: Create release
-    needs: [verify-tag, build-sdk, build-coglet-wheels]
+    permissions:
+      contents: write
+    needs: [verify-tag, build-sdk, build-coglet-wheels, build-playground]
     # macOS arm64 runner: native clang for darwin targets, zig for linux targets.
     # CGo required for go-tree-sitter (static Python schema parser).
     runs-on: macos-14
@@ -306,7 +327,7 @@ jobs:
     env:
       CGO_ENABLED: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -326,6 +347,12 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download verified playground assets
+        uses: actions/download-artifact@v8
+        with:
+          name: playground-assets
+          path: pkg/cli/playground
 
       # Goreleaser builds CLI binaries and creates draft release
       - name: Build CLI and create draft release

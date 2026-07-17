@@ -583,27 +583,36 @@ func TestPlaygroundWebhookRejectsMissingSubscriber(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
 
-func TestPlaygroundProxyStripsAbsoluteRedirectLocation(t *testing.T) {
-	ts := newTestPlayground(t)
-	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Location", "http://169.254.169.254/latest/meta-data/")
-		w.WriteHeader(http.StatusFound)
-	}))
-	t.Cleanup(stub.Close)
+func TestPlaygroundProxyStripsRedirectLocation(t *testing.T) {
+	for name, location := range map[string]string{
+		"absolute":          "http://169.254.169.254/latest/meta-data/",
+		"protocol-relative": "//169.254.169.254/latest/meta-data/",
+		"triple-slash":      "///169.254.169.254/latest/meta-data/",
+		"backslash":         `\\169.254.169.254\latest\meta-data\`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ts := newTestPlayground(t)
+			stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Location", location)
+				w.WriteHeader(http.StatusFound)
+			}))
+			t.Cleanup(stub.Close)
 
-	req, err := http.NewRequest(http.MethodGet, ts.URL+"/proxy/health-check", nil)
-	require.NoError(t, err)
-	req.Header.Set("X-Cog-Target", stub.URL)
-	// Do not follow redirects; we want the proxy response as the browser would with redirect:manual.
-	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}
-	resp, err := client.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
+			req, err := http.NewRequest(http.MethodGet, ts.URL+"/proxy/health-check", nil)
+			require.NoError(t, err)
+			req.Header.Set("X-Cog-Target", stub.URL)
+			// Do not follow redirects; we want the proxy response as the browser would with redirect:manual.
+			client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			}}
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusFound, resp.StatusCode)
-	assert.Empty(t, resp.Header.Get("Location"))
+			assert.Equal(t, http.StatusFound, resp.StatusCode)
+			assert.Empty(t, resp.Header.Get("Location"))
+		})
+	}
 }
 
 // A stalled subscriber (full buffer) must not block or deny delivery to a

@@ -55,7 +55,7 @@ jobs:
           repositories: homebrew-tap
 
       - name: Checkout cog repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           sparse-checkout: .github/cog.rb.tmpl
           sparse-checkout-cone-mode: false
