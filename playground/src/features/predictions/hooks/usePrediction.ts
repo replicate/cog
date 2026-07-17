@@ -15,6 +15,7 @@ import {
 import { usePredictionOutputState } from "@/features/predictions/hooks/usePredictionOutputState";
 import { type TraceRun, usePredictionTrace } from "@/features/predictions/hooks/usePredictionTrace";
 import type { CogApi } from "@/services/cog";
+import type { JsonObject } from "@/types/json";
 import type { PredictionEnvelope } from "@/types/prediction";
 
 type ActiveRun = TraceRun & {
@@ -30,7 +31,7 @@ type RunOptions = {
   target: string;
   endpoint: string;
   predictionId?: string;
-  input: Record<string, unknown>;
+  input: JsonObject;
   mode: RunMode;
   webhookBase: string;
   webhookEvents: WebhookEvent[];
