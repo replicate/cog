@@ -491,6 +491,40 @@ func TestVersions(t *testing.T) {
 	require.Equal(t, versions, []string{"https://some.domain/package.whl"})
 }
 
+func TestExactVersion(t *testing.T) {
+	for _, tt := range []struct {
+		req  string
+		want string
+		ok   bool
+	}{
+		// Exact pins resolve to one concrete version.
+		{"torch==2.7.0", "2.7.0", true},
+		{"torch == 2.7.0", "2.7.0", true},
+		{"torch[opt]==2.7.0", "2.7.0", true},
+		{"torch==2.7.0+cu128", "2.7.0+cu128", true},
+		{"torch==2.7.0 --extra-index-url=https://download.pytorch.org/whl/cu128", "2.7.0", true},
+		{"torch==2.7.0 ; python_version >= '3.10'", "2.7.0", true},
+		// Ranges and inequalities do not pin one version.
+		{"torch<2.7.0", "", false},
+		{"torch>=2.7.0", "", false},
+		{"torch~=2.7.0", "", false},
+		{"torch!=2.7.0", "", false},
+		{"torch>=2.0,<3.0", "", false},
+		{"torch==2.7.0,!=2.7.1", "", false},
+		// Wildcards, direct URLs, and unpinned requirements are not exact.
+		{"torch==2.7.*", "", false},
+		{"torch @ https://download.pytorch.org/whl/torch-2.7.0.whl", "", false},
+		{"torch", "", false},
+		{"", "", false},
+	} {
+		t.Run(tt.req, func(t *testing.T) {
+			got, ok := ExactVersion(tt.req)
+			require.Equal(t, tt.ok, ok, "req %q", tt.req)
+			require.Equal(t, tt.want, got, "req %q", tt.req)
+		})
+	}
+}
+
 func checkRequirements(t *testing.T, expected []string, actual []string) {
 	t.Helper()
 	for n, expectLine := range expected {

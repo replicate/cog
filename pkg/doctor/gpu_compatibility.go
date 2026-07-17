@@ -61,22 +61,41 @@ func (c *GPUCompatibilityCheck) Check(ctx *CheckContext) ([]Finding, error) {
 	if os.Getenv("COG_SKIP_GPU_CHECK") != "" {
 		return nil, nil
 	}
-	if ctx.Config == nil || !ctx.Config.Build.GPU {
+	if ctx.Config == nil || ctx.Config.Build == nil || !ctx.Config.Build.GPU {
 		return nil, nil
 	}
 
-	torchVersion, hasTorch := ctx.Config.TorchVersion()
+	// Only an exact `==` pin names one concrete version to reason about; for a range or an
+	// unpinned requirement pip is free to resolve a different release, so we say nothing.
+	torchVersion, hasTorch := ctx.Config.TorchExactVersion()
 	if !hasTorch {
 		return nil, nil
 	}
 
-	capability, ok := detectComputeCapability(ctx.ctx)
+	capabilities, ok := detectComputeCapabilities(ctx.ctx)
 	if !ok {
 		// No GPU on this machine (or no driver); nothing to compare against.
 		return nil, nil
 	}
 
-	return evaluateGPUCompat(capability, torchVersion, ctx.Config.Build.CUDA), nil
+	return evaluateGPUCompatAll(capabilities, torchVersion, ctx.Config.Build.CUDA), nil
+}
+
+// evaluateGPUCompatAll evaluates every distinct compute capability the machine reports. A
+// mixed-GPU host must satisfy the floor of each device, not just the numerically lowest:
+// torch 2.4.1 clears the sm_90 floor but not sm_120, so a host with both still needs a
+// finding. One finding per failing capability, in ascending order for stable output.
+func evaluateGPUCompatAll(capabilities [][2]int, torchVersion string, cuda string) []Finding {
+	seen := make(map[[2]int]bool, len(capabilities))
+	var findings []Finding
+	for _, capability := range capabilities {
+		if seen[capability] {
+			continue
+		}
+		seen[capability] = true
+		findings = append(findings, evaluateGPUCompat(capability, torchVersion, cuda)...)
+	}
+	return findings
 }
 
 // evaluateGPUCompat compares a resolved torch/CUDA pair against the floor for the given
@@ -93,7 +112,11 @@ func evaluateGPUCompat(capability [2]int, torchVersion string, cuda string) []Fi
 		return nil
 	}
 
-	torchOK := version.GreaterOrEqual(torchVersion, floor.MinTorch)
+	// Compare the torch release without its local tag: version.GreaterOrEqual folds the
+	// local modifier into equality, so 2.7.0+cu128 would otherwise read as neither greater
+	// than nor equal to the 2.7.0 floor and warn falsely at the exact boundary. The CUDA
+	// bound is checked separately from ctx.Config.Build.CUDA, so nothing is lost here.
+	torchOK := version.GreaterOrEqual(stripLocalVersion(torchVersion), floor.MinTorch)
 	cudaOK := cuda == "" || version.GreaterOrEqual(cuda, floor.MinCUDA)
 	if torchOK && cudaOK {
 		return nil
@@ -129,35 +152,55 @@ func cudaDisplay(cuda string) string {
 	return cuda
 }
 
-// detectComputeCapability returns the lowest compute capability among the machine's GPUs:
-// the image has to run on the weakest device present.
-func detectComputeCapability(ctx context.Context) ([2]int, bool) {
+// stripLocalVersion drops a PEP 440 local version tag ("+cu128") from a version string.
+func stripLocalVersion(v string) string {
+	release, _, _ := strings.Cut(v, "+")
+	return release
+}
+
+// queryComputeCaps runs nvidia-smi and returns its raw stdout. It is a package variable so
+// tests can substitute a fake without a GPU or the real binary on PATH.
+var queryComputeCaps = func(ctx context.Context) ([]byte, error) {
 	execCtx, cancel := context.WithTimeout(ctx, envCheckTimeout)
 	defer cancel()
-
-	out, err := exec.CommandContext(execCtx,
+	return exec.CommandContext(execCtx,
 		"nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader").Output()
-	if err != nil {
-		return [2]int{}, false
-	}
+}
 
+// detectComputeCapabilities returns the distinct compute capabilities of the machine's GPUs,
+// sorted ascending. The image must run on every device present, so all are reported rather
+// than only the weakest. Returns ok=false when nvidia-smi is absent, fails, or names none.
+func detectComputeCapabilities(ctx context.Context) ([][2]int, bool) {
+	out, err := queryComputeCaps(ctx)
+	if err != nil {
+		return nil, false
+	}
+	caps := parseComputeCapabilities(string(out))
+	if len(caps) == 0 {
+		return nil, false
+	}
+	return caps, true
+}
+
+// parseComputeCapabilities extracts the distinct, ascending compute capabilities from
+// nvidia-smi's compute_cap output. Unparsable lines are skipped so malformed or partial
+// output degrades to whatever valid rows it contains rather than failing outright.
+func parseComputeCapabilities(out string) [][2]int {
+	seen := make(map[[2]int]bool)
 	var caps [][2]int
-	for line := range strings.SplitSeq(string(out), "\n") {
-		if c, ok := parseCapability(line); ok {
+	for line := range strings.SplitSeq(out, "\n") {
+		if c, ok := parseCapability(line); ok && !seen[c] {
+			seen[c] = true
 			caps = append(caps, c)
 		}
 	}
-	if len(caps) == 0 {
-		return [2]int{}, false
-	}
-
 	sort.Slice(caps, func(i, j int) bool {
 		if caps[i][0] != caps[j][0] {
 			return caps[i][0] < caps[j][0]
 		}
 		return caps[i][1] < caps[j][1]
 	})
-	return caps[0], true
+	return caps
 }
 
 // parseCapability parses a single nvidia-smi compute_cap value, e.g. "12.0".

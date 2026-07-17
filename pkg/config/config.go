@@ -200,6 +200,14 @@ func (c *Config) TorchVersion() (string, bool) {
 	return c.pythonPackageVersion("torch")
 }
 
+// TorchExactVersion returns the torch version only when it is pinned with an exact `==`
+// specifier. Unlike TorchVersion, which returns the first version token regardless of the
+// comparator, this reports ("", false) for ranges, inequalities, direct URLs, and unpinned
+// requirements, where pip is free to resolve a different release than the token suggests.
+func (c *Config) TorchExactVersion() (string, bool) {
+	return c.pythonPackageExactVersion("torch")
+}
+
 func (c *Config) TorchvisionVersion() (string, bool) {
 	return c.pythonPackageVersion("torchvision")
 }
@@ -246,6 +254,17 @@ func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 				return versions[0], true
 			}
 			return "", true
+		}
+	}
+	return "", false
+}
+
+// pythonPackageExactVersion returns the version of the named package only when it is pinned
+// with an exact `==` specifier; see ExactVersion for the requirements it rejects.
+func (c *Config) pythonPackageExactVersion(name string) (version string, ok bool) {
+	for _, pkg := range c.Build.pythonRequirementsContent {
+		if requirements.PackageName(pkg) == name {
+			return requirements.ExactVersion(pkg)
 		}
 	}
 	return "", false
