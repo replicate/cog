@@ -963,6 +963,178 @@ class Predictor(cog.BasePredictor):
 	require.False(t, info.SupportsStreaming)
 }
 
+func TestConcurrentDecoratorQualifiedMax(t *testing.T) {
+	source := `
+import cog
+
+class Predictor(cog.BasePredictor):
+    @cog.concurrent(max=4)
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 4, *info.ConcurrencyMax)
+	require.True(t, info.IsAsync)
+}
+
+func TestConcurrentDecoratorImportedMax(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent
+
+class Predictor(BasePredictor):
+    @concurrent(max=3)
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 3, *info.ConcurrencyMax)
+}
+
+func TestConcurrentDecoratorBareDefaultsToOne(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent
+
+class Predictor(BasePredictor):
+    @concurrent
+    def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 1, *info.ConcurrencyMax)
+	require.False(t, info.IsAsync)
+}
+
+func TestConcurrentDecoratorCallDefaultsToOne(t *testing.T) {
+	source := `
+import cog
+
+class Predictor(cog.BasePredictor):
+    @cog.concurrent()
+    def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 1, *info.ConcurrencyMax)
+}
+
+func TestConcurrentDecoratorImportedAliasMax(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent as concurrent_predictions
+
+class Predictor(BasePredictor):
+    @concurrent_predictions(max=2)
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 2, *info.ConcurrencyMax)
+}
+
+func TestConcurrentDecoratorQualifiedAliasMax(t *testing.T) {
+	source := `
+import cog as c
+
+class Predictor(c.BasePredictor):
+    @c.concurrent(max=4)
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 4, *info.ConcurrencyMax)
+	require.True(t, info.IsAsync)
+}
+
+func TestConcurrentDecoratorIgnoredWhenNotFromCog(t *testing.T) {
+	source := `
+from other import concurrent
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    @concurrent(max=4)
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.Nil(t, info.ConcurrencyMax)
+}
+
+func TestConcurrentDecoratorRequiresAsyncForMaxGreaterThanOne(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent
+
+class Predictor(BasePredictor):
+    @concurrent(max=2)
+    def predict(self) -> str:
+        return "hello"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "requires an async")
+}
+
+func TestConcurrentDecoratorRejectsNonLiteralMax(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent
+
+MAX_CONCURRENCY = 2
+
+class Predictor(BasePredictor):
+    @concurrent(max=MAX_CONCURRENCY)
+    async def predict(self) -> str:
+        return "hello"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "integer literal")
+}
+
+func TestConcurrentDecoratorRejectsPositionalArgument(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent
+
+class Predictor(BasePredictor):
+    @concurrent(2)
+    async def predict(self) -> str:
+        return "hello"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "max=...")
+}
+
+func TestConcurrentDecoratorRejectsStringMax(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent
+
+class Predictor(BasePredictor):
+    @concurrent(max="2")
+    async def predict(self) -> str:
+        return "hello"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "integer literal")
+}
+
+func TestConcurrentDecoratorUndecoratedHasNoMax(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.Nil(t, info.ConcurrencyMax)
+	require.True(t, info.IsAsync)
+}
+
 func TestListOutput(t *testing.T) {
 	source := `
 from cog import BasePredictor, Path
@@ -1479,6 +1651,97 @@ class Predictor(BasePredictor):
 	require.True(t, ok)
 	require.NotNil(t, old.Deprecated)
 	require.True(t, *old.Deprecated)
+}
+
+// ---------------------------------------------------------------------------
+// Accept MIME type
+// ---------------------------------------------------------------------------
+
+func TestAcceptMimeType(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path = Input(description="An image", accept="image/*")) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	image, ok := info.Inputs.Get("image")
+	require.True(t, ok)
+	require.NotNil(t, image.Accept)
+	require.Equal(t, "image/*", *image.Accept)
+}
+
+func TestAcceptMultipleMimeTypes(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, audio: Path = Input(accept="audio/wav,audio/mp3")) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	audio, ok := info.Inputs.Get("audio")
+	require.True(t, ok)
+	require.NotNil(t, audio.Accept)
+	require.Equal(t, "audio/wav,audio/mp3", *audio.Accept)
+}
+
+func TestAcceptFileExtensions(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, weights: Path = Input(accept=".safetensors,.bin")) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	weights, ok := info.Inputs.Get("weights")
+	require.True(t, ok)
+	require.NotNil(t, weights.Accept)
+	require.Equal(t, ".safetensors,.bin", *weights.Accept)
+}
+
+func TestAcceptOnFileType(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, File
+
+class Predictor(BasePredictor):
+    def predict(self, f: File = Input(accept="image/png")) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	f, ok := info.Inputs.Get("f")
+	require.True(t, ok)
+	require.NotNil(t, f.Accept)
+	require.Equal(t, "image/png", *f.Accept)
+}
+
+func TestAcceptOnNonFileTypeErrors(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self, name: str = Input(accept="image/*")) -> str:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrAcceptOnNonFileType, se.Kind)
+	require.Contains(t, se.Error(), "name")
+}
+
+func TestAcceptNotSetWhenOmitted(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path = Input(description="An image")) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	image, ok := info.Inputs.Get("image")
+	require.True(t, ok)
+	require.Nil(t, image.Accept)
 }
 
 // ---------------------------------------------------------------------------

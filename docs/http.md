@@ -255,7 +255,7 @@ Prefer: respond-async
 Endpoints for creating and canceling a prediction idempotently
 accept a `prediction_id` parameter in their path.
 By default, the server runs one prediction at a time,
-but this can be increased with the [`concurrency.max`](yaml.md#concurrency) setting.
+but this can be increased with [`@cog.concurrent(max=N)`](python.md#async-runners-and-concurrency).
 When all prediction slots are in use, the server returns `409 Conflict`.
 The client should ensure prediction slots are available
 before creating a new prediction with a different ID.

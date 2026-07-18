@@ -231,6 +231,7 @@ type InputField struct {
 	Regex       *string
 	Choices     []DefaultValue
 	Deprecated  *bool
+	Accept      *string // MIME types / file extensions for Path/File inputs (e.g. "image/*")
 }
 
 // IsRequired returns true if this field is required in the schema.
@@ -254,6 +255,8 @@ type PredictorInfo struct {
 	Output            SchemaType
 	Mode              Mode
 	SupportsStreaming bool
+	ConcurrencyMax    *int
+	IsAsync           bool
 }
 
 // TypeAnnotation is a parsed Python type annotation (intermediate, before resolution).

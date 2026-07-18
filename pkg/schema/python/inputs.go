@@ -18,6 +18,7 @@ type inputCallInfo struct {
 	Regex       *string
 	Choices     []schema.DefaultValue
 	Deprecated  *bool
+	Accept      *string
 }
 
 type inputMethodInfo struct {
@@ -271,7 +272,11 @@ func inputField(name string, order int, inputType schema.InputType, fieldType sc
 	}
 }
 
-func inputFieldWithInfo(name string, order int, inputType schema.InputType, fieldType schema.FieldType, info inputCallInfo) schema.InputField {
+func inputFieldWithInfo(name string, order int, inputType schema.InputType, fieldType schema.FieldType, info inputCallInfo) (schema.InputField, error) {
+	if info.Accept != nil && fieldType.Primitive != schema.TypePath && fieldType.Primitive != schema.TypeFile {
+		return schema.InputField{}, schema.NewError(schema.ErrAcceptOnNonFileType,
+			fmt.Sprintf("accept is only valid on Path or File inputs (parameter '%s')", name))
+	}
 	field := inputField(name, order, inputType, fieldType)
 	field.Default = info.Default
 	field.Description = info.Description
@@ -282,7 +287,8 @@ func inputFieldWithInfo(name string, order int, inputType schema.InputType, fiel
 	field.Regex = info.Regex
 	field.Choices = info.Choices
 	field.Deprecated = info.Deprecated
-	return field
+	field.Accept = info.Accept
+	return field, nil
 }
 
 func firstParamIsSelf(params *sitter.Node, source []byte) bool {
@@ -398,13 +404,19 @@ func parseTypedDefaultParameter(node *sitter.Node, source []byte, order int, ctx
 			if err != nil {
 				return schema.InputField{}, err
 			}
-			field := inputFieldWithInfo(name, order, inputType, fieldType, info)
+			field, err := inputFieldWithInfo(name, order, inputType, fieldType, info)
+			if err != nil {
+				return schema.InputField{}, err
+			}
 			return field, schema.ValidateInputField(field)
 		}
 
 		// 2. Reference to Input() via class attribute or static method
 		if info, ok := resolveInputReference(valNode, source, ctx.registry); ok {
-			field := inputFieldWithInfo(name, order, inputType, fieldType, info)
+			field, err := inputFieldWithInfo(name, order, inputType, fieldType, info)
+			if err != nil {
+				return schema.InputField{}, err
+			}
 			return field, schema.ValidateInputField(field)
 		}
 
@@ -510,6 +522,10 @@ func parseInputCall(node *sitter.Node, source []byte, paramName string, scope mo
 		case "deprecated":
 			if b, ok := parseBoolLiteral(valNode, source); ok {
 				info.Deprecated = &b
+			}
+		case "accept":
+			if s, ok := parseStringLiteral(valNode, source); ok {
+				info.Accept = &s
 			}
 		}
 	}
