@@ -470,14 +470,22 @@ export class OutputView {
         if (!item.details) {
           const details = element("details", {}, element("summary", { text: "Payload" }));
           details.addEventListener("toggle", () => {
-            if (!details.open || item?.editor) return;
+            if (!details.open) {
+              if (item?.editor) this.removeEditor("timeline", item.editor);
+              if (item) item.editor = undefined;
+              details.querySelector(".json-editor")?.remove();
+              return;
+            }
+            if (item?.editor) return;
+            const wrapper = element("div");
             item.editor = this.createEditor(
-              details,
+              wrapper,
               formatValue(item?.value),
               "Timeline event payload",
               "viewer-timeline",
               "timeline",
             );
+            details.append(wrapper);
           });
           item.details = details;
           item.label.parentElement?.append(details);

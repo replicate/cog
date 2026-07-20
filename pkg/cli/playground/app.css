@@ -86,8 +86,18 @@ textarea:disabled {
 input:not([type="checkbox"]):not([type="file"]),
 select,
 textarea {
+  border-color: color-mix(in srgb, var(--text) 40%, var(--bg));
   width: 100%;
   padding: 6px 9px;
+}
+
+input:not([type="checkbox"]):not([type="file"]):disabled,
+select:disabled,
+textarea:disabled {
+  border-color: color-mix(in srgb, var(--text) 40%, var(--bg));
+  background: color-mix(in srgb, var(--text) 7%, var(--bg));
+  color: var(--text-muted);
+  opacity: 1;
 }
 
 textarea {
