@@ -27,7 +27,7 @@ test("resolves nullable references and preserves parent metadata", () => {
   ]);
 });
 
-test("checks optional fields only when defaults are missing or null", () => {
+test("checks optional fields only when they have no declared default", () => {
   const schema = {
     required: ["enabled", "choice", "requiredZero", "requiredNull"],
     properties: {
@@ -62,7 +62,6 @@ test("checks optional fields only when defaults are missing or null", () => {
     enabled: false,
     choice: 1,
     late: "",
-    optionalNull: null,
     requiredZero: 0,
     requiredNull: null,
   });
