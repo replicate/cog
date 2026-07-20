@@ -1,5 +1,7 @@
 // @ts-check
 
+import { emptyInputValue } from "./input.js";
+
 const REF_PREFIX = "#/components/schemas/";
 
 /** @param {import("../../types").OpenAPIDocument} root @param {import("../../types").OpenAPISchema} value */
@@ -41,11 +43,13 @@ export function defaultInput(root, schema) {
     const property = effectiveSchema(root, raw);
     const isRequired = required.has(name);
     if (property.default !== undefined) {
-      if (isRequired || property.default) result[name] = property.default;
+      if (isRequired || !property.default) result[name] = property.default;
     } else if (isRequired) {
       const choices = enumValues(root, property);
       if (choices?.length) result[name] = choices[0];
       else if (hasType(property, "boolean")) result[name] = false;
+    } else {
+      result[name] = enumValues(root, property)?.[0] ?? emptyInputValue(property);
     }
   }
   return result;

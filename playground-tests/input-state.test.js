@@ -30,10 +30,10 @@ const capabilities = {
   async: false,
 };
 
-test("connect keeps required falsy values and omits optional null defaults", () => {
+test("connect checks optional fields with falsy defaults and omits truthy defaults", () => {
   const state = new InputState();
   state.connect("http://model", /** @type {any} */ (document), capabilities);
-  assert.deepEqual(state.input, { choice: 1, enabled: false, text: "hello" });
+  assert.deepEqual(state.input, { choice: 1, enabled: false, nullable: null });
   assert.deepEqual(JSON.parse(state.jsonInput), state.input);
   state.destroy();
 });
@@ -84,7 +84,7 @@ test("reset restores defaults and clears local field state", () => {
   state.setFieldBusy("file", true);
   state.setFieldValid("file", false);
   state.reset();
-  assert.deepEqual(state.input, { choice: 1, enabled: false, text: "hello" });
+  assert.deepEqual(state.input, { choice: 1, enabled: false, nullable: null });
   assert.equal(state.formBusy, false);
   assert.equal(state.formValid, true);
   state.destroy();

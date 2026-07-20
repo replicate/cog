@@ -27,7 +27,7 @@ test("resolves nullable references and preserves parent metadata", () => {
   ]);
 });
 
-test("builds defaults, leaving optional falsy defaults omitted", () => {
+test("checks optional fields with falsy or missing defaults", () => {
   const schema = {
     required: ["enabled", "choice", "requiredZero", "requiredNull"],
     properties: {
@@ -61,10 +61,32 @@ test("builds defaults, leaving optional falsy defaults omitted", () => {
   assert.deepEqual(defaultInput({}, schema), {
     enabled: false,
     choice: 1,
-    optional: "yes",
+    late: "",
+    optionalFalse: false,
+    optionalZero: 0,
+    optionalEmpty: "",
+    optionalNull: null,
     requiredZero: 0,
     requiredNull: null,
   });
+});
+
+test("initializes optional fields without defaults by control type", () => {
+  assert.deepEqual(
+    defaultInput(
+      {},
+      {
+        properties: {
+          choice: { enum: [2, 3] },
+          enabled: { type: "boolean" },
+          items: { type: "array" },
+          config: { type: "object" },
+          count: { type: "number" },
+        },
+      },
+    ),
+    { choice: 2, enabled: false, items: [], config: {}, count: "" },
+  );
 });
 
 test("derives training and prediction capabilities", () => {
