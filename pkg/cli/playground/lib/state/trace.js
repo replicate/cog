@@ -3,7 +3,6 @@
 export const MAX_TRACE_EVENTS = 100;
 export const MAX_TRACE_PAYLOAD_TEXT = 64 * 1024;
 export const MAX_TRACE_TOTAL_TEXT = 1024 * 1024;
-const MAX_TRACE_COLLECTION_ITEMS = 100;
 const MAX_TRACE_DEPTH = 10;
 const OMITTED_PAYLOAD = "[payload omitted: trace budget exceeded]";
 const OMITTED_OUTPUT = "[earlier output omitted]\n\n";
@@ -88,23 +87,15 @@ function boundValue(data, ancestors, depth) {
   ancestors.add(data);
   if (Array.isArray(data)) {
     /** @type {unknown[]} */
-    const bounded = data
-      .slice(0, MAX_TRACE_COLLECTION_ITEMS)
-      .map((item) => boundValue(item, ancestors, depth + 1));
-    if (data.length > MAX_TRACE_COLLECTION_ITEMS)
-      bounded.push(`[${data.length - MAX_TRACE_COLLECTION_ITEMS} items omitted]`);
+    const bounded = data.map((item) => boundValue(item, ancestors, depth + 1));
     ancestors.delete(data);
     return bounded;
   }
   const entries = Object.entries(data);
   /** @type {Record<string, unknown>} */
   const bounded = Object.fromEntries(
-    entries
-      .slice(0, MAX_TRACE_COLLECTION_ITEMS)
-      .map(([key, value]) => [key, boundValue(value, ancestors, depth + 1)]),
+    entries.map(([key, value]) => [key, boundValue(value, ancestors, depth + 1)]),
   );
-  if (entries.length > MAX_TRACE_COLLECTION_ITEMS)
-    bounded["[truncated]"] = `${entries.length - MAX_TRACE_COLLECTION_ITEMS} properties omitted`;
   ancestors.delete(data);
   return bounded;
 }

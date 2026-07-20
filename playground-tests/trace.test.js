@@ -72,6 +72,13 @@ test("bounds circular trace data and compacts output events", () => {
   assert.match(String(events[0].data), /a\n\nb/);
 });
 
+test("preserves complete trace collections", () => {
+  const collection = Array.from({ length: 164 }, (_, index) => index);
+  assert.deepEqual(boundedTraceData(collection), collection);
+  const object = Object.fromEntries(collection.map((index) => [`key-${index}`, index]));
+  assert.deepEqual(boundedTraceData(object), object);
+});
+
 test("enforces aggregate trace budget", () => {
   const trace = enforceTraceBudget({
     startedAtLabel: "now",
