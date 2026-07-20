@@ -1,0 +1,35 @@
+README.md
+  s_a21e54cd14173f::t_ff7259cc1af5ef 130,132-134,136,138-140,142-143,145-148,150,152-156,158,160-162,169,171-173,175-176,178-181,183,185-188,195,202,204-206
+docs/cli.md
+  s_a21e54cd14173f::t_5e02173aa4aa87 178-220
+docs/llms.txt
+  s_a21e54cd14173f::t_6792124de8f8a1 130,132-134,136,138-140,142-143,145-148,150,152-156,158,160-162,169,171-173,175-176,178-181,183,185-188,195,202,204-206,424-466
+pkg/cli/playground/lib/state/runtime.js
+  s_a21e54cd14173f::t_fb0dd115445958 1-148
+pkg/cli/playground/vendor/kumo-standalone.css
+  s_a21e54cd14173f::t_500b47c72931e2 1-2
+playground-tests/pnpm-lock.yaml
+  s_a21e54cd14173f::t_eeece71b214c48 1-481
+playground-tests/tsconfig.json
+  s_a21e54cd14173f::t_82cbf5637be4ff 1-16
+playground-tests/validation.test.js
+  s_a21e54cd14173f::t_ef7aac4b446bbe 1-129
+playground-tests/vendor-integrity.test.js
+  s_a21e54cd14173f::t_f0d009784fe3b4 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "dc5eec31357a52a839fcefce0d313b512d2e4be1",
+  "prompts": {},
+  "sessions": {
+    "s_a21e54cd14173f": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_07f5ee68effeyjpmOvU9SJtxOd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
