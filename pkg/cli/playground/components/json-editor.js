@@ -59,7 +59,7 @@ const highlightStyle = HighlightStyle.define([
   { tag: [tags.brace, tags.squareBracket, tags.separator], color: "var(--text-color-kumo-subtle)" },
 ]);
 
-/** @typedef {{value:string, label:string, onChange?:(value:string)=>void, readOnly?:boolean, disabled?:boolean, invalid?:boolean, describedBy?:string, followTail?:boolean, active?:boolean, autoHeight?:boolean}} EditorOptions */
+/** @typedef {{value:string, label:string, onChange?:(value:string)=>void, readOnly?:boolean, disabled?:boolean, invalid?:boolean, describedBy?:string, followTail?:boolean, active?:boolean}} EditorOptions */
 
 export class JsonEditor {
   /** @param {HTMLElement} host @param {EditorOptions} options */
@@ -94,7 +94,6 @@ export class JsonEditor {
             if (update.docChanged && !this.updating) {
               const value = update.state.doc.toString();
               this.options.value = value;
-              this.resize();
               this.options.onChange?.(value);
             }
           }),
@@ -125,7 +124,6 @@ export class JsonEditor {
     this.view.scrollDOM.addEventListener("touchstart", this.stopFollowing, { passive: true });
     this.view.scrollDOM.addEventListener("pointerdown", this.onPointer, { passive: true });
     this.view.scrollDOM.addEventListener("keydown", this.onKey);
-    this.resize();
   }
 
   /** @param {Partial<EditorOptions> & {value?:string}} options */
@@ -147,7 +145,6 @@ export class JsonEditor {
       });
       this.updating = false;
     }
-    this.resize();
     if (this.options.followTail && this.options.active !== false && this.following)
       this.scrollToTail();
   }
@@ -162,13 +159,6 @@ export class JsonEditor {
       this.view.dispatch({ selection: { anchor: 0, head: this.view.state.doc.length } });
       this.view.focus();
     }
-  }
-  resize() {
-    if (this.options.autoHeight)
-      this.host.parentElement?.style.setProperty(
-        "height",
-        `${Math.min(320, Math.max(80, this.options.value.split("\n").length * 18 + 18))}px`,
-      );
   }
   scrollToTail() {
     const request = ++this.scrollRequest;

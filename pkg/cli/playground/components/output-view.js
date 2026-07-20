@@ -564,12 +564,11 @@ export class OutputView {
           "viewer-inspector viewer-response-body",
           true,
           "request",
-          { autoHeight: false },
         ),
       );
     return root;
   }
-  /** @param {string} summary @param {unknown} value @param {string} label @param {string} className @param {boolean} open @param {string} view @param {{autoHeight?:boolean}} [options] */
+  /** @param {string} summary @param {unknown} value @param {string} label @param {string} className @param {boolean} open @param {string} view @param {{followTail?:boolean,active?:boolean}} [options] */
   lazyDocument(summary, value, label, className, open, view, options = {}) {
     const resolvedOpen = view === "request" ? (this.requestOpen.get(summary) ?? open) : open;
     const details = element(
@@ -593,13 +592,13 @@ export class OutputView {
     if (resolvedOpen) mount();
     return details;
   }
-  /** @param {string} value @param {string} label @param {string} className @param {string} view @param {{followTail?:boolean,active?:boolean,autoHeight?:boolean}} options */
+  /** @param {string} value @param {string} label @param {string} className @param {string} view @param {{followTail?:boolean,active?:boolean}} options */
   editor(value, label, className, view, options) {
     const wrapper = element("div", { className: `json-editor ${className}` });
     this.createEditor(wrapper, value, label, className, view, options);
     return wrapper;
   }
-  /** @param {HTMLElement} wrapper @param {string} value @param {string} label @param {string} className @param {string} view @param {{followTail?:boolean,active?:boolean,autoHeight?:boolean}} [options] */
+  /** @param {HTMLElement} wrapper @param {string} value @param {string} label @param {string} className @param {string} view @param {{followTail?:boolean,active?:boolean}} [options] */
   createEditor(wrapper, value, label, className, view, options = {}) {
     wrapper.className = `json-editor ${className}`;
     const host = element("div");
@@ -608,7 +607,6 @@ export class OutputView {
       label,
       readOnly: true,
       ...options,
-      autoHeight: options.autoHeight ?? true,
     });
     let editors = this.editors.get(view);
     if (!editors) {

@@ -418,7 +418,6 @@ export class InputView {
       disabled,
       invalid: Boolean(draft.error) || errors.length > 0,
       describedBy: [described, draft.error ? errorId : ""].filter(Boolean).join(" ") || undefined,
-      autoHeight: true,
       onChange: (text) => {
         draft.raw = text;
         try {
