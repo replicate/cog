@@ -322,8 +322,7 @@ run = "nox -s tests -p 3.13"
 [tasks."test:playground"]
 description = "Run playground core tests"
 dir = "playground-tests"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
-run = "pnpm run test"
+run = "node --test '*.test.js'"
 
 [tasks."test:python:all"]
 description = "Run Python SDK tests on all supported Python versions"
