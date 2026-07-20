@@ -224,6 +224,9 @@ main {
   background: var(--border);
   min-height: 60vh;
 }
+main > div {
+  background: var(--bg);
+}
 @media (max-width: 900px) {
   main {
     grid-template-columns: 1fr;
