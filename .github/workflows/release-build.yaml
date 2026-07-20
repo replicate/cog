@@ -25,7 +25,7 @@ on:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -298,6 +298,8 @@ jobs:
 
   create-release:
     name: Create release
+    permissions:
+      contents: write
     needs: [verify-tag, build-sdk, build-coglet-wheels]
     # macOS arm64 runner: native clang for darwin targets, zig for linux targets.
     # CGo required for go-tree-sitter (static Python schema parser).
@@ -326,6 +328,9 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify vendored playground assets
+        run: go test ./pkg/cli -run '^(TestVendorAssetsMatchLock|TestPlaygroundAssetGraphComplete)$' -count=1
 
       # Goreleaser builds CLI binaries and creates draft release
       - name: Build CLI and create draft release

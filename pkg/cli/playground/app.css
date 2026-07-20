@@ -1,0 +1,96 @@
+@import url("/vendor/kumo-standalone.css");
+@import "./playground.css";
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+input:not([type="checkbox"]):not([type="file"]),
+select,
+textarea {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--color-kumo-base);
+  color: var(--text);
+}
+
+button {
+  padding: 5px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+button.ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+button.secondary-destructive {
+  border-color: var(--red);
+  background: transparent;
+  color: var(--red);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-badge::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentcolor;
+  content: "";
+}
+
+.status-success {
+  color: var(--green);
+}
+
+.status-warning {
+  color: var(--yellow);
+}
+
+.status-error {
+  color: var(--red);
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+input:not([type="checkbox"]):not([type="file"]),
+select,
+textarea {
+  width: 100%;
+  padding: 6px 9px;
+}
+
+textarea {
+  min-height: 76px;
+  resize: vertical;
+}

@@ -58,3 +58,8 @@ target
 
 # Generated docs
 /site
+
+# Playground frontend
+/playground/
+/playground-tests/coverage/
+/playground-tests/node_modules/

@@ -127,83 +127,83 @@ Choose your platform for installation instructions.
 <details>
   <summary>macOS</summary>
 
-  The easiest way to install Cog on macOS is with Homebrew:
+The easiest way to install Cog on macOS is with Homebrew:
 
-  ```console
-  brew install replicate/tap/cog
-  ```
+```console
+brew install replicate/tap/cog
+```
 
-  You can also use the install script:
+You can also use the install script:
 
-  ```sh
-  # bash, zsh, and other shells
-  sh <(curl -fsSL https://cog.run/install.sh)
+```sh
+# bash, zsh, and other shells
+sh <(curl -fsSL https://cog.run/install.sh)
 
-  # fish shell
-  sh (curl -fsSL https://cog.run/install.sh | psub)
+# fish shell
+sh (curl -fsSL https://cog.run/install.sh | psub)
 
-  # download with wget and run in a separate command
-  wget -qO- https://cog.run/install.sh
-  sh ./install.sh
-  ```
+# download with wget and run in a separate command
+wget -qO- https://cog.run/install.sh
+sh ./install.sh
+```
 
-  Or install manually:
+Or install manually:
 
-  ```console
-  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
-  sudo chmod +x /usr/local/bin/cog
-  sudo xattr -d com.apple.quarantine /usr/local/bin/cog 2>/dev/null || true
-  ```
+```console
+sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
+sudo chmod +x /usr/local/bin/cog
+sudo xattr -d com.apple.quarantine /usr/local/bin/cog 2>/dev/null || true
+```
 
-  If you see a Gatekeeper warning saying the binary "cannot be opened because the developer cannot be verified", run:
+If you see a Gatekeeper warning saying the binary "cannot be opened because the developer cannot be verified", run:
 
-  ```console
-  sudo xattr -d com.apple.quarantine /usr/local/bin/cog
-  ```
+```console
+sudo xattr -d com.apple.quarantine /usr/local/bin/cog
+```
 
 </details>
 
 <details>
   <summary>Linux</summary>
 
-  You can install Cog using the install script:
+You can install Cog using the install script:
 
-  ```sh
-  # bash, zsh, and other shells
-  sh <(curl -fsSL https://cog.run/install.sh)
+```sh
+# bash, zsh, and other shells
+sh <(curl -fsSL https://cog.run/install.sh)
 
-  # fish shell
-  sh (curl -fsSL https://cog.run/install.sh | psub)
+# fish shell
+sh (curl -fsSL https://cog.run/install.sh | psub)
 
-  # download with wget and run in a separate command
-  wget -qO- https://cog.run/install.sh
-  sh ./install.sh
-  ```
+# download with wget and run in a separate command
+wget -qO- https://cog.run/install.sh
+sh ./install.sh
+```
 
-  Or install manually:
+Or install manually:
 
-  ```console
-  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
-  sudo chmod +x /usr/local/bin/cog
-  ```
+```console
+sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
+sudo chmod +x /usr/local/bin/cog
+```
 
 </details>
 
 <details markdown>
   <summary>Windows</summary>
 
-  Cog does not natively support Windows, but you can run it on Windows 11 using [WSL 2](docs/wsl2/wsl2.md). Once WSL 2 is set up, follow the Linux installation instructions above.
+Cog does not natively support Windows, but you can run it on Windows 11 using [WSL 2](docs/wsl2/wsl2.md). Once WSL 2 is set up, follow the Linux installation instructions above.
 
 </details>
 
 <details>
   <summary>Docker</summary>
 
-  To install Cog inside a Docker image:
+To install Cog inside a Docker image:
 
-  ```dockerfile
-  RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
-  ```
+```dockerfile
+RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
+```
 
 </details>
 
@@ -419,6 +419,49 @@ cog login [flags]
 ```
   -h, --help          help for login
       --token-stdin   Pass login token on stdin instead of opening a browser. You can find your Replicate login token at https://replicate.com/auth/token
+```
+
+## `cog playground`
+
+Open a browser playground for talking to a running model.
+
+Starts a local web server that serves a schema-driven UI (a Postman-like tool
+for Cog models). Point it at any running Cog HTTP API -- for example one started
+with 'cog serve' -- and the playground reflects that model's inputs and outputs
+from its OpenAPI schema in real time.
+
+Requests are reverse-proxied through this server, so the target API does not
+need to set CORS headers. The server also hosts a webhook sink so async
+predictions can be observed in the browser.
+
+Async/webhook testing against a containerized model requires the webhook URL to
+be reachable from inside the container. On Docker Desktop the default
+'host.docker.internal' works once the server listens on a reachable interface
+(e.g. --host 0.0.0.0).
+
+```
+cog playground [flags]
+```
+
+**Examples**
+
+```
+  # Start a model API in one terminal
+  cog serve -p 8393
+
+  # Open the playground pointing at it
+  cog playground --target http://localhost:8393
+```
+
+**Options**
+
+```
+  -h, --help                  help for playground
+      --host string           Address to bind (use 0.0.0.0 to receive webhooks from containers) (default "127.0.0.1")
+      --no-open               Do not open the browser automatically
+  -p, --port int              Port to listen on (0 picks a free port)
+      --target string         Default target model API URL (default "http://localhost:8393")
+      --webhook-host string   Hostname the model uses to reach this server for webhooks (default "host.docker.internal")
 ```
 
 ## `cog push`

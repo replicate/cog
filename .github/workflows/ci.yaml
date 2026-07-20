@@ -60,8 +60,30 @@ jobs:
     timeout-minutes: 5
     outputs:
       supported_pythons: ${{ env.SUPPORTED_PYTHONS }}
+      playground_changed: ${{ steps.playground-changes.outputs.changed }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - run: echo "supported_pythons=$SUPPORTED_PYTHONS"
+      - name: Check playground changes
+        id: playground-changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA" "$GITHUB_SHA" -- \
+            .github/workflows/ci.yaml \
+            mise.lock \
+            mise.toml \
+            playground-tests \
+            'pkg/cli/playground*' \
+            pkg/cli/root.go; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
 # =============================================================================
 # Version Check - Validates VERSION.txt format and sync
@@ -211,6 +233,22 @@ jobs:
           name: CogBinary
           path: cog
 
+  test-playground:
+    name: Test playground
+    needs: setup
+    if: needs.setup.outputs.playground_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.4.27
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Test playground
+        run: |
+          mise run test:playground
+          go test ./pkg/cli -run '^(TestPlayground|TestVendorAssets)' -count=1
 # =============================================================================
 # Format Checks - Fast, parallel
 # =============================================================================
@@ -696,6 +734,7 @@ jobs:
     name: CI Complete
     needs:
       - setup
+      - test-playground
       - version-check
       - build-cog
       - build-sdk
@@ -725,6 +764,7 @@ jobs:
       - name: Check job results
         run: |
           echo "Job results:"
+          echo "  test-playground: ${{ needs.test-playground.result }}"
           echo "  version-check: ${{ needs.version-check.result }}"
           echo "  build-cog: ${{ needs.build-cog.result }}"
           echo "  build-sdk: ${{ needs.build-sdk.result }}"
@@ -748,8 +788,7 @@ jobs:
           echo "  integration-shards: ${{ needs.integration-shards.result }}"
           echo "  test-integration: ${{ needs.test-integration.result }}"
 
-          # Fail if any required job failed.
-          # lint-rust-advisories is excluded: it uses continue-on-error because
+          # Fail if any required job failed. lint-rust-advisories is excluded:
           # advisory DB updates shouldn't block unrelated PRs.
           FAILED=false
           for result in \
@@ -780,6 +819,11 @@ jobs:
               FAILED=true
             fi
           done
+
+          if [ "${{ needs.setup.outputs.playground_changed }}" = "true" ] && \
+             { [ "${{ needs.test-playground.result }}" = "failure" ] || [ "${{ needs.test-playground.result }}" = "cancelled" ]; }; then
+            FAILED=true
+          fi
 
           if [ "$FAILED" = "true" ]; then
             echo "::error::Some jobs failed or were cancelled"
