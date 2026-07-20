@@ -250,7 +250,7 @@ jobs:
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test playground
         run: |
-          mise run test:playground
+          node --test 'playground-tests/*.test.js'
           go test ./pkg/cli -run '^(TestPlayground|TestVendorAssets)' -count=1
 # =============================================================================
 # Format Checks - Fast, parallel

@@ -64,8 +64,6 @@ linters:
         - weakCond
   exclusions:
     generated: strict
-    paths:
-      - playground-tests/node_modules
     rules:
       # Exclude some linters from running on test files
       - path: '(.+)_test\.go'

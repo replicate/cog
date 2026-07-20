@@ -8,8 +8,6 @@ ignores:
   - "docs/llms.txt"
   - "CLAUDE.md"
   - "playground/**"
-  - "playground-tests/node_modules/**"
-  - "playground-tests/coverage/**"
 
 config:
   default: false

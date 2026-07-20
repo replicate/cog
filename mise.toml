@@ -158,14 +158,6 @@ set -e
 GOFLAGS=-buildvcs=false go run github.com/goreleaser/goreleaser/v2@latest build --clean --snapshot --single-target --id cog --output cog
 """
 
-[tasks."playground:install"]
-description = "Install playground dependencies"
-dir = "playground-tests"
-sources = ["package.json", "pnpm-lock.yaml", "../mise.toml", "../mise.lock"]
-outputs = ["node_modules/.cog-playground-installed"]
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
-run = "pnpm install --frozen-lockfile && touch node_modules/.cog-playground-installed"
-
 [tasks."build:cog:release"]
 description = "Build cog CLI (release)"
 run = "go run github.com/goreleaser/goreleaser/v2@latest build --clean --single-target --id cog --output cog"
@@ -403,7 +395,7 @@ fi
 [tasks.fmt]
 alias = ["format", "fmt:check", "format:check"]
 description = "Check formatting for all languages (non-destructive)"
-run = [{ tasks = ["fmt:go", "fmt:rust", "fmt:python", "fmt:playground", "fmt:docs"] }]
+run = [{ tasks = ["fmt:go", "fmt:rust", "fmt:python", "fmt:docs"] }]
 
 [tasks."fmt:fix"]
 alias = "format:fix"
@@ -413,7 +405,6 @@ run = [
     "fmt:go:fix",
     "fmt:rust:fix",
     "fmt:python:fix",
-    "fmt:playground:fix",
     "fmt:docs:fix",
   ] },
 ]
@@ -453,21 +444,6 @@ run = "ruff format --check ."
 description = "Fix Python formatting"
 run = "ruff format ."
 
-[tasks."fmt:playground"]
-alias = "fmt:playground:check"
-description = "Check playground formatting"
-depends = ["playground:install"]
-dir = "playground-tests"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
-run = "pnpm run fmt:check"
-
-[tasks."fmt:playground:fix"]
-description = "Fix playground formatting"
-depends = ["playground:install"]
-dir = "playground-tests"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
-run = "pnpm run fmt"
-
 # Docs formatting
 [tasks."fmt:docs"]
 alias = "fmt:docs:check"
@@ -485,7 +461,7 @@ run = ["bash ./tools/format-markdown.sh --write", "markdownlint-cli2 --fix"]
 [tasks.lint]
 alias = "lint:check"
 description = "Run linters for all languages (non-destructive)"
-run = [{ tasks = ["lint:go", "lint:rust", "lint:python", "lint:playground", "lint:docs"] }]
+run = [{ tasks = ["lint:go", "lint:rust", "lint:python", "lint:docs"] }]
 
 [tasks."lint:fix"]
 description = "Fix lint issues for all languages"
@@ -494,7 +470,6 @@ run = [
     "lint:go:fix",
     "lint:rust:fix",
     "lint:python:fix",
-    "lint:playground:fix",
     "lint:docs:fix",
   ] },
 ]
@@ -552,28 +527,13 @@ mise run typecheck:python
 description = "Fix Python lint issues"
 run = "ruff check --fix ."
 
-[tasks."lint:playground"]
-alias = "lint:playground:check"
-description = "Lint playground code"
-depends = ["playground:install"]
-dir = "playground-tests"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
-run = "pnpm run lint"
-
-[tasks."lint:playground:fix"]
-description = "Fix playground lint issues"
-depends = ["playground:install"]
-dir = "playground-tests"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
-run = "pnpm run lint:fix"
-
 # =============================================================================
 # Typecheck tasks
 # =============================================================================
 
 [tasks.typecheck]
 description = "Run type checking for all languages"
-run = [{ tasks = ["typecheck:rust", "typecheck:python", "typecheck:playground"] }]
+run = [{ tasks = ["typecheck:rust", "typecheck:python"] }]
 
 [tasks."typecheck:rust"]
 description = "Type check Rust code (cargo check)"
@@ -582,13 +542,6 @@ run = "cargo check --manifest-path crates/Cargo.toml --workspace"
 [tasks."typecheck:python"]
 description = "Type check Python code"
 run = "nox -s typecheck"
-
-[tasks."typecheck:playground"]
-description = "Type check playground code"
-depends = ["playground:install"]
-dir = "playground-tests"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
-run = "pnpm run typecheck"
 
 # =============================================================================
 # Generate tasks

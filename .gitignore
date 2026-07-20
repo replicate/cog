@@ -61,5 +61,3 @@ target
 
 # Playground frontend
 /playground/
-/playground-tests/coverage/
-/playground-tests/node_modules/
