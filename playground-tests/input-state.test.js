@@ -30,7 +30,7 @@ const capabilities = {
   async: false,
 };
 
-test("connect checks optional fields with falsy defaults and omits truthy defaults", () => {
+test("connect checks optional null defaults and omits explicit non-null defaults", () => {
   const state = new InputState();
   state.connect("http://model", /** @type {any} */ (document), capabilities);
   assert.deepEqual(state.input, { choice: 1, enabled: false, nullable: null });

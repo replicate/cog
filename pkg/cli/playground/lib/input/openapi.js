@@ -34,7 +34,7 @@ export function enumValues(root, value) {
   return undefined;
 }
 
-/** @param {import("../../types").OpenAPIDocument} root @param {import("../../types").OpenAPISchema} schema */
+/** Builds initial input, including optional fields only when their default is missing or null. @param {import("../../types").OpenAPIDocument} root @param {import("../../types").OpenAPISchema} schema */
 export function defaultInput(root, schema) {
   /** @type {import("../../types").JsonObject} */
   const result = {};
@@ -43,7 +43,7 @@ export function defaultInput(root, schema) {
     const property = effectiveSchema(root, raw);
     const isRequired = required.has(name);
     if (property.default !== undefined) {
-      if (isRequired || !property.default) result[name] = property.default;
+      if (isRequired || property.default === null) result[name] = property.default;
     } else if (isRequired) {
       const choices = enumValues(root, property);
       if (choices?.length) result[name] = choices[0];
