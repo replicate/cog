@@ -39,8 +39,10 @@ export function defaultInput(root, schema) {
   const required = new Set(schema.required ?? []);
   for (const [name, raw] of orderedProperties(schema)) {
     const property = effectiveSchema(root, raw);
-    if (property.default !== undefined) result[name] = property.default;
-    else if (required.has(name)) {
+    const isRequired = required.has(name);
+    if (property.default !== undefined) {
+      if (isRequired || property.default) result[name] = property.default;
+    } else if (isRequired) {
       const choices = enumValues(root, property);
       if (choices?.length) result[name] = choices[0];
       else if (hasType(property, "boolean")) result[name] = false;

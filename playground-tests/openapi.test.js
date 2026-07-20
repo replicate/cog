@@ -27,21 +27,44 @@ test("resolves nullable references and preserves parent metadata", () => {
   ]);
 });
 
-test("builds defaults and orders inputs without losing typed values", () => {
+test("builds defaults, leaving optional falsy defaults omitted", () => {
   const schema = {
-    required: ["enabled", "choice"],
+    required: ["enabled", "choice", "requiredZero", "requiredNull"],
     properties: {
       late: { type: "string" },
       enabled: { type: "boolean", "x-order": 1 },
       choice: { enum: [1, "1"], "x-order": 2 },
       optional: { type: "string", default: "yes" },
+      optionalFalse: { type: "boolean", default: false },
+      optionalZero: { type: "number", default: 0 },
+      optionalEmpty: { type: "string", default: "" },
+      optionalNull: { type: ["string", "null"], default: null },
+      requiredZero: { type: "number", default: 0 },
+      requiredNull: { type: ["string", "null"], default: null },
     },
   };
   assert.deepEqual(
     orderedProperties(schema).map(([name]) => name),
-    ["enabled", "choice", "late", "optional"],
+    [
+      "enabled",
+      "choice",
+      "late",
+      "optional",
+      "optionalFalse",
+      "optionalZero",
+      "optionalEmpty",
+      "optionalNull",
+      "requiredZero",
+      "requiredNull",
+    ],
   );
-  assert.deepEqual(defaultInput({}, schema), { enabled: false, choice: 1, optional: "yes" });
+  assert.deepEqual(defaultInput({}, schema), {
+    enabled: false,
+    choice: 1,
+    optional: "yes",
+    requiredZero: 0,
+    requiredNull: null,
+  });
 });
 
 test("derives training and prediction capabilities", () => {
