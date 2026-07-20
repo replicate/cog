@@ -461,6 +461,9 @@ input[type="file"]::file-selector-button {
 .viewer-inspector {
   min-height: 80px;
 }
+.viewer-response-body {
+  height: 320px;
+}
 .viewer-timeline {
   margin-top: 6px;
 }
