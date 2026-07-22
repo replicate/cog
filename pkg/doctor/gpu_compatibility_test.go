@@ -110,6 +110,39 @@ func TestGPUCompatibilityCheck_SkipsNonExactPin(t *testing.T) {
 	require.Empty(t, findings)
 }
 
+// Full Config.Complete -> Check regression: an explicit cuda: "12.8" must not paper over a
+// torch wheel built against an older CUDA. Complete keeps build.CUDA at 12.8, but the +cu118
+// wheel has no Blackwell kernels, so the check derives 11.8 from the local tag and fires.
+func TestGPUCompatibilityCheck_LocalCUDATagOverridesBuildCUDA(t *testing.T) {
+	stubComputeCaps(t, "12.0\n", nil)
+	ctx := gpuContextRaw(t, true, "torch==2.7.0+cu118", "12.8")
+
+	findings, err := (&GPUCompatibilityCheck{}).Check(ctx)
+
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	assert.Contains(t, findings[0].Message, "sm_120")
+	// The message reports the wheel's CUDA (11.8), not the base image's 12.8.
+	assert.Contains(t, findings[0].Message, "CUDA 11.8")
+}
+
+// Full Config.Complete -> Check regression: extras and casing must not hide the torch pin.
+// Before name normalization, TorchExactVersion skipped these and the check said nothing.
+func TestGPUCompatibilityCheck_NormalizesTorchName(t *testing.T) {
+	for _, torchReq := range []string{"torch[extra]==2.4.1", "Torch==2.4.1"} {
+		t.Run(torchReq, func(t *testing.T) {
+			stubComputeCaps(t, "12.0\n", nil)
+			ctx := gpuContextRaw(t, true, torchReq, "12.4")
+
+			findings, err := (&GPUCompatibilityCheck{}).Check(ctx)
+
+			require.NoError(t, err)
+			require.Len(t, findings, 1)
+			assert.Contains(t, findings[0].Message, "sm_120")
+		})
+	}
+}
+
 func TestGPUCompatibilityCheck_RegisteredInRunner(t *testing.T) {
 	var registered bool
 	for _, c := range AllChecks() {
@@ -179,6 +212,9 @@ func TestEvaluateGPUCompat(t *testing.T) {
 		// Exactly at the floor with a local tag: the +cu128 modifier must not read as below
 		// 2.7.0. Regression for version.GreaterOrEqual folding the local tag into equality.
 		{"sm_120 exact floor with local tag passes", [2]int{12, 0}, "2.7.0+cu128", "12.8", false},
+		// The wheel's +cu118 tag is authoritative over the newer base CUDA: a 2.7.0+cu118
+		// wheel ships no Blackwell kernels even with cuda: "12.8", so this must fire.
+		{"sm_120 wheel cu118 tag overrides newer base CUDA fires", [2]int{12, 0}, "2.7.0+cu118", "12.8", true},
 		// Both bounds are load-bearing: torch 2.7.0+cu118 is a genuine 2.7 build with no
 		// Blackwell kernels in it.
 		{"sm_120 new torch but old CUDA fires", [2]int{12, 0}, "2.7.0", "11.8", true},

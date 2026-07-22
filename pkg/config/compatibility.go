@@ -119,6 +119,13 @@ func init() {
 	TorchCompatibilityMatrix = filteredTorchCompatibilityMatrix
 }
 
+// CUDAVersionFromTorchLocalTag splits a torch version into the CUDA encoded in its PEP 440
+// local tag and the release without it, e.g. "2.7.0+cu118" -> ("11.8", "2.7.0"). The CUDA is
+// empty when there is no cuXYZ tag.
+func CUDAVersionFromTorchLocalTag(ver string) (cuda string, release string) {
+	return cudaVersionFromTorchPlusVersion(ver)
+}
+
 func cudaVersionFromTorchPlusVersion(ver string) (string, string) {
 	const cudaVersionPrefix = "cu"
 
