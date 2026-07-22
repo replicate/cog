@@ -486,6 +486,28 @@ func TestPackageName(t *testing.T) {
 	require.Equal(t, name, "mypackage")
 }
 
+func TestNormalizePackageName(t *testing.T) {
+	for _, tt := range []struct {
+		in   string
+		want string
+	}{
+		{"torch", "torch"},
+		{"Torch", "torch"},
+		{"TORCH", "torch"},
+		{"torch[extra]", "torch"},
+		{"torch[cuda,extra]", "torch"},
+		{"torch_nightly", "torch-nightly"},
+		{"torch.nightly", "torch-nightly"},
+		{"Torch__Nightly", "torch-nightly"},
+		{"ruamel.yaml", "ruamel-yaml"},
+		{"", ""},
+	} {
+		t.Run(tt.in, func(t *testing.T) {
+			require.Equal(t, tt.want, NormalizePackageName(tt.in))
+		})
+	}
+}
+
 func TestVersions(t *testing.T) {
 	versions := Versions("another @ https://some.domain/package.whl")
 	require.Equal(t, versions, []string{"https://some.domain/package.whl"})

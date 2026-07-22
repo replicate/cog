@@ -150,6 +150,15 @@ func PackageName(pipRequirement string) string {
 	return ""
 }
 
+var nameSeparatorRe = regexp.MustCompile(`[-_.]+`)
+
+// NormalizePackageName canonicalizes a distribution name for comparison, PEP 503-style:
+// extras are dropped, "-_." separator runs collapse to "-", and the result is lowercased.
+func NormalizePackageName(name string) string {
+	name, _, _ = strings.Cut(name, "[")
+	return strings.ToLower(nameSeparatorRe.ReplaceAllString(name, "-"))
+}
+
 // versionSpecifierRe matches a single PEP 440 version specifier: an operator followed
 // by a version token. Used to distinguish an exact `==` pin from ranges and inequalities.
 var versionSpecifierRe = regexp.MustCompile(`(===|==|!=|~=|<=|>=|<|>)\s*([^\s,;|]+)`)

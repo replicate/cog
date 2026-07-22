@@ -260,10 +260,12 @@ func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 }
 
 // pythonPackageExactVersion returns the version of the named package only when it is pinned
-// with an exact `==` specifier; see ExactVersion for the requirements it rejects.
+// with an exact `==` specifier; see ExactVersion for the requirements it rejects. Names are
+// matched PEP 503-style so extras and casing (e.g. "Torch==2.4.1") still resolve.
 func (c *Config) pythonPackageExactVersion(name string) (version string, ok bool) {
+	target := requirements.NormalizePackageName(name)
 	for _, pkg := range c.Build.pythonRequirementsContent {
-		if requirements.PackageName(pkg) == name {
+		if requirements.NormalizePackageName(requirements.PackageName(pkg)) == target {
 			return requirements.ExactVersion(pkg)
 		}
 	}
