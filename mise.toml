@@ -292,7 +292,6 @@ set -e
 mise run test:go
 mise run test:rust
 mise run test:python
-mise run test:playground
 if [ "${INTEGRATION_TESTS:-}" = "1" ]; then
   mise run test:integration
 fi
@@ -310,12 +309,6 @@ run = "cargo nextest run --manifest-path crates/Cargo.toml --workspace --exclude
 description = "Run Python SDK tests (latest supported Python)"
 depends = ["build:coglet:wheel"]
 run = "nox -s tests -p 3.13"
-
-[tasks."test:playground"]
-description = "Run playground core tests"
-dir = "playground-tests"
-tools = { node = "24.18.0" }
-run = "npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund ajv@8.17.1 && node --test '*.test.js'"
 
 [tasks."test:python:all"]
 description = "Run Python SDK tests on all supported Python versions"

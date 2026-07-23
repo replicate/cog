@@ -249,7 +249,10 @@ jobs:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test playground
-        run: mise run test:playground && go test ./pkg/cli -run '^TestPlayground' -count=1
+        run: |
+          npm install --prefix playground-tests --no-save --no-package-lock --ignore-scripts --no-audit --no-fund ajv@8.17.1
+          node --test 'playground-tests/*.test.js'
+          go test ./pkg/cli -run '^TestPlayground' -count=1
 # =============================================================================
 # Format Checks - Fast, parallel
 # =============================================================================
