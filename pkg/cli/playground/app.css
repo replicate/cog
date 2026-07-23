@@ -1,4 +1,6 @@
-@import url("/vendor/kumo-standalone.css");
+@import url("https://esm.sh/@cloudflare/kumo@2.7.0/dist/styles/kumo-standalone.css");
+@import url("https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/codemirror.min.css");
+@import url("https://cdnjs.cloudflare.com/ajax/libs/codemirror/6.65.7/addon/fold/foldgutter.min.css");
 @import "./playground.css";
 
 button,

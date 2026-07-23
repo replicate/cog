@@ -329,8 +329,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify vendored playground assets
-        run: go test ./pkg/cli -run '^(TestVendorAssetsMatchLock|TestPlaygroundAssetGraphComplete)$' -count=1
+      - name: Verify playground asset graph
+        run: go test ./pkg/cli -run '^TestPlaygroundAssetGraphComplete$' -count=1
 
       # Goreleaser builds CLI binaries and creates draft release
       - name: Build CLI and create draft release

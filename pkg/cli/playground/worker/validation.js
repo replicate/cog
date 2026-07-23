@@ -1,5 +1,6 @@
 // @ts-check
 
+import { Ajv } from "../cdn/ajv.js";
 import { createInputValidator } from "../lib/input/validation.js";
 
 let schemaId = -1;
@@ -10,7 +11,7 @@ self.onmessage = (event) => {
   const { id, document, input, inputSchema, nextSchemaId } = event.data;
   try {
     if (!validator || schemaId !== nextSchemaId) {
-      validator = createInputValidator(document, inputSchema);
+      validator = createInputValidator(Ajv, document, inputSchema);
       schemaId = nextSchemaId;
     }
     self.postMessage({ id, issues: validator(input) });

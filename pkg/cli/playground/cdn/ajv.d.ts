@@ -16,9 +16,3 @@ export class Ajv {
   addFormat(name: string, format: (value: string) => boolean): void;
   compile(schema: unknown): ValidateFunction;
 }
-
-export function addFormats(ajv: Ajv): Ajv;
-
-export namespace addFormats {
-  function get(name: string): ((value: string) => boolean) | undefined;
-}

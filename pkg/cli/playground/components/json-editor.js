@@ -1,63 +1,6 @@
 // @ts-check
 
-import {
-  bracketMatching,
-  Compartment,
-  defaultKeymap,
-  drawSelection,
-  EditorState,
-  EditorView,
-  foldGutter,
-  foldKeymap,
-  HighlightStyle,
-  highlightActiveLine,
-  highlightActiveLineGutter,
-  highlightSpecialChars,
-  history,
-  historyKeymap,
-  json,
-  keymap,
-  lineNumbers,
-  syntaxHighlighting,
-  tags,
-  Transaction,
-} from "../vendor/codemirror.js";
-
-const editorTheme = EditorView.theme({
-  "&": {
-    height: "100%",
-    backgroundColor: "var(--color-kumo-base)",
-    color: "var(--text-color-kumo-default)",
-  },
-  "&.cm-focused": { outline: "none" },
-  ".cm-scroller": {
-    fontFamily: '"SF Mono", Monaco, Consolas, "Liberation Mono", monospace',
-    fontSize: "12px",
-    lineHeight: "1.5",
-  },
-  ".cm-content": { caretColor: "var(--text-color-kumo-default)", padding: "8px 0" },
-  ".cm-line": { padding: "0 10px" },
-  ".cm-gutters": {
-    backgroundColor: "var(--color-kumo-elevated)",
-    borderRight: "1px solid var(--color-kumo-hairline)",
-    color: "var(--text-color-kumo-subtle)",
-  },
-  ".cm-activeLine, .cm-activeLineGutter": {
-    backgroundColor: "color-mix(in srgb, var(--color-kumo-fill) 45%, transparent)",
-  },
-  ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-    backgroundColor: "var(--color-kumo-info-tint) !important",
-  },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--text-color-kumo-default)" },
-});
-const highlightStyle = HighlightStyle.define([
-  { tag: tags.propertyName, color: "var(--text-color-kumo-link)" },
-  { tag: [tags.string, tags.special(tags.string)], color: "var(--text-color-kumo-success)" },
-  { tag: tags.number, color: "var(--text-color-kumo-warning)" },
-  { tag: [tags.bool, tags.null], color: "var(--text-color-kumo-brand)" },
-  { tag: tags.escape, color: "var(--text-color-kumo-info)" },
-  { tag: [tags.brace, tags.squareBracket, tags.separator], color: "var(--text-color-kumo-subtle)" },
-]);
+import { CodeMirror } from "../cdn/codemirror.js";
 
 /** @typedef {{value:string, label:string, onChange?:(value:string)=>void, readOnly?:boolean, disabled?:boolean, invalid?:boolean, describedBy?:string, followTail?:boolean, active?:boolean}} EditorOptions */
 
@@ -66,43 +9,35 @@ export class JsonEditor {
   constructor(host, options) {
     this.host = host;
     this.options = options;
-    this.behavior = new Compartment();
     this.updating = false;
     this.following = true;
     this.scrolling = false;
     this.scrollRequest = 0;
-    this.view = new EditorView({
-      parent: host,
-      state: EditorState.create({
-        doc: options.value,
-        extensions: [
-          lineNumbers(),
-          foldGutter(),
-          highlightSpecialChars(),
-          history(),
-          drawSelection(),
-          bracketMatching(),
-          highlightActiveLine(),
-          highlightActiveLineGutter(),
-          keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
-          json(),
-          syntaxHighlighting(highlightStyle),
-          editorTheme,
-          EditorView.lineWrapping,
-          this.behavior.of(editorBehavior(options)),
-          EditorView.updateListener.of((update) => {
-            if (update.docChanged && !this.updating) {
-              const value = update.state.doc.toString();
-              this.options.value = value;
-              this.options.onChange?.(value);
-            }
-          }),
-        ],
-      }),
+    this.editor = CodeMirror(host, {
+      value: options.value,
+      mode: { name: "javascript", json: true },
+      lineNumbers: true,
+      foldGutter: true,
+      gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
+      matchBrackets: true,
+      styleActiveLine: true,
+      lineWrapping: true,
+      indentUnit: 2,
+      tabSize: 2,
     });
+    this.wrapper = this.editor.getWrapperElement();
+    this.scroller = this.editor.getScrollerElement();
+    applyEditorBehavior(this.editor, options);
+    this.onChange = () => {
+      if (this.updating) return;
+      const value = this.editor.getValue();
+      this.options.value = value;
+      this.options.onChange?.(value);
+    };
+    this.editor.on("change", this.onChange);
     this.updateFollow = () => {
       if (this.scrolling) return;
-      const { clientHeight, scrollHeight, scrollTop } = this.view.scrollDOM;
+      const { clientHeight, scrollHeight, scrollTop } = this.scroller;
       this.following = scrollHeight - scrollTop - clientHeight < 48;
     };
     this.stopFollowing = () => {
@@ -114,16 +49,23 @@ export class JsonEditor {
       if (event.deltaY < 0) this.stopFollowing();
     };
     this.onPointer = (/** @type {PointerEvent} */ event) => {
-      if (event.target === this.view.scrollDOM) this.stopFollowing();
+      if (event.target === this.scroller) this.stopFollowing();
     };
     this.onKey = (/** @type {KeyboardEvent} */ event) => {
-      if (["ArrowUp", "Home", "PageUp"].includes(event.key)) this.stopFollowing();
+      if (["ArrowUp", "Home", "PageUp"].includes(event.key))
+        this.stopFollowing();
     };
-    this.view.scrollDOM.addEventListener("scroll", this.updateFollow, { passive: true });
-    this.view.scrollDOM.addEventListener("wheel", this.onWheel, { passive: true });
-    this.view.scrollDOM.addEventListener("touchstart", this.stopFollowing, { passive: true });
-    this.view.scrollDOM.addEventListener("pointerdown", this.onPointer, { passive: true });
-    this.view.scrollDOM.addEventListener("keydown", this.onKey);
+    this.scroller.addEventListener("scroll", this.updateFollow, {
+      passive: true,
+    });
+    this.scroller.addEventListener("wheel", this.onWheel, { passive: true });
+    this.scroller.addEventListener("touchstart", this.stopFollowing, {
+      passive: true,
+    });
+    this.scroller.addEventListener("pointerdown", this.onPointer, {
+      passive: true,
+    });
+    this.wrapper.addEventListener("keydown", this.onKey);
   }
 
   /** @param {Partial<EditorOptions> & {value?:string}} options */
@@ -132,95 +74,106 @@ export class JsonEditor {
     const updatesValue = Object.hasOwn(options, "value");
     this.options = { ...this.options, ...options };
     if (this.options.followTail && !wasFollowing) this.following = true;
-    this.view.dispatch({ effects: this.behavior.reconfigure(editorBehavior(this.options)) });
-    const current = this.view.state.doc.toString();
+    applyEditorBehavior(this.editor, this.options);
+    const current = this.editor.getValue();
     if (updatesValue && current !== this.options.value) {
+      const selections = this.editor
+        .listSelections()
+        .map(({ anchor, head }) => ({
+          anchor: this.editor.indexFromPos(anchor),
+          head: this.editor.indexFromPos(head),
+        }));
+      const scroll = this.editor.getScrollInfo();
       this.updating = true;
-      this.view.dispatch({
-        changes: changedRange(current, this.options.value),
-        annotations: Transaction.addToHistory.of(false),
-        selection: this.options.readOnly
-          ? undefined
-          : { anchor: Math.min(this.view.state.selection.main.head, this.options.value.length) },
-      });
+      this.editor.setValue(this.options.value);
+      this.editor.setSelections(
+        selections.map(({ anchor, head }) => ({
+          anchor: this.editor.posFromIndex(
+            Math.min(anchor, this.options.value.length),
+          ),
+          head: this.editor.posFromIndex(
+            Math.min(head, this.options.value.length),
+          ),
+        })),
+      );
+      if (!this.options.followTail || !this.following)
+        this.editor.scrollTo(scroll.left, scroll.top);
       this.updating = false;
     }
-    if (this.options.followTail && this.options.active !== false && this.following)
+    if (
+      this.options.followTail &&
+      this.options.active !== false &&
+      this.following
+    )
       this.scrollToTail();
   }
 
   value() {
-    return this.view.state.doc.toString();
+    return this.editor.getValue();
   }
   async copy() {
     try {
       await navigator.clipboard.writeText(this.value());
     } catch {
-      this.view.dispatch({ selection: { anchor: 0, head: this.view.state.doc.length } });
-      this.view.focus();
+      this.editor.setSelection(
+        this.editor.posFromIndex(0),
+        this.editor.posFromIndex(this.value().length),
+      );
+      this.editor.focus();
     }
   }
   scrollToTail() {
     const request = ++this.scrollRequest;
     this.scrolling = true;
-    this.view.requestMeasure({
-      read: (/** @type {EditorView} */ view) => view.scrollDOM.scrollHeight,
-      write: (/** @type {number} */ height, /** @type {EditorView} */ view) => {
-        if (
-          this.scrollRequest === request &&
-          this.options.active !== false &&
-          this.options.followTail &&
-          this.following
-        )
-          view.scrollDOM.scrollTop = height;
-        if (this.scrollRequest === request)
-          requestAnimationFrame(() => {
-            if (this.scrollRequest === request) this.scrolling = false;
-          });
-      },
+    requestAnimationFrame(() => {
+      if (
+        this.scrollRequest === request &&
+        this.options.active !== false &&
+        this.options.followTail &&
+        this.following
+      )
+        this.editor.scrollTo(null, this.scroller.scrollHeight);
+      if (this.scrollRequest === request) this.scrolling = false;
     });
   }
   destroy() {
-    this.view.scrollDOM.removeEventListener("scroll", this.updateFollow);
-    this.view.scrollDOM.removeEventListener("wheel", this.onWheel);
-    this.view.scrollDOM.removeEventListener("touchstart", this.stopFollowing);
-    this.view.scrollDOM.removeEventListener("pointerdown", this.onPointer);
-    this.view.scrollDOM.removeEventListener("keydown", this.onKey);
-    this.view.destroy();
+    this.editor.off("change", this.onChange);
+    this.scroller.removeEventListener("scroll", this.updateFollow);
+    this.scroller.removeEventListener("wheel", this.onWheel);
+    this.scroller.removeEventListener("touchstart", this.stopFollowing);
+    this.scroller.removeEventListener("pointerdown", this.onPointer);
+    this.wrapper.removeEventListener("keydown", this.onKey);
+    this.host.replaceChildren();
   }
 }
 
-/** @param {EditorOptions} options */
-function editorBehavior(options) {
+/** @param {import("../cdn/codemirror").Editor} editor @param {EditorOptions} options */
+function applyEditorBehavior(editor, options) {
   const readOnly = Boolean(options.readOnly || options.disabled);
-  /** @type {Record<string, string>} */
-  const attributes = {
-    "aria-label": options.label,
-    "aria-readonly": String(readOnly),
-    spellcheck: "false",
-  };
-  if (options.describedBy) attributes["aria-describedby"] = options.describedBy;
-  if (options.invalid) attributes["aria-invalid"] = "true";
-  if (options.disabled) {
-    attributes["aria-disabled"] = "true";
-    attributes.tabindex = "-1";
-  } else if (options.readOnly) attributes.tabindex = "0";
-  return [
-    EditorState.readOnly.of(readOnly),
-    EditorView.editable.of(!readOnly),
-    EditorView.contentAttributes.of(attributes),
-  ];
+  editor.setOption("readOnly", options.disabled ? "nocursor" : readOnly);
+  editor.setOption("screenReaderLabel", options.label);
+  editor.setOption("tabindex", options.disabled ? -1 : 0);
+  const wrapper = editor.getWrapperElement();
+  const input = editor.getInputField();
+  wrapper.setAttribute("aria-readonly", String(readOnly));
+  for (const node of [wrapper, input]) {
+    setOptionalAttribute(node, "aria-describedby", options.describedBy);
+    setOptionalAttribute(
+      node,
+      "aria-invalid",
+      options.invalid ? "true" : undefined,
+    );
+    setOptionalAttribute(
+      node,
+      "aria-disabled",
+      options.disabled ? "true" : undefined,
+    );
+  }
+  input.setAttribute("spellcheck", "false");
 }
 
-/** @param {string} current @param {string} value */
-export function changedRange(current, value) {
-  let from = 0;
-  while (from < current.length && from < value.length && current[from] === value[from]) from += 1;
-  let currentTo = current.length;
-  let valueTo = value.length;
-  while (currentTo > from && valueTo > from && current[currentTo - 1] === value[valueTo - 1]) {
-    currentTo -= 1;
-    valueTo -= 1;
-  }
-  return { from, to: currentTo, insert: value.slice(from, valueTo) };
+/** @param {HTMLElement} node @param {string} name @param {string | undefined} value */
+function setOptionalAttribute(node, name, value) {
+  if (value === undefined) node.removeAttribute(name);
+  else node.setAttribute(name, value);
 }

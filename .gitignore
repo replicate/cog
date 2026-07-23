@@ -59,5 +59,6 @@ target
 # Generated docs
 /site
 
-# Playground frontend
-/playground/
+node_modules/
+/playground-tests/package.json
+/playground-tests/package-lock.json

@@ -35,7 +35,8 @@
 }
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   background: var(--bg);
   color: var(--text);
   font-size: 14px;
@@ -422,12 +423,51 @@ input[type="file"]::file-selector-button {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 .json-editor > div:first-child,
-.json-editor .cm-editor {
+.json-editor .CodeMirror {
   width: 100%;
   height: 100%;
+  background: var(--color-kumo-base);
+  color: var(--text-color-kumo-default);
+  font-family: "SF Mono", Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.5;
 }
-.json-editor .cm-scroller {
+.json-editor .CodeMirror-scroll {
   overflow: auto;
+}
+.json-editor .CodeMirror-lines {
+  padding: 8px 0;
+}
+.json-editor .CodeMirror pre.CodeMirror-line,
+.json-editor .CodeMirror pre.CodeMirror-line-like {
+  padding: 0 10px;
+}
+.json-editor .CodeMirror-gutters {
+  background: var(--color-kumo-elevated);
+  border-right: 1px solid var(--color-kumo-hairline);
+  color: var(--text-color-kumo-subtle);
+}
+.json-editor .CodeMirror-activeline-background {
+  background: color-mix(in srgb, var(--color-kumo-fill) 45%, transparent);
+}
+.json-editor .CodeMirror-selected,
+.json-editor .CodeMirror-focused .CodeMirror-selected {
+  background: var(--color-kumo-info-tint);
+}
+.json-editor .CodeMirror-cursor {
+  border-left-color: var(--text-color-kumo-default);
+}
+.json-editor .cm-property {
+  color: var(--text-color-kumo-link);
+}
+.json-editor .cm-string {
+  color: var(--text-color-kumo-success);
+}
+.json-editor .cm-number {
+  color: var(--text-color-kumo-warning);
+}
+.json-editor .cm-atom {
+  color: var(--text-color-kumo-brand);
 }
 .editor-copy {
   position: absolute;

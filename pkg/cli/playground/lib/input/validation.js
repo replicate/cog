@@ -1,15 +1,24 @@
 // @ts-check
 
-import { Ajv, addFormats } from "../../vendor/ajv.js";
 import { isJsonObject } from "../json.js";
 
 const INVALID_URI_TEXT = /[\p{Cc}\s]|%(?![0-9a-f]{2})/iu;
 const BASE64_DATA = /^[A-Za-z0-9+/]*={0,2}$/;
+// RFC 3986 URI (absolute, scheme required). Inlined from ajv-formats' "uri"
+// format so non-data URIs validate identically now that ajv-formats is no
+// longer bundled.
+const URI =
+  /^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:]|%[0-9a-f]{2})*@)?(?:\[(?:(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:){0,1}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d))|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)|[Vv][0-9a-f]+\.[a-z0-9\-._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)|(?:[a-z0-9\-._~!$&'()*+,;=]|%[0-9a-f]{2})*)(?::\d*)?(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*|\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)(?:\?(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?(?:#(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?$/i;
 
-/** @param {import("../../types").OpenAPIDocument} document @param {import("../../types").OpenAPISchema} inputSchema */
-export function createInputValidator(document, inputSchema) {
-  const root = normalizeOpenAPISchema({ ...inputSchema, components: document.components });
-  const required = Array.isArray(inputSchema.required) ? inputSchema.required : [];
+/** @param {typeof import("../../cdn/ajv").Ajv} Ajv @param {import("../../types").OpenAPIDocument} document @param {import("../../types").OpenAPISchema} inputSchema */
+export function createInputValidator(Ajv, document, inputSchema) {
+  const root = normalizeOpenAPISchema({
+    ...inputSchema,
+    components: document.components,
+  });
+  const required = Array.isArray(inputSchema.required)
+    ? inputSchema.required
+    : [];
   let validate;
   try {
     const ajv = new Ajv({
@@ -19,7 +28,6 @@ export function createInputValidator(document, inputSchema) {
       strictSchema: false,
       strictTypes: false,
     });
-    addFormats(ajv);
     ajv.addFormat("uri", validateURI);
     validate = ajv.compile(root);
   } catch (error) {
@@ -44,7 +52,9 @@ function withRequiredEmptyIssues(issues, required, value) {
   for (const name of required) {
     const item = value[name];
     const empty =
-      typeof item === "string" ? item.trim() === "" : Array.isArray(item) && item.length === 0;
+      typeof item === "string"
+        ? item.trim() === ""
+        : Array.isArray(item) && item.length === 0;
     if (empty && !result.some((issue) => issue.path === name))
       result.push({
         field: name,
@@ -81,16 +91,25 @@ export function normalizeOpenAPISchema(value) {
           normalizeOpenAPISchema(schema),
         ]),
       );
-  for (const keyword of ["items", "additionalItems", "additionalProperties", "not"]) {
+  for (const keyword of [
+    "items",
+    "additionalItems",
+    "additionalProperties",
+    "not",
+  ]) {
     const child = value[keyword];
-    if (Array.isArray(child)) normalized[keyword] = child.map(normalizeOpenAPISchema);
-    else if (isJsonObject(child)) normalized[keyword] = normalizeOpenAPISchema(child);
+    if (Array.isArray(child))
+      normalized[keyword] = child.map(normalizeOpenAPISchema);
+    else if (isJsonObject(child))
+      normalized[keyword] = normalizeOpenAPISchema(child);
   }
   if (isJsonObject(value.dependencies))
     normalized.dependencies = Object.fromEntries(
       Object.entries(value.dependencies).map(([key, dependency]) => [
         key,
-        isJsonObject(dependency) ? normalizeOpenAPISchema(dependency) : dependency,
+        isJsonObject(dependency)
+          ? normalizeOpenAPISchema(dependency)
+          : dependency,
       ]),
     );
   if (isJsonObject(value.components) && isJsonObject(value.components.schemas))
@@ -112,15 +131,28 @@ export function normalizeOpenAPISchema(value) {
       delete normalized.pattern;
     }
   }
+  for (const [exclusive, bound] of [
+    ["exclusiveMinimum", "minimum"],
+    ["exclusiveMaximum", "maximum"],
+  ]) {
+    if (typeof normalized[exclusive] !== "boolean") continue;
+    if (normalized[exclusive] === true && typeof normalized[bound] === "number")
+      normalized[exclusive] = normalized[bound];
+    else delete normalized[exclusive];
+  }
   if (normalized.nullable !== true) return normalized;
-  if (typeof normalized.type === "string") normalized.type = [normalized.type, "null"];
+  if (typeof normalized.type === "string")
+    normalized.type = [normalized.type, "null"];
   else if (Array.isArray(normalized.type) && !normalized.type.includes("null"))
     normalized.type = [...normalized.type, "null"];
   else {
     const components = normalized.components;
     delete normalized.components;
     delete normalized.nullable;
-    return { ...(components ? { components } : {}), anyOf: [normalized, { type: "null" }] };
+    return {
+      ...(components ? { components } : {}),
+      anyOf: [normalized, { type: "null" }],
+    };
   }
   delete normalized.nullable;
   return normalized;
@@ -138,15 +170,15 @@ export function normalizePythonPattern(pattern) {
 /** @param {string} value */
 export function validateURI(value) {
   if (value.slice(0, 5).toLowerCase() !== "data:") {
-    const standard = addFormats.get("uri");
-    return typeof standard === "function" && Boolean(standard(value));
+    return URI.test(value);
   }
   const separator = value.indexOf(",", 5);
   if (separator < 0) return false;
   const metadata = value.slice(5, separator);
   if (INVALID_URI_TEXT.test(metadata)) return false;
   const data = value.slice(separator + 1);
-  if (!metadata.toLowerCase().endsWith(";base64")) return !INVALID_URI_TEXT.test(data);
+  if (!metadata.toLowerCase().endsWith(";base64"))
+    return !INVALID_URI_TEXT.test(data);
   try {
     const decoded = decodeURIComponent(data);
     return decoded.length % 4 === 0 && BASE64_DATA.test(decoded);
@@ -155,26 +187,31 @@ export function validateURI(value) {
   }
 }
 
-/** @param {import("../../vendor/ajv").ErrorObject[]} errors */
+/** @param {import("../../cdn/ajv").ErrorObject[]} errors */
 function normalizeIssues(errors) {
-  const unions = errors.filter((error) => error.keyword === "anyOf" || error.keyword === "oneOf");
+  const unions = errors.filter(
+    (error) => error.keyword === "anyOf" || error.keyword === "oneOf",
+  );
   const issues = errors
     .filter(
       (error) =>
         !unions.some(
-          (union) => error !== union && error.schemaPath.startsWith(`${union.schemaPath}/`),
+          (union) =>
+            error !== union &&
+            error.schemaPath.startsWith(`${union.schemaPath}/`),
         ),
     )
     .map(toIssue);
   return issues.filter(
     (issue, index) =>
       issues.findIndex(
-        (candidate) => candidate.path === issue.path && candidate.message === issue.message,
+        (candidate) =>
+          candidate.path === issue.path && candidate.message === issue.message,
       ) === index,
   );
 }
 
-/** @param {import("../../vendor/ajv").ErrorObject} error @returns {import("../../types").ValidationIssue} */
+/** @param {import("../../cdn/ajv").ErrorObject} error @returns {import("../../types").ValidationIssue} */
 function toIssue(error) {
   const segments = pointerSegments(error.instancePath);
   const property =
@@ -187,7 +224,11 @@ function toIssue(error) {
   const path =
     segments.reduce(
       (result, segment) =>
-        /^\d+$/.test(segment) ? `${result}[${segment}]` : result ? `${result}.${segment}` : segment,
+        /^\d+$/.test(segment)
+          ? `${result}[${segment}]`
+          : result
+            ? `${result}.${segment}`
+            : segment,
       "",
     ) || "input";
   const message =

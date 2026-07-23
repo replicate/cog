@@ -3,6 +3,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import Ajv from "ajv";
+
 import {
   createInputValidator,
   normalizeOpenAPISchema,
@@ -18,6 +20,20 @@ test("normalizes nullable schemas and Python patterns", () => {
     normalizePythonPattern(String.raw`\A(?P<name>x)(?P=name)\Z`),
     String.raw`^(?<name>x)\k<name>$`,
   );
+  assert.deepEqual(
+    normalizeOpenAPISchema({ minimum: 1, exclusiveMinimum: true }),
+    {
+      minimum: 1,
+      exclusiveMinimum: 1,
+    },
+  );
+  assert.deepEqual(
+    normalizeOpenAPISchema({ maximum: 2, exclusiveMaximum: false }),
+    {
+      maximum: 2,
+    },
+  );
+  assert.deepEqual(normalizeOpenAPISchema({ exclusiveMinimum: true }), {});
 });
 
 test("validates standard and data URIs", () => {
@@ -33,7 +49,7 @@ test("returns field-oriented schema issues and required-empty errors", () => {
     properties: { text: { type: "string", pattern: "^ok" } },
     additionalProperties: false,
   };
-  const validate = createInputValidator({}, input);
+  const validate = createInputValidator(Ajv, {}, input);
   assert.deepEqual(
     validate({ text: "" }).map((issue) => issue.message),
     ["Does not match the required pattern."],
@@ -44,15 +60,36 @@ test("returns field-oriented schema issues and required-empty errors", () => {
     message: "Does not match the required pattern.",
     path: "text",
   });
-  assert.deepEqual(validate({ text: "ok", extra: 1 })[0].message, "This field is not allowed.");
+  assert.deepEqual(
+    validate({ text: "ok", extra: 1 })[0].message,
+    "This field is not allowed.",
+  );
   assert.deepEqual(validate({ text: "okay" }), []);
+});
+
+test("validates OpenAPI 3.0 exclusive numeric bounds", () => {
+  const validate = createInputValidator(
+    Ajv,
+    {},
+    {
+      type: "number",
+      minimum: 1,
+      exclusiveMinimum: true,
+    },
+  );
+  assert.equal(validate(1)[0]?.keyword, "exclusiveMinimum");
+  assert.deepEqual(validate(2), []);
 });
 
 test("AJV validates referenced Cog inputs, formats, unions, arrays, and numeric constraints", () => {
   const document = {
     components: {
       schemas: {
-        Prompt: { type: "string", minLength: 3, pattern: String.raw`\A[a-z]+\Z` },
+        Prompt: {
+          type: "string",
+          minLength: 3,
+          pattern: String.raw`\A[a-z]+\Z`,
+        },
       },
     },
   };
@@ -64,7 +101,12 @@ test("AJV validates referenced Cog inputs, formats, unions, arrays, and numeric 
       prompt: { $ref: "#/components/schemas/Prompt" },
       source: { type: "string", format: "uri" },
       count: { type: "integer", minimum: 1, maximum: 4 },
-      tags: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string" } },
+      tags: {
+        type: "array",
+        minItems: 1,
+        uniqueItems: true,
+        items: { type: "string" },
+      },
       choice: {
         oneOf: [
           { type: "string", enum: ["fast"] },
@@ -75,7 +117,10 @@ test("AJV validates referenced Cog inputs, formats, unions, arrays, and numeric 
     },
   };
   const validate = createInputValidator(
-    /** @type {import("../pkg/cli/playground/types").OpenAPIDocument} */ (document),
+    Ajv,
+    /** @type {import("../pkg/cli/playground/types").OpenAPIDocument} */ (
+      document
+    ),
     /** @type {import("../pkg/cli/playground/types").OpenAPISchema} */ (input),
   );
 
@@ -116,6 +161,7 @@ test("AJV validates referenced Cog inputs, formats, unions, arrays, and numeric 
 
 test("AJV schema compilation failures become validation issues", () => {
   const validate = createInputValidator(
+    Ajv,
     {},
     {
       type: "string",

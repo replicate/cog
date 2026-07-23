@@ -59,9 +59,8 @@ func TestPlaygroundServesUI(t *testing.T) {
 		"/app.js",
 		"/app.css",
 		"/worker/validation.js",
-		"/vendor/kumo-standalone.css",
-		"/vendor/codemirror.js",
-		"/vendor/ajv.js",
+		"/cdn/codemirror.js",
+		"/cdn/ajv.js",
 	} {
 		assetResp, err := http.Get(ts.URL + path)
 		require.NoError(t, err, "requesting %s", path)
@@ -401,6 +400,7 @@ func TestPlaygroundSetsBrowserSecurityHeaders(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'")
+	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "script-src 'self' https://cdnjs.cloudflare.com")
 	assert.NotContains(t, resp.Header.Get("Content-Security-Policy"), "'unsafe-eval'")
 	assert.Equal(t, "no-referrer", resp.Header.Get("Referrer-Policy"))
 	assert.Equal(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
@@ -411,7 +411,7 @@ func TestPlaygroundSetsBrowserSecurityHeaders(t *testing.T) {
 	request.Host = "127.0.0.1"
 	protectPlayground(http.NotFoundHandler()).ServeHTTP(recorder, request)
 	workerCSP := recorder.Header().Get("Content-Security-Policy")
-	assert.Contains(t, workerCSP, "script-src 'self' 'unsafe-eval'")
+	assert.Contains(t, workerCSP, "script-src 'self' 'unsafe-eval' https://cdnjs.cloudflare.com")
 	assert.Contains(t, workerCSP, "connect-src 'none'")
 }
 
