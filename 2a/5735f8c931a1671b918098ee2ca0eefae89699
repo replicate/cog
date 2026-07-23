@@ -1,0 +1,25 @@
+pkg/cli/playground/cdn/codemirror.js
+  s_7fce9a6ede4113::t_e3e6393ee620e7 2-4,6-12,14-16
+pkg/cli/playground/components/json-editor.js
+  s_7fce9a6ede4113::t_a20febd0844cd0 3,16-26,28-37,40,52,55-56,58-68,77-78,80-86,88-100,103-107,112,118-122,128-136,140-146,150-151,153-172,175-178
+pkg/cli/playground/playground.css
+  s_7fce9a6ede4113::t_13a418789b878c 38-39,426,429-433,435,438-471
+playground-tests/validation.test.js
+  s_7fce9a6ede4113::t_05231a5639d528 6-7,23-36,52,63-66,70-83,88-92,104-109,120-123,164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2a5735f8c931a1671b918098ee2ca0eefae89699",
+  "prompts": {},
+  "sessions": {
+    "s_7fce9a6ede4113": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_06f2fa86effeX6meomLWMFMpZm",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
