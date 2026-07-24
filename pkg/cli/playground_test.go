@@ -400,7 +400,7 @@ func TestPlaygroundSetsBrowserSecurityHeaders(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'")
-	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "script-src 'self' https://cdnjs.cloudflare.com")
+	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "script-src 'self' https://cdnjs.cloudflare.com https://esm.unpkg.com")
 	assert.NotContains(t, resp.Header.Get("Content-Security-Policy"), "'unsafe-eval'")
 	assert.Equal(t, "no-referrer", resp.Header.Get("Referrer-Policy"))
 	assert.Equal(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))

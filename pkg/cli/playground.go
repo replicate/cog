@@ -227,9 +227,9 @@ func protectPlayground(next http.Handler) http.Handler {
 }
 
 func setPlaygroundSecurityHeaders(w http.ResponseWriter, path string) {
-	// Browser dependencies are loaded from CDNs: CodeMirror and Ajv from cdnjs,
-	// and the Kumo stylesheet from esm.sh.
-	csp := "default-src 'self'; connect-src 'self'; img-src 'self' data: http: https:; media-src 'self' data: http: https:; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://esm.sh https://cdnjs.cloudflare.com; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+	// Browser dependencies are loaded from CDNs: CodeMirror from esm.unpkg.com,
+	// Ajv from cdnjs, and the Kumo stylesheet from esm.sh.
+	csp := "default-src 'self'; connect-src 'self'; img-src 'self' data: http: https:; media-src 'self' data: http: https:; script-src 'self' https://cdnjs.cloudflare.com https://esm.unpkg.com; style-src 'self' 'unsafe-inline' https://esm.sh; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 	if path == "/worker/validation.js" {
 		// Ajv compiles dynamic model schemas. Confine the required code generation
 		// to this network-isolated worker rather than relaxing the page policy.
