@@ -200,12 +200,34 @@ func (c *Config) TorchVersion() (string, bool) {
 	return c.pythonPackageVersion("torch")
 }
 
-// TorchExactVersion returns the torch version only when it is pinned with an exact `==`
-// specifier. Unlike TorchVersion, which returns the first version token regardless of the
-// comparator, this reports ("", false) for ranges, inequalities, direct URLs, and unpinned
-// requirements, where pip is free to resolve a different release than the token suggests.
-func (c *Config) TorchExactVersion() (string, bool) {
-	return c.pythonPackageExactVersion("torch")
+// ResolvedTorchWheel reports the torch wheel a GPU build will actually install: the exact
+// pinned version and the CUDA it was built against, read from the resolved package index
+// (e.g. .../whl/cu128 -> "12.8"). It mirrors PythonRequirementsForArch, so it reflects the
+// installed wheel rather than the raw requirement line, and falls back to Build.CUDA when the
+// resolved index carries no CUDA. Returns ok=false unless torch is pinned to one exact version.
+func (c *Config) ResolvedTorchWheel(goos string, goarch string) (torchVersion string, cuda string, ok bool) {
+	for _, pkg := range c.Build.pythonRequirementsContent {
+		if requirements.NormalizePackageName(requirements.PackageName(pkg)) != "torch" {
+			continue
+		}
+		resolved, _, extraIndexURLs, err := c.pythonPackageForArch(pkg, goos, goarch)
+		if err != nil {
+			return "", "", false
+		}
+		version, hasExact := requirements.ExactVersion(resolved)
+		if !hasExact {
+			return "", "", false
+		}
+		resolvedCUDA := c.Build.CUDA
+		for _, indexURL := range extraIndexURLs {
+			if derived, found := cudaVersionFromIndexURL(indexURL); found {
+				resolvedCUDA = derived
+				break
+			}
+		}
+		return version, resolvedCUDA, true
+	}
+	return "", "", false
 }
 
 func (c *Config) TorchvisionVersion() (string, bool) {
@@ -254,19 +276,6 @@ func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 				return versions[0], true
 			}
 			return "", true
-		}
-	}
-	return "", false
-}
-
-// pythonPackageExactVersion returns the version of the named package only when it is pinned
-// with an exact `==` specifier; see ExactVersion for the requirements it rejects. Names are
-// matched PEP 503-style so extras and casing (e.g. "Torch==2.4.1") still resolve.
-func (c *Config) pythonPackageExactVersion(name string) (version string, ok bool) {
-	target := requirements.NormalizePackageName(name)
-	for _, pkg := range c.Build.pythonRequirementsContent {
-		if requirements.NormalizePackageName(requirements.PackageName(pkg)) == target {
-			return requirements.ExactVersion(pkg)
 		}
 	}
 	return "", false

@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/util/version"
 )
 
@@ -66,10 +65,10 @@ func (c *GPUCompatibilityCheck) Check(ctx *CheckContext) ([]Finding, error) {
 		return nil, nil
 	}
 
-	// Only an exact `==` pin names one concrete version to reason about; for a range or an
-	// unpinned requirement pip is free to resolve a different release, so we say nothing.
-	torchVersion, hasTorch := ctx.Config.TorchExactVersion()
-	if !hasTorch {
+	// Resolve the wheel Cog will actually install, so the check matches it; ok is false without
+	// an exact pin. GPU resolution is arch-independent, so any linux target gives the same answer.
+	torchVersion, cuda, ok := ctx.Config.ResolvedTorchWheel("linux", "amd64")
+	if !ok {
 		return nil, nil
 	}
 
@@ -79,7 +78,7 @@ func (c *GPUCompatibilityCheck) Check(ctx *CheckContext) ([]Finding, error) {
 		return nil, nil
 	}
 
-	return evaluateGPUCompatAll(capabilities, torchVersion, ctx.Config.Build.CUDA), nil
+	return evaluateGPUCompatAll(capabilities, torchVersion, cuda), nil
 }
 
 // evaluateGPUCompatAll evaluates every distinct compute capability the machine reports. A
@@ -113,19 +112,11 @@ func evaluateGPUCompat(capability [2]int, torchVersion string, cuda string) []Fi
 		return nil
 	}
 
-	// A wheel's +cu118 tag is authoritative over the build's base CUDA: torch==2.7.0+cu118
-	// ships no Blackwell kernels even under cuda: "12.8", so evaluate against 11.8, not 12.8.
-	// Fall back to the build CUDA only when there is no cuXYZ tag to derive from.
-	effectiveCUDA := cuda
-	if wheelCUDA, _ := config.CUDAVersionFromTorchLocalTag(torchVersion); wheelCUDA != "" {
-		effectiveCUDA = wheelCUDA
-	}
-
-	// Compare the torch release without its local tag: version.GreaterOrEqual folds the
-	// local modifier into equality, so 2.7.0+cu128 would otherwise read as neither greater
-	// than nor equal to the 2.7.0 floor and warn falsely at the exact boundary.
+	// torchVersion and cuda describe the wheel Cog resolves and installs. Compare the release
+	// without its local tag: version.GreaterOrEqual folds the local modifier into equality, so
+	// 2.7.0+cu128 would otherwise read as below the 2.7.0 floor and warn falsely at the boundary.
 	torchOK := version.GreaterOrEqual(stripLocalVersion(torchVersion), floor.MinTorch)
-	cudaOK := effectiveCUDA == "" || version.GreaterOrEqual(effectiveCUDA, floor.MinCUDA)
+	cudaOK := cuda == "" || version.GreaterOrEqual(cuda, floor.MinCUDA)
 	if torchOK && cudaOK {
 		return nil
 	}
@@ -139,7 +130,7 @@ func evaluateGPUCompat(capability [2]int, torchVersion string, cuda string) []Fi
 			"torch==%s (CUDA %s) ships no kernels for %s, the compute capability of this machine's GPU. "+
 				"The image will build, but every CUDA operation in it will fail at runtime with "+
 				"\"no kernel image is available for execution on the device\".",
-			torchVersion, cudaDisplay(effectiveCUDA), sm,
+			torchVersion, cudaDisplay(cuda), sm,
 		),
 		Remediation: fmt.Sprintf(
 			"%s requires torch>=%s built against CUDA>=%s. Pin a newer torch, or set "+
