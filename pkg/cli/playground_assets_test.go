@@ -13,9 +13,10 @@ import (
 func TestPlaygroundAssetGraphComplete(t *testing.T) {
 	imports := regexp.MustCompile(`(?:from\s*|import\s*)["']([^"']+)["']`)
 	styles := regexp.MustCompile(`@import\s+(?:url\()?\s*["']([^"']+)["']`)
+	htmlAssets := regexp.MustCompile(`(?:href|src)\s*=\s*["']([^"']+)["']`)
 	err := fs.WalkDir(playgroundUI, "playground", func(name string, entry fs.DirEntry, walkErr error) error {
 		require.NoError(t, walkErr)
-		if entry.IsDir() || (!strings.HasSuffix(name, ".js") && !strings.HasSuffix(name, ".css")) {
+		if entry.IsDir() || (!strings.HasSuffix(name, ".js") && !strings.HasSuffix(name, ".css") && !strings.HasSuffix(name, ".html")) {
 			return nil
 		}
 		contents, err := playgroundUI.ReadFile(name)
@@ -23,6 +24,8 @@ func TestPlaygroundAssetGraphComplete(t *testing.T) {
 		patterns := []*regexp.Regexp{imports}
 		if strings.HasSuffix(name, ".css") {
 			patterns = []*regexp.Regexp{styles}
+		} else if strings.HasSuffix(name, ".html") {
+			patterns = []*regexp.Regexp{htmlAssets}
 		}
 		for _, pattern := range patterns {
 			for _, match := range pattern.FindAllSubmatch(contents, -1) {
@@ -31,8 +34,8 @@ func TestPlaygroundAssetGraphComplete(t *testing.T) {
 					continue
 				}
 				target := path.Clean(path.Join(path.Dir(name), reference))
-				if strings.HasPrefix(reference, "/") {
-					target = path.Join("playground", reference)
+				if rootReference, ok := strings.CutPrefix(reference, "/"); ok {
+					target = path.Join("playground", rootReference)
 				}
 				_, err := fs.Stat(playgroundUI, target)
 				require.NoError(t, err, "%s references missing asset %s", name, reference)

@@ -79,6 +79,7 @@ jobs:
             mise.toml \
             playground-tests \
             'pkg/cli/playground*' \
+            pkg/cli/playground \
             pkg/cli/root.go; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else

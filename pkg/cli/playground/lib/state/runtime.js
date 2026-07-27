@@ -55,10 +55,10 @@ export function applyMetric(metrics, name, value, mode) {
   if (metricMode === "increment") {
     const previous = Number(next[name] ?? 0);
     const delta = Number(value);
-    if (!Number.isFinite(previous) || !Number.isFinite(delta)) return metrics ?? current;
+    if (!Number.isFinite(previous) || !Number.isFinite(delta)) return metrics;
     next[name] = previous + delta;
   } else if (metricMode === "append") {
-    if (valueLength(value) > MAX_METRIC_ITEMS_TEXT) return metrics ?? current;
+    if (valueLength(value) > MAX_METRIC_ITEMS_TEXT) return metrics;
     const existing = next[name];
     const values = Array.isArray(existing)
       ? [...existing, value]

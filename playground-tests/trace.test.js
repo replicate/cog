@@ -27,6 +27,11 @@ test("applies metric modes", () => {
   assert.deepEqual(applyMetric({ count: 2 }, "count", 3, "increment"), { count: 5 });
   assert.deepEqual(applyMetric({ values: [1] }, "values", 2, "append"), { values: [1, 2] });
   assert.deepEqual(applyMetric({ old: true }, "old", null, "replace"), {});
+  assert.equal(applyMetric(undefined, "count", "invalid", "increment"), undefined);
+  assert.equal(
+    applyMetric(undefined, "values", "x".repeat(MAX_METRIC_ITEMS_TEXT + 1), "append"),
+    undefined,
+  );
 });
 
 test("bounds appended metric values", () => {
