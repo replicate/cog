@@ -113,7 +113,7 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v4.2.3
         with:
           version: 2026.4.27
           cache_key_prefix: mise-pub-${{ github.job }}
