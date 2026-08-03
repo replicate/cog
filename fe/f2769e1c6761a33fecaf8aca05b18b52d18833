@@ -1,0 +1,19 @@
+pkg/cli/weights.go
+  s_45b071b3034fc8::t_e733372886a1bb 127,161,164,320,331,335,344
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "fef2769e1c6761a33fecaf8aca05b18b52d18833",
+  "prompts": {},
+  "sessions": {
+    "s_45b071b3034fc8": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_036cc598dffeE1YTe3RhZufu8Y",
+        "model": "@cf/moonshotai/kimi-k2.6"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
