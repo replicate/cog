@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/weights/lockfile"
 )
@@ -43,19 +43,18 @@ type PullEvent struct {
 	MissingFiles int
 	ManifestRef  string
 
-	// LayerStart / LayerDone / FileStored: layer context.
-	// LayerSize is 0 when the backing layer does not expose a size
-	// (in-memory test layers).
+	// LayerStart / FileProgress / FileStored / LayerDone: layer digest.
 	LayerDigest string
-	LayerSize   int64
 
-	// FileStored: per-file detail for a file just written to the store.
+	// LayerStart: compressed layer size. Zero when unavailable.
+	LayerSize int64
+
+	// FileProgress / FileStored: per-file detail.
 	FilePath   string
 	FileDigest string
 	FileSize   int64
 
-	// FileProgress: per-file byte progress while streaming a file into
-	// the local store.
+	// FileProgress: bytes read from the current file in the fetched layer.
 	FileComplete int64
 
 	// WeightDone: cumulative totals for the weight. FullyCached is
@@ -254,31 +253,20 @@ func (m *Manager) pullLayer(
 			return fmt.Errorf("layer %s: unexpected file %q not in lockfile", layerDigest, hdr.Name)
 		}
 
-		emit(PullEvent{
-			Kind:         PullEventFileProgress,
-			Weight:       weightName,
-			LayerDigest:  layerDigest,
-			FilePath:     file.Path,
-			FileDigest:   file.Digest,
-			FileSize:     file.Size,
-			FileComplete: 0,
-		})
-
-		reader := &pullProgressReader{
-			r: tr,
-			fn: func(complete int64) {
-				emit(PullEvent{
-					Kind:         PullEventFileProgress,
-					Weight:       weightName,
-					LayerDigest:  layerDigest,
-					FilePath:     file.Path,
-					FileDigest:   file.Digest,
-					FileSize:     file.Size,
-					FileComplete: complete,
-				})
-			},
+		reportProgress := func(complete int64) {
+			emit(PullEvent{
+				Kind:         PullEventFileProgress,
+				Weight:       weightName,
+				LayerDigest:  layerDigest,
+				FilePath:     file.Path,
+				FileDigest:   file.Digest,
+				FileSize:     file.Size,
+				FileComplete: complete,
+			})
 		}
+		reportProgress(0)
 
+		reader := util.NewProgressReader(tr, reportProgress)
 		if err := m.store.PutFile(ctx, file.Digest, file.Size, reader); err != nil {
 			return fmt.Errorf("store %s (%s): %w", file.Path, file.Digest, err)
 		}
@@ -301,31 +289,4 @@ func (m *Manager) pullLayer(
 
 	emit(PullEvent{Kind: PullEventLayerDone, Weight: weightName, LayerDigest: layerDigest})
 	return nil
-}
-
-type pullProgressReader struct {
-	r            io.Reader
-	complete     int64
-	lastReported int64
-	lastUpdate   time.Time
-	interval     time.Duration
-	fn           func(int64)
-}
-
-func (r *pullProgressReader) Read(p []byte) (int, error) {
-	n, err := r.r.Read(p)
-	if n > 0 {
-		r.complete += int64(n)
-		now := time.Now()
-		interval := r.interval
-		if interval == 0 {
-			interval = 250 * time.Millisecond
-		}
-		if r.lastReported == 0 || now.Sub(r.lastUpdate) >= interval {
-			r.lastReported = r.complete
-			r.lastUpdate = now
-			r.fn(r.complete)
-		}
-	}
-	return n, err
 }

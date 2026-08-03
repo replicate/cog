@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/weights/store"
 )
 
@@ -376,38 +377,37 @@ func packedFilesFromPlan(layers []packedLayer) []packedFile {
 	return out
 }
 
-// ingressFromInventory streams each file in inv into st using the owners
-// map to call the correct source's Open(). Files already present in the
-// store are skipped. Hash mismatches surface here, loudly, instead of
-// silently producing a tar whose member digest disagrees with the
-// inventory.
+// ingressFromInventory stores each unique file digest from inv. Files already
+// in the store are skipped. Hash mismatches fail instead of producing a tar
+// whose contents disagree with the inventory.
 func ingressFromInventory(ctx context.Context, owners map[string]weightsource.Source, st store.Store, inv weightsource.Inventory) error {
 	return ingressFromInventoryWithProgress(ctx, "", owners, st, inv, nil)
 }
 
-// WeightBuildProgress reports progress while missing source files are fetched
-// into the local content-addressed weight store during import.
-type WeightBuildProgress struct {
-	WeightName string
-	FilePath   string
-	FileDigest string
-	Complete   int64
-	Total      int64
-	Done       bool
-}
-
-func ingressFromInventoryWithProgress(ctx context.Context, weightName string, owners map[string]weightsource.Source, st store.Store, inv weightsource.Inventory, progressFn func(WeightBuildProgress)) error {
+func ingressFromInventoryWithProgress(
+	ctx context.Context,
+	weightName string,
+	owners map[string]weightsource.Source,
+	st store.Store,
+	inv weightsource.Inventory,
+	progressFn func(WeightBuildProgress),
+) error {
 	type missingFile struct {
 		source weightsource.Source
 		file   weightsource.InventoryFile
 	}
 
 	missing := make([]missingFile, 0, len(inv.Files))
+	seenDigests := make(map[string]struct{}, len(inv.Files))
 	var total int64
 	for _, f := range inv.Files {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if _, ok := seenDigests[f.Digest]; ok {
+			continue
+		}
+		seenDigests[f.Digest] = struct{}{}
 		ok, err := st.Exists(ctx, f.Digest)
 		if err != nil {
 			return fmt.Errorf("check store for %s: %w", f.Path, err)
@@ -423,59 +423,35 @@ func ingressFromInventoryWithProgress(ctx context.Context, weightName string, ow
 		total += f.Size
 	}
 
+	if len(missing) == 0 {
+		return nil
+	}
+	if progressFn != nil && total > 0 {
+		progressFn(WeightBuildProgress{WeightName: weightName, Total: total})
+	}
+
 	var complete int64
 	for _, m := range missing {
-		if err := ingressOne(ctx, weightName, m.source, st, m.file, complete, total, progressFn); err != nil {
+		baseComplete := complete
+		var report func(int64)
+		if progressFn != nil {
+			report = func(fileComplete int64) {
+				progressFn(WeightBuildProgress{
+					WeightName: weightName,
+					Complete:   baseComplete + fileComplete,
+					Total:      total,
+				})
+			}
+		}
+		if err := ingressOne(ctx, m.source, st, m.file, report); err != nil {
 			return fmt.Errorf("ingress %s: %w", m.file.Path, err)
 		}
 		complete += m.file.Size
 	}
-	return nil
-}
-
-func ingressOne(ctx context.Context, weightName string, src weightsource.Source, st store.Store, f weightsource.InventoryFile, baseComplete, total int64, progressFn func(WeightBuildProgress)) error {
 	if progressFn != nil {
 		progressFn(WeightBuildProgress{
 			WeightName: weightName,
-			FilePath:   f.Path,
-			FileDigest: f.Digest,
-			Complete:   baseComplete,
-			Total:      total,
-		})
-	}
-
-	rc, err := src.Open(ctx, f.Path)
-	if err != nil {
-		return fmt.Errorf("open source: %w", err)
-	}
-	defer rc.Close() //nolint:errcheck // best-effort close on read path
-
-	var r io.Reader = rc
-	if progressFn != nil {
-		r = &progressReader{
-			r:        rc,
-			interval: 250 * time.Millisecond,
-			fn: func(complete int64) {
-				progressFn(WeightBuildProgress{
-					WeightName: weightName,
-					FilePath:   f.Path,
-					FileDigest: f.Digest,
-					Complete:   baseComplete + complete,
-					Total:      total,
-				})
-			},
-		}
-	}
-
-	if err := st.PutFile(ctx, f.Digest, f.Size, r); err != nil {
-		return err
-	}
-	if progressFn != nil {
-		progressFn(WeightBuildProgress{
-			WeightName: weightName,
-			FilePath:   f.Path,
-			FileDigest: f.Digest,
-			Complete:   baseComplete + f.Size,
+			Complete:   complete,
 			Total:      total,
 			Done:       true,
 		})
@@ -483,27 +459,25 @@ func ingressOne(ctx context.Context, weightName string, src weightsource.Source,
 	return nil
 }
 
-type progressReader struct {
-	r            io.Reader
-	complete     int64
-	lastReported int64
-	lastUpdate   time.Time
-	interval     time.Duration
-	fn           func(int64)
-}
-
-func (r *progressReader) Read(p []byte) (int, error) {
-	n, err := r.r.Read(p)
-	if n > 0 {
-		r.complete += int64(n)
-		now := time.Now()
-		if r.lastReported == 0 || now.Sub(r.lastUpdate) >= r.interval {
-			r.lastReported = r.complete
-			r.lastUpdate = now
-			r.fn(r.complete)
-		}
+func ingressOne(
+	ctx context.Context,
+	src weightsource.Source,
+	st store.Store,
+	f weightsource.InventoryFile,
+	report func(int64),
+) error {
+	rc, err := src.Open(ctx, f.Path)
+	if err != nil {
+		return fmt.Errorf("open source: %w", err)
 	}
-	return n, err
+	defer rc.Close() //nolint:errcheck // best-effort close on read path
+
+	var r io.Reader = rc
+	if report != nil {
+		r = util.NewProgressReader(rc, report)
+	}
+
+	return st.PutFile(ctx, f.Digest, f.Size, r)
 }
 
 // writeLayer writes the in-tar layout for a layer: deterministic

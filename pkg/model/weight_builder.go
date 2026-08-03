@@ -122,6 +122,14 @@ func (b *WeightBuilder) resolveInventory(ctx context.Context, ws *WeightSpec) (*
 	}, nil
 }
 
+// WeightBuildProgress reports aggregate download progress for one weight.
+type WeightBuildProgress struct {
+	WeightName string
+	Complete   int64
+	Total      int64
+	Done       bool
+}
+
 // WeightBuilder is the weight factory: given a WeightSpec (source URI +
 // target), it ingresses the source files into the local
 // content-addressed store, plans tar layers, derives layer digests
@@ -151,7 +159,7 @@ func NewWeightBuilder(source *Source, st store.Store, lockPath string) *WeightBu
 	return &WeightBuilder{source: source, store: st, lockPath: lockPath}
 }
 
-// SetProgressFn sets an optional callback for import-time file fetch progress.
+// SetProgressFn sets an optional callback for aggregate download progress.
 func (b *WeightBuilder) SetProgressFn(fn func(WeightBuildProgress)) {
 	b.progressFn = fn
 }

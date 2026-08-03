@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"testing"
-	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -573,10 +572,32 @@ func TestManager_Pull_EmitsEvents(t *testing.T) {
 	_, err := mgr.Pull(ctx, nil, func(e PullEvent) { events = append(events, e) })
 	require.NoError(t, err)
 
-	require.Equal(t, PullEventWeightStart, events[0].Kind)
-	require.Equal(t, PullEventLayerStart, events[1].Kind)
-	require.Equal(t, PullEventLayerDone, events[len(events)-2].Kind)
-	require.Equal(t, PullEventWeightDone, events[len(events)-1].Kind)
+	var nonProgressKinds []PullEventKind
+	progressByPath := map[string][]PullEvent{}
+	storedPaths := map[string]bool{}
+	var storedEvents []PullEvent
+	for _, e := range events {
+		switch e.Kind {
+		case PullEventFileProgress:
+			assert.False(t, storedPaths[e.FilePath], e.FilePath)
+			progressByPath[e.FilePath] = append(progressByPath[e.FilePath], e)
+		case PullEventFileStored:
+			require.NotEmpty(t, progressByPath[e.FilePath], e.FilePath)
+			storedPaths[e.FilePath] = true
+			storedEvents = append(storedEvents, e)
+			nonProgressKinds = append(nonProgressKinds, e.Kind)
+		default:
+			nonProgressKinds = append(nonProgressKinds, e.Kind)
+		}
+	}
+	require.Equal(t, []PullEventKind{
+		PullEventWeightStart,
+		PullEventLayerStart,
+		PullEventFileStored,
+		PullEventFileStored,
+		PullEventLayerDone,
+		PullEventWeightDone,
+	}, nonProgressKinds)
 
 	// WeightStart carries the manifest reference and file counts.
 	start := events[0]
@@ -586,24 +607,22 @@ func TestManager_Pull_EmitsEvents(t *testing.T) {
 	assert.Equal(t, 2, start.MissingFiles)
 	assert.Equal(t, testRepo+"@"+entry.Digest, start.ManifestRef)
 
-	var progressEvents, storedEvents []PullEvent
-	for _, e := range events {
-		switch e.Kind {
-		case PullEventFileProgress:
-			progressEvents = append(progressEvents, e)
-		case PullEventFileStored:
-			storedEvents = append(storedEvents, e)
-		}
-	}
-	require.NotEmpty(t, progressEvents)
+	require.Len(t, progressByPath, 2)
 	require.Len(t, storedEvents, 2)
 
-	// File progress + stored events carry path, digest, and byte counts.
-	for _, e := range progressEvents {
-		assert.NotEmpty(t, e.FilePath)
-		assert.NotEmpty(t, e.FileDigest)
-		assert.GreaterOrEqual(t, e.FileComplete, int64(0))
-		assert.LessOrEqual(t, e.FileComplete, e.FileSize)
+	for path, progressEvents := range progressByPath {
+		require.GreaterOrEqual(t, len(progressEvents), 2, path)
+		assert.Equal(t, int64(0), progressEvents[0].FileComplete, path)
+
+		var previous int64
+		for _, e := range progressEvents {
+			assert.Equal(t, path, e.FilePath)
+			assert.NotEmpty(t, e.FileDigest)
+			assert.GreaterOrEqual(t, e.FileComplete, previous, path)
+			assert.LessOrEqual(t, e.FileComplete, e.FileSize, path)
+			previous = e.FileComplete
+		}
+		assert.Greater(t, previous, int64(0), path)
 	}
 	for _, e := range storedEvents {
 		assert.NotEmpty(t, e.FilePath)
@@ -641,29 +660,6 @@ func TestManager_Pull_EmitsFullyCachedEvent(t *testing.T) {
 	assert.Empty(t, events[0].ManifestRef, "fully-cached weight should not set manifest ref")
 	assert.Equal(t, PullEventWeightDone, events[1].Kind)
 	assert.True(t, events[1].FullyCached)
-}
-
-func TestPullProgressReaderThrottlesEvents(t *testing.T) {
-	t.Parallel()
-
-	var events []int64
-	r := &pullProgressReader{
-		r:        bytes.NewReader([]byte("abcdef")),
-		interval: time.Hour,
-		fn: func(complete int64) {
-			events = append(events, complete)
-		},
-	}
-
-	buf := make([]byte, 2)
-	n, err := r.Read(buf)
-	require.NoError(t, err)
-	assert.Equal(t, 2, n)
-	n, err = r.Read(buf)
-	require.NoError(t, err)
-	assert.Equal(t, 2, n)
-
-	assert.Equal(t, []int64{2}, events)
 }
 
 func TestNewManager_RequiresStore(t *testing.T) {
