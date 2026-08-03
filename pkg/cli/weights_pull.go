@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"path/filepath"
 
@@ -138,7 +139,8 @@ func pullEventPrinter(verbose bool, progress *docker.ProgressWriter) func(weight
 }
 
 func pullProgressID(e weights.PullEvent) string {
-	return model.ShortDigest(e.FileDigest)
+	pathHash := sha256.Sum256([]byte(e.Weight + "\x00" + e.FilePath))
+	return fmt.Sprintf("%s-%x", model.ShortDigest(e.FileDigest), pathHash[:4])
 }
 
 func printPullSummary(results []weights.PullResult, verbose bool) {

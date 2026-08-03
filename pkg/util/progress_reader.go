@@ -15,8 +15,8 @@ type progressReader struct {
 	report     func(int64)
 }
 
-// NewProgressReader reports cumulative bytes read no more often than every 250ms.
-// Callers are responsible for reporting completion after consuming the reader.
+// NewProgressReader reports throttled intermediate byte counts. It does not
+// report EOF; callers should emit their own completion event.
 func NewProgressReader(reader io.Reader, report func(int64)) io.Reader {
 	return &progressReader{
 		reader:   reader,
