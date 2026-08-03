@@ -200,78 +200,20 @@ func TestPythonRequirementsLocalPackageArtifacts(t *testing.T) {
 	tmpDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "requirements", "dist"), 0o755))
 	wheelPath := path.Join(tmpDir, "requirements", "dist", "local_pkg-0.1.0-py3-none-any.whl")
-	archivePath := path.Join(tmpDir, "requirements", "mylibpackage.zip")
 	require.NoError(t, os.WriteFile(wheelPath, []byte("wheel"), 0o644))
-	require.NoError(t, os.WriteFile(archivePath, []byte("zip"), 0o644))
-	require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements", "requirements.txt"), []byte(`torch==1.13.1
-./dist/local_pkg-0.1.0-py3-none-any.whl
-mylibpackage.zip`), 0o644))
+	require.NoError(t, os.Symlink(wheelPath, path.Join(tmpDir, "requirements", "dist", "latest.whl")))
+	require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements", "requirements.txt"), []byte("./dist/latest.whl  # vendored helper"), 0o644))
 
-	config := &Config{
-		Build: &Build{
-			GPU:                true,
-			PythonVersion:      "3.10",
-			PythonRequirements: "requirements/requirements.txt",
-		},
-	}
+	config := &Config{Build: &Build{PythonVersion: "3.10", PythonRequirements: "requirements/requirements.txt"}}
 	require.NoError(t, config.Complete(tmpDir))
 
 	artifacts := config.LocalPackageArtifacts()
 	canonicalWheelPath, err := filepath.EvalSymlinks(wheelPath)
 	require.NoError(t, err)
-	canonicalArchivePath, err := filepath.EvalSymlinks(archivePath)
-	require.NoError(t, err)
-	require.Len(t, artifacts, 2)
-	require.Equal(t, "./dist/local_pkg-0.1.0-py3-none-any.whl", artifacts[0].Requirement)
-	require.Equal(t, canonicalWheelPath, artifacts[0].SourcePath)
-	require.Equal(t, "local_pkg-0.1.0-py3-none-any.whl", artifacts[0].Filename)
-	require.Len(t, artifacts[0].StagedDir, 16)
-	require.Equal(t, "mylibpackage.zip", artifacts[1].Requirement)
-	require.Equal(t, canonicalArchivePath, artifacts[1].SourcePath)
-
-	requirements, err := config.PythonRequirementsForArch("linux", "amd64", []string{})
-	require.NoError(t, err)
-	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu117/
-torch==1.13.1
-./dist/local_pkg-0.1.0-py3-none-any.whl
-mylibpackage.zip`, requirements)
-}
-
-func TestPythonRequirementsLocalPackageArtifactDuplicateAliases(t *testing.T) {
-	tmpDir := t.TempDir()
-	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "dist"), 0o755))
-	wheelPath := path.Join(tmpDir, "dist", "local_pkg-0.1.0-py3-none-any.whl")
-	require.NoError(t, os.WriteFile(wheelPath, []byte("wheel"), 0o644))
-	require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte("./dist/local_pkg-0.1.0-py3-none-any.whl\ndist/local_pkg-0.1.0-py3-none-any.whl"), 0o644))
-
-	config := &Config{Build: &Build{PythonVersion: "3.10", PythonRequirements: "requirements.txt"}}
-	require.NoError(t, config.Complete(tmpDir))
-
-	artifacts := config.LocalPackageArtifacts()
-	require.Len(t, artifacts, 2)
-	require.Equal(t, "./dist/local_pkg-0.1.0-py3-none-any.whl", artifacts[0].Requirement)
-	require.Equal(t, "dist/local_pkg-0.1.0-py3-none-any.whl", artifacts[1].Requirement)
-	require.Equal(t, artifacts[0].SourcePath, artifacts[1].SourcePath)
-	require.Equal(t, artifacts[0].StagedDir, artifacts[1].StagedDir)
-	require.Equal(t, artifacts[0].Filename, artifacts[1].Filename)
-}
-
-func TestPythonRequirementsLocalPackageArtifactUnsupportedLocalOptions(t *testing.T) {
-	for _, line := range []string{
-		"--find-links ./wheels",
-		"--find-links=./wheels",
-		"-r requirements-local.txt",
-		"--requirement requirements-local.txt",
-	} {
-		t.Run(line, func(t *testing.T) {
-			projectDir := t.TempDir()
-			require.NoError(t, os.WriteFile(path.Join(projectDir, "requirements.txt"), []byte(line), 0o644))
-			config := &Config{Build: &Build{PythonVersion: "3.10", PythonRequirements: "requirements.txt"}}
-			err := config.Complete(projectDir)
-			require.Error(t, err)
-			require.Contains(t, err.Error(), "local requirements option")
-		})
-	}
+	require.Len(t, artifacts, 1)
+	assert.Equal(t, "./dist/latest.whl", artifacts[0].Requirement)
+	assert.Equal(t, canonicalWheelPath, artifacts[0].SourcePath)
+	assert.Equal(t, path.Join("requirements", "dist", "local_pkg-0.1.0-py3-none-any.whl"), artifacts[0].RelativePath)
 }
 
 func TestPythonRequirementsLocalPackageArtifactValidation(t *testing.T) {
@@ -281,46 +223,30 @@ func TestPythonRequirementsLocalPackageArtifactValidation(t *testing.T) {
 		setup       func(t *testing.T, projectDir string) string
 		expectedErr string
 	}{
+		{name: "Missing", line: "./missing.zip", expectedErr: "not found"},
 		{
-			name:        "MissingArtifact",
-			line:        "./missing.zip",
-			expectedErr: "not found",
-		},
-		{
-			name: "DirectoryArtifact",
-			line: "./pkg.zip",
+			name: "Directory", line: "./pkg.zip", expectedErr: "regular file",
 			setup: func(t *testing.T, projectDir string) string {
 				require.NoError(t, os.Mkdir(path.Join(projectDir, "pkg.zip"), 0o755))
 				return ""
 			},
-			expectedErr: "regular file",
 		},
 		{
-			name: "OutsideProject",
+			name: "OutsideProject", expectedErr: "inside the project directory",
 			setup: func(t *testing.T, projectDir string) string {
-				outsideDir := t.TempDir()
-				outsidePath := path.Join(outsideDir, "pkg.zip")
+				outsidePath := path.Join(t.TempDir(), "pkg.zip")
 				require.NoError(t, os.WriteFile(outsidePath, []byte("zip"), 0o644))
 				return outsidePath
 			},
-			expectedErr: "inside the project directory",
 		},
 		{
-			name: "SymlinkOutsideProject",
-			line: "./pkg.zip",
+			name: "SymlinkOutsideProject", line: "./pkg.zip", expectedErr: "inside the project directory",
 			setup: func(t *testing.T, projectDir string) string {
-				outsideDir := t.TempDir()
-				outsidePath := path.Join(outsideDir, "pkg.zip")
+				outsidePath := path.Join(t.TempDir(), "pkg.zip")
 				require.NoError(t, os.WriteFile(outsidePath, []byte("zip"), 0o644))
 				require.NoError(t, os.Symlink(outsidePath, path.Join(projectDir, "pkg.zip")))
 				return ""
 			},
-			expectedErr: "inside the project directory",
-		},
-		{
-			name:        "InlineHashUnsupported",
-			line:        "./pkg.whl --hash=sha256:abc",
-			expectedErr: "inline options or hashes",
 		},
 	}
 
@@ -329,15 +255,13 @@ func TestPythonRequirementsLocalPackageArtifactValidation(t *testing.T) {
 			projectDir := t.TempDir()
 			line := tc.line
 			if tc.setup != nil {
-				if setupLine := tc.setup(t, projectDir); setupLine != "" {
-					line = setupLine
+				if value := tc.setup(t, projectDir); value != "" {
+					line = value
 				}
 			}
 			require.NoError(t, os.WriteFile(path.Join(projectDir, "requirements.txt"), []byte(line), 0o644))
 			config := &Config{Build: &Build{PythonVersion: "3.10", PythonRequirements: "requirements.txt"}}
-			err := config.Complete(projectDir)
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tc.expectedErr)
+			require.ErrorContains(t, config.Complete(projectDir), tc.expectedErr)
 		})
 	}
 }

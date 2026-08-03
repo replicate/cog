@@ -30,6 +30,11 @@ const uvBreakSystemPackages = "--break-system-packages"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
 
+// localArtifactsDir is the directory local package artifacts are staged into,
+// both under the build context on the host and under /tmp in the container.
+const localArtifactsDir = "local_package_artifacts"
+const localArtifactsContainerDir = "/tmp/" + localArtifactsDir
+
 type StandardGenerator struct {
 	Config         *config.Config
 	Dir            string
@@ -864,7 +869,7 @@ func (g *StandardGenerator) filterManagedPackages(reqContents string) string {
 					"Remove it from requirements and use build.sdk_version in cog.yaml or %s to control the version.",
 				trimmed,
 				override(baseName),
-				map[string]string{"cog": "COG_SDK_WHEEL", "coglet": "COGLET_WHEEL"}[baseName],
+				map[string]string{"cog": wheels.CogSDKWheelEnvVar, "coglet": wheels.CogletWheelEnvVar}[baseName],
 			)
 			continue
 		}
@@ -903,11 +908,11 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 	// Strip cog/coglet from user requirements — we always install them ourselves
 	// via installCog(). Leaving them in would cause pip to overwrite our version.
 	g.pythonRequirementsContents = g.filterManagedPackages(g.pythonRequirementsContents)
-	artifactCopyLines, err := g.stageLocalPackageArtifacts()
+	var artifactCopyLine string
+	g.pythonRequirementsContents, artifactCopyLine, err = g.stageLocalPackageArtifacts(g.pythonRequirementsContents)
 	if err != nil {
 		return "", err
 	}
-	g.pythonRequirementsContents = g.rewriteLocalPackageArtifacts(g.pythonRequirementsContents)
 
 	if strings.Trim(g.pythonRequirementsContents, "") == "" {
 		return "", nil
@@ -923,55 +928,76 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
-	lines := []string{}
-	lines = append(lines, artifactCopyLines...)
-	lines = append(lines,
+	return strings.Join(filterEmpty([]string{
+		artifactCopyLine,
 		copyLine[0],
 		CFlags,
 		pipInstallLine,
 		"ENV CFLAGS=",
-	)
-	return strings.Join(lines, "\n"), nil
+	}), "\n"), nil
 }
 
-func (g *StandardGenerator) stageLocalPackageArtifacts() ([]string, error) {
+func (g *StandardGenerator) stageLocalPackageArtifacts(reqContents string) (string, string, error) {
 	artifacts := g.Config.LocalPackageArtifacts()
 	if len(artifacts) == 0 {
-		return nil, nil
+		return reqContents, "", nil
 	}
+
+	containerPaths := map[string]string{}
 	staged := map[string]bool{}
 	for _, artifact := range artifacts {
-		dst := filepath.Join(g.tmpDir, "local_package_artifacts", artifact.StagedDir, artifact.Filename)
-		if staged[dst] {
-			continue
+		filename := filepath.Base(artifact.RelativePath)
+		switch {
+		case isVersionedArtifact(filename, "cog"):
+			return "", "", fmt.Errorf("local cog artifact %q is not supported; use build.sdk_version or %s", artifact.Requirement, wheels.CogSDKWheelEnvVar)
+		case isVersionedArtifact(filename, "coglet"):
+			return "", "", fmt.Errorf("local coglet artifact %q is not supported; use %s", artifact.Requirement, wheels.CogletWheelEnvVar)
 		}
-		if err := files.Copy(artifact.SourcePath, dst); err != nil {
-			return nil, fmt.Errorf("failed to stage local Python package artifact %s: %w", artifact.SourcePath, err)
+
+		if !staged[artifact.SourcePath] {
+			dst := filepath.Join(g.tmpDir, localArtifactsDir, artifact.RelativePath)
+			if err := files.Copy(artifact.SourcePath, dst); err != nil {
+				return "", "", fmt.Errorf("failed to stage local Python package artifact %s: %w", artifact.SourcePath, err)
+			}
+			staged[artifact.SourcePath] = true
 		}
-		staged[dst] = true
+		containerPaths[artifact.Requirement] = path.Join(localArtifactsContainerDir, filepath.ToSlash(artifact.RelativePath))
 	}
-	return []string{"COPY --from=cog_build local_package_artifacts/ /tmp/local_package_artifacts/"}, nil
-}
-
-func (g *StandardGenerator) rewriteLocalPackageArtifacts(reqContents string) string {
-	artifacts := map[string]string{}
-	for _, artifact := range g.Config.LocalPackageArtifacts() {
-		containerPath := path.Join("/tmp/local_package_artifacts", artifact.StagedDir, artifact.Filename)
-		artifacts[artifact.Requirement] = containerPath
-	}
-	if len(artifacts) == 0 {
-		return reqContents
-	}
-
 	lines := []string{}
 	for line := range strings.SplitSeq(reqContents, "\n") {
-		if replacement, ok := artifacts[strings.TrimSpace(line)]; ok {
+		requirement := strings.TrimSpace(line)
+		if replacement, ok := containerPaths[requirement]; ok {
 			lines = append(lines, replacement)
 		} else {
 			lines = append(lines, line)
 		}
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), fmt.Sprintf("COPY --from=cog_build %s/ %s/", localArtifactsDir, localArtifactsContainerDir), nil
+}
+
+func isVersionedArtifact(filename, name string) bool {
+	version, ok := strings.CutPrefix(strings.ToLower(filename), name+"-")
+	if !ok {
+		return false
+	}
+	major, rest, ok := strings.Cut(version, ".")
+	if !ok || !isDigits(major) {
+		return false
+	}
+	minor, _, _ := strings.Cut(rest, ".")
+	return isDigits(minor)
+}
+
+func isDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (g *StandardGenerator) runCommands() (string, error) {

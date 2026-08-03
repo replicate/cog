@@ -6,94 +6,75 @@ import (
 	"strings"
 )
 
-var localArtifactSuffixes = []string{
-	".whl",
-	".zip",
-	".tar.gz",
-	".tgz",
-	".tar.bz2",
-	".tar.xz",
-}
-
-// ParseLocalArtifactRequirement identifies simple local wheel/source-archive
-// requirement lines. It intentionally does not parse full pip requirement
-// syntax; callers should reject unsupported local forms with clear errors.
+// ParseLocalArtifactRequirement returns a bare local wheel or source archive
+// path. Other pip requirements pass through unchanged; unsupported local forms
+// return an error before the Docker build starts.
 func ParseLocalArtifactRequirement(line string) (string, bool, error) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return "", false, nil
 	}
-
-	if strings.HasPrefix(line, "file:") || strings.Contains(line, " @ file:") {
+	if strings.HasPrefix(line, "file:") {
 		return "", false, fmt.Errorf("local file URL requirements are not supported: %s", line)
 	}
-	if _, path, ok := strings.Cut(line, " @ "); ok {
-		path = strings.TrimSpace(path)
-		if !isRemoteRequirement(path) && (isLocalPath(path) || hasLocalArtifactSuffix(path)) {
-			return "", false, fmt.Errorf("local direct reference requirements (\"name @ path\") are not supported; list the path directly instead: %s", line)
+	if name, target, ok := strings.Cut(line, "@"); ok {
+		spaced := name != strings.TrimSpace(name) || target != strings.TrimSpace(target)
+		name, target = strings.TrimSpace(name), strings.TrimSpace(target)
+		if name != "" && PackageName(name) == name && strings.HasPrefix(target, "file:") {
+			return "", false, fmt.Errorf("local file URL requirements are not supported: %s", line)
+		}
+		if name != "" && PackageName(name) == name && (isLocalPath(target) || spaced && isLocalArtifact(target)) {
+			return "", false, fmt.Errorf("local direct reference requirements (`name @ path`) are not supported; list the path directly instead: %s", line)
 		}
 	}
-	if option, ok := parseUnsupportedLocalOption(line); ok {
-		return "", false, fmt.Errorf("local requirements option %q is not supported: %s", option, line)
-	}
-	if strings.HasPrefix(line, "-") || isRemoteRequirement(line) {
+	if isRemoteRequirement(line) {
 		return "", false, nil
+	}
+	if strings.HasPrefix(line, "-") {
+		if option := unsupportedLocalOption(line); option != "" {
+			return "", false, fmt.Errorf("local requirements option %q is not supported: %s", option, line)
+		}
+		return "", false, nil
+	}
+	if base, _, ok := strings.Cut(line, ";"); ok && isLocalArtifact(strings.TrimSpace(base)) {
+		return "", false, fmt.Errorf("environment markers are not supported on local package artifact requirements: %s", line)
+	}
+	if base, _, ok := strings.Cut(line, "["); ok && strings.HasSuffix(line, "]") && isLocalArtifact(strings.TrimSpace(base)) {
+		return "", false, fmt.Errorf("extras are not supported on local package artifact requirements: %s", line)
 	}
 
 	fields := strings.Fields(line)
 	if len(fields) > 1 {
-		if hasLocalArtifactSuffix(fields[0]) || isLocalPath(fields[0]) {
+		if isLocalArtifact(fields[0]) {
 			return "", false, fmt.Errorf("local package artifact requirements do not support inline options or hashes: %s", line)
 		}
 		return "", false, nil
 	}
-
 	if !isLocalPath(line) && !hasLocalArtifactSuffix(line) {
 		return "", false, nil
 	}
 	if !hasLocalArtifactSuffix(line) {
 		return "", false, fmt.Errorf("local package requirement %q is not a supported wheel or source archive", line)
 	}
-
 	return line, true, nil
 }
 
-func parseUnsupportedLocalOption(line string) (string, bool) {
-	for _, option := range []string{"--find-links", "--requirement"} {
-		if value, ok := optionValue(line, option); ok && isLocalOptionValue(value) {
-			return option, true
+func unsupportedLocalOption(line string) string {
+	for _, option := range []string{"--find-links", "--requirement", "-f", "-r"} {
+		value, ok := strings.CutPrefix(line, option+" ")
+		if !ok && strings.HasPrefix(option, "--") {
+			value, ok = strings.CutPrefix(line, option+"=")
+		}
+		value = strings.TrimSpace(value)
+		if ok && value != "" && !isRemoteRequirement(value) && !strings.HasPrefix(value, "file:") {
+			return option
 		}
 	}
-	for _, option := range []string{"-f", "-r"} {
-		if value, ok := shortOptionValue(line, option); ok && isLocalOptionValue(value) {
-			return option, true
-		}
-	}
-	return "", false
+	return ""
 }
 
-func optionValue(line string, option string) (string, bool) {
-	if value, ok := strings.CutPrefix(line, option+"="); ok {
-		return strings.TrimSpace(value), true
-	}
-	if value, ok := strings.CutPrefix(line, option+" "); ok {
-		return strings.TrimSpace(value), true
-	}
-	return "", false
-}
-
-func shortOptionValue(line string, option string) (string, bool) {
-	if value, ok := strings.CutPrefix(line, option+" "); ok {
-		return strings.TrimSpace(value), true
-	}
-	return "", false
-}
-
-func isLocalOptionValue(value string) bool {
-	if value == "" || isRemoteRequirement(value) || strings.HasPrefix(value, "file:") {
-		return false
-	}
-	return true
+func isLocalArtifact(path string) bool {
+	return !isRemoteRequirement(path) && (isLocalPath(path) || hasLocalArtifactSuffix(path))
 }
 
 func isRemoteRequirement(line string) bool {
@@ -106,10 +87,10 @@ func isLocalPath(line string) bool {
 
 func hasLocalArtifactSuffix(path string) bool {
 	path = strings.ToLower(path)
-	for _, suffix := range localArtifactSuffixes {
-		if strings.HasSuffix(path, suffix) {
-			return true
-		}
-	}
-	return false
+	return strings.HasSuffix(path, ".whl") ||
+		strings.HasSuffix(path, ".zip") ||
+		strings.HasSuffix(path, ".tar.gz") ||
+		strings.HasSuffix(path, ".tgz") ||
+		strings.HasSuffix(path, ".tar.bz2") ||
+		strings.HasSuffix(path, ".tar.xz")
 }

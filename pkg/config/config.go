@@ -1,8 +1,6 @@
 package config
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -66,11 +64,11 @@ type Build struct {
 	localPackageArtifacts     []LocalPackageArtifact
 }
 
+// LocalPackageArtifact is a local requirement staged into the Docker build context.
 type LocalPackageArtifact struct {
-	Requirement string
-	SourcePath  string
-	StagedDir   string
-	Filename    string
+	Requirement  string
+	SourcePath   string
+	RelativePath string
 }
 
 type Concurrency struct {
@@ -322,10 +320,10 @@ func (c *Config) loadLocalPackageArtifacts(projectDir string, requirementsFilePa
 	}
 
 	requirementsDir := filepath.Dir(requirementsFilePath)
-	seen := map[string]LocalPackageArtifact{}
 	artifacts := []LocalPackageArtifact{}
 	for _, line := range c.Build.pythonRequirementsContent {
-		artifactPath, ok, err := requirements.ParseLocalArtifactRequirement(line)
+		requirement := strings.TrimSpace(line)
+		artifactPath, ok, err := requirements.ParseLocalArtifactRequirement(requirement)
 		if err != nil {
 			return err
 		}
@@ -356,25 +354,11 @@ func (c *Config) loadLocalPackageArtifacts(projectDir string, requirementsFilePa
 			return fmt.Errorf("local Python package artifact %q must be inside the project directory", artifactPath)
 		}
 
-		if artifact, ok := seen[canonicalPath]; ok {
-			artifact.Requirement = line
-			artifacts = append(artifacts, artifact)
-			continue
-		}
-
 		relPath, err := filepath.Rel(projectRoot, canonicalPath)
 		if err != nil {
 			return fmt.Errorf("failed to resolve local Python package artifact %q relative to project directory: %w", artifactPath, err)
 		}
-		hash := sha256.Sum256([]byte(filepath.ToSlash(relPath)))
-		artifact := LocalPackageArtifact{
-			Requirement: line,
-			SourcePath:  canonicalPath,
-			StagedDir:   hex.EncodeToString(hash[:])[:16],
-			Filename:    filepath.Base(absPath),
-		}
-		seen[canonicalPath] = artifact
-		artifacts = append(artifacts, artifact)
+		artifacts = append(artifacts, LocalPackageArtifact{requirement, canonicalPath, relPath})
 	}
 	c.Build.localPackageArtifacts = artifacts
 	return nil

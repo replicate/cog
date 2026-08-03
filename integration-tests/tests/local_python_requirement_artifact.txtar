@@ -1,11 +1,13 @@
-# Local package artifacts listed in requirements.txt are available during build.
-
 mkdir dist
-exec python3 -c 'import zipfile; z = zipfile.ZipFile("dist/local_pkg-0.1.0.zip", "w"); z.write("setup.py"); z.write("local_pkg/__init__.py"); z.close()'
+exec python3 -m zipfile -c dist/local_pkg-0.1.0.zip setup.py local_pkg/__init__.py
+
+# Ensure the import depends on the artifact being installed.
+rm local_pkg
+rm setup.py
 
 cog build -t $TEST_IMAGE
 cog predict $TEST_IMAGE
-stdout 'hello from local package'
+stdout 'hello from local package 0.1.0'
 
 -- cog.yaml --
 build:
@@ -25,10 +27,13 @@ setup(name="local-pkg", version="0.1.0", packages=["local_pkg"])
 MESSAGE = "hello from local package"
 
 -- predict.py --
+from importlib.metadata import version
+
 from cog import BasePredictor
+
 from local_pkg import MESSAGE
 
 
 class Predictor(BasePredictor):
     def predict(self) -> str:
-        return MESSAGE
+        return f"{MESSAGE} {version('local-pkg')}"

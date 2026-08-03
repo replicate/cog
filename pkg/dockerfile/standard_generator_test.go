@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
@@ -344,7 +345,8 @@ func TestPythonRequirementsLocalPackageArtifact(t *testing.T) {
 	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "requirements", "dist"), 0o755))
 	artifactPath := path.Join(tmpDir, "requirements", "dist", "local_pkg-0.1.0-py3-none-any.whl")
 	require.NoError(t, os.WriteFile(artifactPath, []byte("wheel"), 0o644))
-	require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements", "requirements.txt"), []byte("./dist/local_pkg-0.1.0-py3-none-any.whl\ndist/local_pkg-0.1.0-py3-none-any.whl"), 0o644))
+	require.NoError(t, os.Symlink(artifactPath, path.Join(tmpDir, "requirements", "dist", "latest.whl")))
+	require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements", "requirements.txt"), []byte("./dist/latest.whl  # vendored helper\ndist/latest.whl"), 0o644))
 
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -365,19 +367,60 @@ build:
 
 	artifact := conf.LocalPackageArtifacts()[0]
 	copyArtifacts := "COPY --from=cog_build local_package_artifacts/ /tmp/local_package_artifacts/"
-	copyRequirements := "COPY --from=cog_build requirements.txt /tmp/requirements.txt"
 	pipInstall := "uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt"
 	require.Contains(t, actual, copyArtifacts)
-	require.Less(t, strings.Index(actual, copyArtifacts), strings.Index(actual, copyRequirements))
-	require.Less(t, strings.Index(actual, copyRequirements), strings.Index(actual, pipInstall))
+	require.Contains(t, actual, pipInstall)
+	assert.Less(t, strings.Index(actual, copyArtifacts), strings.Index(actual, pipInstall))
 
-	stagedArtifact, err := os.ReadFile(path.Join(buildDir, "local_package_artifacts", artifact.StagedDir, artifact.Filename))
+	stagedArtifact, err := os.ReadFile(path.Join(buildDir, localArtifactsDir, artifact.RelativePath))
 	require.NoError(t, err)
-	require.Equal(t, []byte("wheel"), stagedArtifact)
+	assert.Equal(t, []byte("wheel"), stagedArtifact)
 
 	requirements, err := os.ReadFile(path.Join(buildDir, "requirements.txt"))
 	require.NoError(t, err)
-	require.Equal(t, "/tmp/local_package_artifacts/"+artifact.StagedDir+"/local_pkg-0.1.0-py3-none-any.whl\n/tmp/local_package_artifacts/"+artifact.StagedDir+"/local_pkg-0.1.0-py3-none-any.whl", string(requirements))
+	containerPath := path.Join(localArtifactsContainerDir, filepath.ToSlash(artifact.RelativePath))
+	assert.Equal(t, containerPath+"\n"+containerPath, string(requirements))
+}
+
+func TestLocalPackageArtifactRejectsManagedPackages(t *testing.T) {
+	testCases := []struct {
+		name        string
+		filename    string
+		expectedErr string
+	}{
+		{name: "Cog", filename: "cog-0.1.0-py3-none-any.whl", expectedErr: wheels.CogSDKWheelEnvVar},
+		{name: "Coglet", filename: "COGLET-1.0.0.tar.gz", expectedErr: wheels.CogletWheelEnvVar},
+		{name: "Cog2FA", filename: "cog-2fa-1.0.tar.gz"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			require.NoError(t, os.MkdirAll(path.Join(tmpDir, "dist"), 0o755))
+			require.NoError(t, os.WriteFile(path.Join(tmpDir, "dist", tc.filename), []byte("artifact"), 0o644))
+			require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte("./dist/"+tc.filename), 0o644))
+
+			conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  python_requirements: "requirements.txt"
+`))
+			require.NoError(t, err)
+			require.NoError(t, conf.Complete(tmpDir))
+			gen, err := NewStandardGenerator(conf, tmpDir, t.TempDir(), "", dockertest.NewMockCommand(), registrytest.NewMockRegistryClient(), true)
+			require.NoError(t, err)
+			gen.SetUseCogBaseImage(false)
+			pypiWheels(gen)
+
+			_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+			if tc.expectedErr != "" {
+				require.ErrorContains(t, err, tc.expectedErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Contains(t, actual, localArtifactsContainerDir+"/")
+		})
+	}
 }
 
 // GPU builds on nvidia/cuda base images install Python via `uv python install`

@@ -59,7 +59,7 @@ Your `cog.yaml` file can set either `python_packages` or `python_requirements`, 
 
 This follows the standard [requirements.txt](https://pip.pypa.io/en/stable/reference/requirements-file-format/) format.
 
-Requirements files can also reference local Python package artifacts, such as wheels and source archives:
+Requirements files can list a local wheel or source archive:
 
 `requirements.txt`:
 
@@ -69,9 +69,9 @@ Requirements files can also reference local Python package artifacts, such as wh
 ./packages/localpkg.tar.gz
 ```
 
-Local artifact paths are resolved relative to the requirements file, and the referenced files must be inside your project directory. Cog stages these artifacts before installing requirements, so this is the supported way to install a local package artifact during `cog build`.
+Cog supports `.whl`, `.zip`, `.tar.gz`, `.tgz`, `.tar.bz2`, and `.tar.xz` files. Paths are resolved relative to the requirements file and must stay inside the project directory.
 
-Local package directories, `name @ file:...` requirements, local `--find-links` directories, recursive local artifact includes, and inline hashes or options on local artifact lines are not supported.
+Only bare paths are supported. Local directories, direct references, and options, hashes, extras, or markers on a local artifact line are rejected. Use `build.sdk_version` or `COG_SDK_WHEEL` for Cog, and `COGLET_WHEEL` for Coglet.
 
 To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
 
@@ -150,7 +150,7 @@ build:
     - cd cowsay-3.7.0 && make install
 ```
 
-Your code is _not_ available to commands in `run`. This is so we can build your image efficiently when running locally. To install a local wheel or source archive, list it in your `python_requirements` file instead of running `pip install ./artifact.zip` from `run`.
+Your source code is not available to `run` commands. List local wheels and source archives in `python_requirements` instead.
 
 Each command in `run` can be either a string or a dictionary in the following format:
 

@@ -35,9 +35,8 @@ func ReadRequirements(path string) ([]string, error) {
 			continue
 		}
 
-		// Remove any trailing comments
 		if idx := strings.Index(line, "#"); idx >= 0 {
-			line = line[:idx]
+			line = strings.TrimSpace(line[:idx])
 		}
 
 		if line != "" {
