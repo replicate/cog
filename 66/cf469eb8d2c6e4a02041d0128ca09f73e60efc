@@ -1,0 +1,31 @@
+.github/workflows/codeql.yml
+  s_f0fa52d6ea2601::t_be345ad2b1bd8f 45,59,72
+.github/workflows/docs.yaml
+  s_f0fa52d6ea2601::t_079d028a3599f8 16
+.github/workflows/mirror-cog-base-images.yaml
+  s_f0fa52d6ea2601::t_c10d4703b24695 27
+.github/workflows/release-build.yaml
+  s_f0fa52d6ea2601::t_09b049f17b4bf1 130,313
+.github/workflows/release-publish.yaml
+  s_f0fa52d6ea2601::t_8cfe7495074e78 116
+.github/workflows/rust-advisories.yaml
+  s_f0fa52d6ea2601::t_5dd621bbf2d7f6 22
+.github/workflows/update-compatibility-matrices.yaml
+  s_f0fa52d6ea2601::t_d536a9ea727dad 28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "66cf469eb8d2c6e4a02041d0128ca09f73e60efc",
+  "prompts": {},
+  "sessions": {
+    "s_f0fa52d6ea2601": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_032babbb5ffem4mpotkSWzUdco",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
