@@ -1,0 +1,29 @@
+crates/coglet-python/tests/test_coglet.py
+  s_76b4fc850faecf::t_bd2788bcb8102a 3,367-401,559-585
+docs/llms.txt
+  s_45b071b3034fc8::t_0cee9fa6479a49 1794-1796,2790-2791
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "45d06415c87dedcd5d1040529efba99ce32c3b1c",
+  "prompts": {},
+  "sessions": {
+    "s_45b071b3034fc8": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_036cc598dffeE1YTe3RhZufu8Y",
+        "model": "@cf/moonshotai/kimi-k2.6"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    },
+    "s_76b4fc850faecf": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_036ca4b75ffeeKQ8oG1AGtAAhj",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
