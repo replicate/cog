@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -150,15 +151,27 @@ type SlotWriter =
 pub struct SlotSender {
     tx: mpsc::UnboundedSender<SlotResponse>,
     output_dir: PathBuf,
+    /// Directories whose files Coglet may consume. See `owns_scratch_file`.
+    scratch_roots: Arc<[PathBuf]>,
     file_counter: Arc<AtomicUsize>,
     output_counter: Arc<AtomicU64>,
 }
 
 impl SlotSender {
     pub fn new(tx: mpsc::UnboundedSender<SlotResponse>, output_dir: PathBuf) -> Self {
+        let scratch_roots = [output_dir.clone(), std::env::temp_dir()];
+        Self::with_scratch_roots(tx, output_dir, scratch_roots)
+    }
+
+    fn with_scratch_roots(
+        tx: mpsc::UnboundedSender<SlotResponse>,
+        output_dir: PathBuf,
+        scratch_roots: impl Into<Arc<[PathBuf]>>,
+    ) -> Self {
         Self {
             tx,
             output_dir,
+            scratch_roots: scratch_roots.into(),
             file_counter: Arc::new(AtomicUsize::new(0)),
             output_counter: Arc::new(AtomicU64::new(0)),
         }
@@ -168,10 +181,30 @@ impl SlotSender {
         self.output_counter.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// Generate a unique filename in the output dir.
+    /// Generate the next candidate filename in the output dir.
     fn next_output_path(&self, extension: &str) -> PathBuf {
         let n = self.file_counter.fetch_add(1, Ordering::Relaxed);
         self.output_dir.join(format!("{n}.{extension}"))
+    }
+
+    /// Create a new file in the output dir, returning it and its path.
+    ///
+    /// Creating exclusively rather than testing with `exists()` skips names that
+    /// are already taken and refuses to write through a pre-existing symlink,
+    /// which `exists()` cannot detect when the link dangles.
+    fn create_output_file(&self, extension: &str) -> io::Result<(std::fs::File, PathBuf)> {
+        loop {
+            let path = self.next_output_path(extension);
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(file) => return Ok((file, path)),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
+        }
     }
 
     pub fn send_log(&self, source: LogSource, data: &str) -> io::Result<()> {
@@ -199,8 +232,8 @@ impl SlotSender {
         extension: &str,
         mime_type: Option<String>,
     ) -> io::Result<()> {
-        let path = self.next_output_path(extension);
-        std::fs::write(&path, data)?;
+        let (mut file, path) = self.create_output_file(extension)?;
+        file.write_all(data)?;
         self.send_file_output(path, mime_type, true)
     }
 
@@ -230,31 +263,77 @@ impl SlotSender {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
     }
 
-    /// Transfer a user-returned file into Coglet's managed output directory.
+    /// Transfer a run-returned file into Coglet's managed output directory.
     ///
-    /// Returning a path hands ownership to Coglet. Copying before unlinking works
-    /// across filesystems while ensuring the source is only removed after the
-    /// managed copy has been written successfully.
+    /// Returning a path hands the data to Coglet, which deletes the managed copy
+    /// once the parent has read it. Scratch files are moved so nothing is left
+    /// behind; files from anywhere else are copied so a run cannot delete assets
+    /// baked into the image. See `owns_scratch_file`.
     pub fn send_user_file_output(
         &self,
         path: PathBuf,
         mime_type: Option<String>,
     ) -> io::Result<()> {
-        let ext = path
+        if !path.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!(
+                    "output file {} does not exist. Cog takes ownership of \
+                     returned files, so a path returned more than once must be \
+                     rewritten before each output.",
+                    path.display()
+                ),
+            ));
+        }
+
+        let extension = path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("bin")
             .to_string();
-        let mut dest = self.next_output_path(&ext);
-        while dest == path || dest.exists() {
-            dest = self.next_output_path(&ext);
-        }
-        std::fs::copy(&path, &dest)?;
-        if let Err(e) = std::fs::remove_file(&path) {
+        // Close our handle before transferring: rename replaces the entry and
+        // copy reopens it, so holding it open buys nothing.
+        let (file, dest) = self.create_output_file(&extension)?;
+        drop(file);
+
+        let transfer = if self.owns_scratch_file(&path) {
+            move_file(&path, &dest)
+        } else {
+            std::fs::copy(&path, &dest).map(|_| ())
+        };
+        if let Err(e) = transfer {
             let _ = std::fs::remove_file(&dest);
             return Err(e);
         }
+
         self.send_file_output(dest, mime_type, true)
+    }
+
+    /// Whether Coglet may consume `path` outright instead of copying it.
+    ///
+    /// True for the places a run writes per-prediction scratch files: the output
+    /// dir Coglet handed it, and the temp dir. Reclaiming those is the point of
+    /// the ownership handoff. Anything else (weights, a bundled sample image, a
+    /// cache shared between predictions) is copied instead, because unlinking it
+    /// would break every later prediction.
+    ///
+    /// Both the directory entry and its resolved target must be under the same
+    /// scratch root. This keeps a symlink on either side of the boundary from
+    /// granting ownership of the other side.
+    fn owns_scratch_file(&self, path: &std::path::Path) -> bool {
+        let Ok(resolved) = path.canonicalize() else {
+            return false;
+        };
+        let Some(parent) = path.parent() else {
+            return false;
+        };
+        let Ok(resolved_parent) = parent.canonicalize() else {
+            return false;
+        };
+        self.scratch_roots
+            .iter()
+            .filter_map(|root| root.canonicalize().ok())
+            .any(|root| resolved.starts_with(&root) && resolved_parent.starts_with(&root))
     }
 
     /// Send a user metric to the parent process.
@@ -277,6 +356,31 @@ impl SlotSender {
             .send(msg)
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
     }
+}
+
+/// Move a file, falling back to copy-then-unlink when the two paths live on
+/// different filesystems and `rename` cannot be used.
+///
+/// The fallback copies first so a failure part-way through leaves the source
+/// intact.
+fn move_file(source: &std::path::Path, dest: &std::path::Path) -> io::Result<()> {
+    // Renaming a relative symlink into another directory changes what its target
+    // means. Copy the target bytes into a regular file, then unlink the source
+    // entry instead.
+    if std::fs::symlink_metadata(source)?.file_type().is_symlink() {
+        return copy_then_unlink(source, dest);
+    }
+
+    match std::fs::rename(source, dest) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::CrossesDevices => copy_then_unlink(source, dest),
+        Err(e) => Err(e),
+    }
+}
+
+fn copy_then_unlink(source: &std::path::Path, dest: &std::path::Path) -> io::Result<()> {
+    std::fs::copy(source, dest)?;
+    std::fs::remove_file(source)
 }
 
 /// Build an output message, spilling to disk if larger than the IPC frame limit.
@@ -1009,44 +1113,50 @@ mod tests {
         assert_eq!(config.num_slots, 1);
     }
 
-    #[test]
-    fn send_user_file_output_transfers_external_path() {
-        let output_dir = tempfile::tempdir().unwrap();
-        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
-        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
-
-        let external = tempfile::NamedTempFile::with_suffix(".txt").unwrap();
-        std::fs::write(external.path(), b"hello").unwrap();
-        let external_path = external.path().to_path_buf();
-
-        sender
-            .send_user_file_output(external_path.clone(), None)
-            .unwrap();
-
-        assert!(!external_path.exists(), "returned path should be removed");
-        let msg = rx.try_recv().unwrap();
-        match msg {
+    /// Unwrap a managed FileOutput message, checking it points into `output_dir`.
+    fn expect_managed_output(response: SlotResponse, output_dir: &std::path::Path) -> PathBuf {
+        match response {
             SlotResponse::FileOutput {
                 filename,
                 managed: true,
                 ..
             } => {
+                let path = PathBuf::from(filename);
                 assert!(
-                    filename.starts_with(output_dir.path().to_str().unwrap()),
-                    "external path should be copied into output dir"
+                    path.starts_with(output_dir),
+                    "managed output should live in the output dir, got {}",
+                    path.display()
                 );
-                assert!(std::path::Path::new(&filename).exists());
-                assert_eq!(std::fs::read(&filename).unwrap(), b"hello");
+                path
             }
-            _ => panic!("expected managed FileOutput"),
+            response => panic!("expected a managed FileOutput, got {response:?}"),
         }
-
-        assert!(sender.send_user_file_output(external_path, None).is_err());
-        assert!(rx.try_recv().is_err(), "stale path must not be sent again");
     }
 
     #[test]
-    fn send_user_file_output_transfers_output_dir_path() {
+    fn send_user_file_output_moves_a_temp_file() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let scratch = tempfile::NamedTempFile::with_suffix(".txt").unwrap();
+        std::fs::write(scratch.path(), b"hello").unwrap();
+        let scratch_path = scratch.path().to_path_buf();
+
+        sender
+            .send_user_file_output(scratch_path.clone(), None)
+            .unwrap();
+
+        assert!(
+            !scratch_path.exists(),
+            "temp file should be moved, not copied"
+        );
+        let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_eq!(std::fs::read(&managed).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn send_user_file_output_moves_a_file_already_in_the_output_dir() {
         let output_dir = tempfile::tempdir().unwrap();
         let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
         let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
@@ -1056,18 +1166,190 @@ mod tests {
 
         sender.send_user_file_output(inside.clone(), None).unwrap();
 
-        assert!(!inside.exists(), "returned path should be removed");
-        let msg = rx.try_recv().unwrap();
+        assert!(!inside.exists(), "returned path should be moved");
+        let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_ne!(managed, inside);
+        assert_eq!(std::fs::read(&managed).unwrap(), b"world");
+    }
+
+    /// Returning a file from outside the scratch roots must not delete it, or the
+    /// first prediction to return a bundled asset would break every later one.
+    #[test]
+    fn send_user_file_output_copies_a_file_outside_the_scratch_roots() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        // Only the output dir counts as scratch here, so the asset dir below
+        // stands in for wherever a run's own files live: the model directory, a
+        // weights cache, anything baked into the image.
+        let sender = SlotSender::with_scratch_roots(
+            tx,
+            output_dir.path().to_path_buf(),
+            [output_dir.path().to_path_buf()],
+        );
+
+        let asset_dir = tempfile::tempdir().unwrap();
+        let asset = asset_dir.path().join("placeholder.png");
+        std::fs::write(&asset, b"asset").unwrap();
+
+        sender.send_user_file_output(asset.clone(), None).unwrap();
+
+        assert!(
+            asset.exists(),
+            "a file outside the scratch roots must survive"
+        );
+        let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_eq!(std::fs::read(&managed).unwrap(), b"asset");
+
+        // Returning it again still works, because the source is untouched.
+        sender.send_user_file_output(asset.clone(), None).unwrap();
+        let second = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_ne!(second, managed);
+        assert_eq!(std::fs::read(&second).unwrap(), b"asset");
+    }
+
+    #[test]
+    fn owns_scratch_file_keeps_symlinks_from_crossing_the_boundary() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::with_scratch_roots(
+            tx,
+            output_dir.path().to_path_buf(),
+            [output_dir.path().to_path_buf()],
+        );
+
+        let outside_dir = tempfile::tempdir().unwrap();
+        let outside = outside_dir.path().join("outside.txt");
+        std::fs::write(&outside, b"outside").unwrap();
+        let link = output_dir.path().join("link.txt");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+
+        let inside = output_dir.path().join("inside.txt");
+        std::fs::write(&inside, b"inside").unwrap();
+        let outside_link = outside_dir.path().join("outside-link.txt");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&inside, &outside_link).unwrap();
+
+        assert!(sender.owns_scratch_file(&inside));
+        #[cfg(unix)]
+        {
+            assert!(
+                !sender.owns_scratch_file(&link),
+                "a link inside a scratch root must not grant ownership of its target"
+            );
+            assert!(
+                !sender.owns_scratch_file(&outside_link),
+                "a target inside a scratch root must not grant ownership of an outside link"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn send_user_file_output_copies_a_relative_symlink_before_unlinking_it() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let scratch_dir = tempfile::tempdir().unwrap();
+        let target = scratch_dir.path().join("target.txt");
+        std::fs::write(&target, b"target bytes").unwrap();
+        let link = scratch_dir.path().join("output.txt");
+        std::os::unix::fs::symlink("target.txt", &link).unwrap();
+
+        sender.send_user_file_output(link.clone(), None).unwrap();
+
+        assert!(!link.exists(), "returned symlink should be unlinked");
+        assert!(target.exists(), "the symlink target should survive");
+        let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_eq!(std::fs::read(managed).unwrap(), b"target bytes");
+    }
+
+    #[test]
+    fn send_user_file_output_explains_a_path_that_no_longer_exists() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let scratch = tempfile::NamedTempFile::with_suffix(".txt").unwrap();
+        let scratch_path = scratch.path().to_path_buf();
+        sender
+            .send_user_file_output(scratch_path.clone(), None)
+            .unwrap();
+        rx.try_recv().unwrap();
+
+        let error = sender
+            .send_user_file_output(scratch_path, None)
+            .expect_err("the file was already handed over");
+
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert!(
+            error.to_string().contains("rewritten before each output"),
+            "error should explain the ownership handoff: {error}"
+        );
+        assert!(rx.try_recv().is_err(), "stale path must not be sent again");
+    }
+
+    /// `exists()` reports false for a dangling symlink, so testing with it would
+    /// let `copy` create the link's target somewhere outside the output dir.
+    #[cfg(unix)]
+    #[test]
+    fn create_output_file_refuses_to_write_through_a_dangling_symlink() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let victim_dir = tempfile::tempdir().unwrap();
+        let victim = victim_dir.path().join("victim.txt");
+        std::os::unix::fs::symlink(&victim, output_dir.path().join("0.txt")).unwrap();
+
+        let (_file, created) = sender.create_output_file("txt").unwrap();
+
+        assert_ne!(created, output_dir.path().join("0.txt"));
+        assert!(!victim.exists(), "symlink target must not be created");
+    }
+
+    #[test]
+    fn write_file_output_marks_the_file_as_managed() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        sender.write_file_output(b"bytes", "bin", None).unwrap();
+
+        let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_eq!(std::fs::read(&managed).unwrap(), b"bytes");
+    }
+
+    /// Spilled outputs are Coglet's own files, so the parent has to delete them.
+    #[test]
+    fn oversized_output_spills_to_a_managed_file() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let oversized = serde_json::json!("x".repeat(MAX_INLINE_IPC_SIZE + 1));
+
+        let msg = build_output_message(output_dir.path(), oversized.clone(), 0).unwrap();
+
         match msg {
             SlotResponse::FileOutput {
                 filename,
+                kind: FileOutputKind::Oversized,
                 managed: true,
                 ..
             } => {
-                assert_ne!(filename, inside.to_str().unwrap());
-                assert_eq!(std::fs::read(filename).unwrap(), b"world");
+                let spilled: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(filename).unwrap()).unwrap();
+                assert_eq!(spilled, oversized);
             }
-            _ => panic!("expected managed FileOutput"),
+            msg => panic!("expected an oversized managed FileOutput, got {msg:?}"),
         }
+    }
+
+    #[test]
+    fn small_output_stays_inline() {
+        let output_dir = tempfile::tempdir().unwrap();
+
+        let msg = build_output_message(output_dir.path(), serde_json::json!("small"), 7).unwrap();
+
+        assert!(matches!(msg, SlotResponse::OutputChunk { index: 7, .. }));
     }
 }

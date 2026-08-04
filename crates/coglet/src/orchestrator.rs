@@ -84,12 +84,36 @@ fn ensure_trailing_slash(s: &str) -> String {
     }
 }
 
-fn read_file_output(filename: &str, managed: bool) -> std::io::Result<Vec<u8>> {
-    let bytes = std::fs::read(filename)?;
-    if managed && let Err(e) = std::fs::remove_file(filename) {
-        tracing::debug!(%filename, error = %e, "Failed to delete managed output file");
+/// Delete an output file Coglet owns, now that its bytes have been consumed.
+///
+/// Called only once the bytes are safely somewhere else: parsed, encoded into
+/// the response, or accepted by the upload endpoint. Deleting any earlier would
+/// discard the only copy while it could still be needed. Files left behind by a
+/// failure are removed with the prediction directory.
+fn delete_managed_output(filename: &str, managed: bool) {
+    if !managed {
+        return;
     }
-    Ok(bytes)
+    if let Err(e) = std::fs::remove_file(filename)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(%filename, error = %e, "Failed to delete managed output file");
+    }
+}
+
+/// Report the first upload that did not succeed, if any.
+///
+/// Uploads aborted by cancellation are not failures: the prediction is already
+/// terminal and its outputs are no longer wanted.
+fn first_upload_error(
+    results: Vec<Result<Result<(), String>, tokio::task::JoinError>>,
+) -> Option<String> {
+    results.into_iter().find_map(|result| match result {
+        Ok(Ok(())) => None,
+        Ok(Err(error)) => Some(error),
+        Err(e) if e.is_cancelled() => None,
+        Err(e) => Some(format!("upload task failed: {e}")),
+    })
 }
 
 /// Try to lock a prediction mutex.
@@ -745,7 +769,10 @@ async fn run_event_loop(
         HashMap::new();
     let mut pending_healthchecks: Vec<tokio::sync::oneshot::Sender<HealthcheckResult>> = Vec::new();
     let mut healthcheck_counter: u64 = 0;
-    let mut pending_uploads: HashMap<SlotId, Vec<tokio::task::JoinHandle<()>>> = HashMap::new();
+    // Upload tasks report failure so `Done` can fail the prediction instead of
+    // reporting success with a missing output.
+    let mut pending_uploads: HashMap<SlotId, Vec<tokio::task::JoinHandle<Result<(), String>>>> =
+        HashMap::new();
     let mut pending_cancellations: HashSet<String> = HashSet::new();
 
     let (slot_msg_tx, mut slot_msg_rx) =
@@ -1082,7 +1109,7 @@ async fn run_event_loop(
                     }
                     Ok(SlotResponse::FileOutput { filename, kind, mime_type, managed }) => {
                         tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");
-                        let bytes = match read_file_output(&filename, managed) {
+                        let bytes = match std::fs::read(&filename) {
                             Ok(b) => b,
                             Err(e) => {
                                 tracing::error!(%slot_id, %filename, error = %e, "Failed to read FileOutput");
@@ -1098,6 +1125,7 @@ async fn run_event_loop(
                                         continue;
                                     }
                                 };
+                                delete_managed_output(&filename, managed);
                                 let poisoned = if let Some(pred) = predictions.get(&slot_id) {
                                     if let Some(mut p) = try_lock_prediction(pred) {
                                         p.append_output(output);
@@ -1128,18 +1156,19 @@ async fn run_event_loop(
                                         .unwrap_or("output")
                                         .to_string();
                                     let handle = tokio::spawn(async move {
-                                        match upload_file(&endpoint, &basename, &bytes, &mime).await {
-                                            Ok(url) => {
-                                                if let Some(pred) = pred
-                                                    && let Some(mut p) = try_lock_prediction(&pred)
-                                                {
-                                                    p.append_output(serde_json::Value::String(url));
-                                                }
-                                            }
-                                            Err(e) => {
-                                                tracing::error!(error = %e, "Failed to upload file output");
-                                            }
+                                        let url = upload_file(&endpoint, &basename, &bytes, &mime)
+                                            .await
+                                            .inspect_err(|e| {
+                                                tracing::error!(%filename, error = %e, "Failed to upload file output");
+                                            })?;
+                                        if let Some(pred) = pred
+                                            && let Some(mut p) = try_lock_prediction(&pred)
+                                        {
+                                            p.append_output(serde_json::Value::String(url));
                                         }
+                                        // Only safe once the endpoint has the bytes.
+                                        delete_managed_output(&filename, managed);
+                                        Ok(())
                                     });
                                     pending_uploads.entry(slot_id).or_default().push(handle);
                                 } else {
@@ -1150,6 +1179,7 @@ async fn run_event_loop(
                                     let output = serde_json::Value::String(format!(
                                         "data:{mime};base64,{encoded}"
                                     ));
+                                    delete_managed_output(&filename, managed);
                                     let poisoned = if let Some(pred) = predictions.get(&slot_id) {
                                         if let Some(mut p) = try_lock_prediction(pred) {
                                             p.append_output(output);
@@ -1168,13 +1198,14 @@ async fn run_event_loop(
                         }
                     }
                     Ok(SlotResponse::Done { id, output: _, predict_time, is_stream }) => {
+                        // Not "succeeded" yet: pending uploads can still fail it.
                         tracing::info!(
                             target: "coglet::prediction",
                             prediction_id = %id,
                             predict_time,
                             is_stream,
                             output_is_array,
-                            "Prediction succeeded"
+                            "Run completed"
                         );
                         let uploads = pending_uploads.remove(&slot_id).unwrap_or_default();
                         if let Some(pred) = predictions.remove(&slot_id) {
@@ -1201,11 +1232,11 @@ async fn run_event_loop(
                                     None => (None, id.clone()),
                                 };
                                 tokio::spawn(async move {
-                                    if let Some(token) = cancel_token {
+                                    let results = if let Some(token) = cancel_token {
                                         let upload_fut = futures::future::join_all(uploads);
                                         tokio::pin!(upload_fut);
                                         tokio::select! {
-                                            _ = &mut upload_fut => {}
+                                            results = &mut upload_fut => results,
                                             _ = token.cancelled() => {
                                                 tracing::info!(
                                                     target: "coglet::prediction",
@@ -1219,18 +1250,30 @@ async fn run_event_loop(
                                             }
                                         }
                                     } else {
-                                        for h in uploads {
-                                            let _ = h.await;
-                                        }
-                                    }
-                                    if let Some(mut p) = try_lock_prediction(&pred) {
-                                        let pred_output = wrap_outputs(
-                                            p.take_outputs(),
-                                            output_is_array,
-                                            is_stream,
+                                        futures::future::join_all(uploads).await
+                                    };
+
+                                    let Some(mut p) = try_lock_prediction(&pred) else {
+                                        return;
+                                    };
+                                    // A dropped output would otherwise be reported as
+                                    // success with a short output array.
+                                    if let Some(error) = first_upload_error(results) {
+                                        tracing::error!(
+                                            target: "coglet::prediction",
+                                            prediction_id = %upload_pred_id,
+                                            %error,
+                                            "Failing prediction because an output upload failed"
                                         );
-                                        p.set_succeeded(pred_output);
+                                        p.set_failed(format!("Failed to upload output file: {error}"));
+                                        return;
                                     }
+                                    let pred_output = wrap_outputs(
+                                        p.take_outputs(),
+                                        output_is_array,
+                                        is_stream,
+                                    );
+                                    p.set_succeeded(pred_output);
                                 });
                             }
                         } else {
@@ -1293,6 +1336,8 @@ async fn run_event_loop(
 mod tests {
     use super::*;
     use serde_json::json;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     // ── wrap_outputs: schema says array (output_is_array = true) ──
 
@@ -1318,27 +1363,94 @@ mod tests {
     }
 
     #[test]
-    fn read_file_output_deletes_managed_file() {
+    fn delete_managed_output_deletes_managed_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("managed.txt");
         std::fs::write(&path, b"managed").unwrap();
 
-        let bytes = read_file_output(path.to_str().unwrap(), true).unwrap();
+        delete_managed_output(path.to_str().unwrap(), true);
 
-        assert_eq!(bytes, b"managed");
-        assert!(!path.exists());
+        assert!(!path.exists(), "managed file should be deleted");
     }
 
     #[test]
-    fn read_file_output_preserves_unmanaged_file() {
+    fn delete_managed_output_preserves_unmanaged_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("unmanaged.txt");
         std::fs::write(&path, b"unmanaged").unwrap();
 
-        let bytes = read_file_output(path.to_str().unwrap(), false).unwrap();
+        delete_managed_output(path.to_str().unwrap(), false);
 
-        assert_eq!(bytes, b"unmanaged");
-        assert!(path.exists());
+        assert!(path.exists(), "unmanaged file must be left alone");
+        assert_eq!(std::fs::read(&path).unwrap(), b"unmanaged");
+    }
+
+    /// Run the upload-then-delete sequence used by the FileOutput handler.
+    async fn upload_then_delete_managed(endpoint: &str, path: &std::path::Path) -> Option<String> {
+        crate::install_crypto_provider();
+        let filename = path.to_str().unwrap().to_string();
+        let endpoint = ensure_trailing_slash(endpoint);
+        let handle: tokio::task::JoinHandle<Result<(), String>> = tokio::spawn(async move {
+            upload_file(&endpoint, "0.txt", b"payload", "text/plain").await?;
+            delete_managed_output(&filename, true);
+            Ok(())
+        });
+        first_upload_error(vec![handle.await])
+    }
+
+    /// Deleting has to wait for the upload: on failure the bytes on disk are the
+    /// only copy left, and the prediction directory cleanup is what reclaims them.
+    #[tokio::test]
+    async fn managed_output_survives_a_failed_upload() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("0.txt");
+        std::fs::write(&path, b"payload").unwrap();
+
+        let error = upload_then_delete_managed(&server.uri(), &path)
+            .await
+            .expect("a 500 response should fail the upload");
+
+        assert!(error.contains("status 500"), "error: {error}");
+        assert!(path.exists(), "file must survive for directory cleanup");
+    }
+
+    #[tokio::test]
+    async fn managed_output_is_deleted_after_a_successful_upload() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("0.txt");
+        std::fs::write(&path, b"payload").unwrap();
+
+        let error = upload_then_delete_managed(&server.uri(), &path).await;
+
+        assert_eq!(error, None);
+        assert!(!path.exists(), "uploaded file should be deleted");
+    }
+
+    #[tokio::test]
+    async fn first_upload_error_reports_failures_but_not_cancellations() {
+        let ok: tokio::task::JoinHandle<Result<(), String>> = tokio::spawn(async { Ok(()) });
+        let failed: tokio::task::JoinHandle<Result<(), String>> =
+            tokio::spawn(async { Err("upload returned status 500".to_string()) });
+        let cancelled: tokio::task::JoinHandle<Result<(), String>> =
+            tokio::spawn(async { std::future::pending().await });
+        cancelled.abort();
+
+        assert_eq!(first_upload_error(vec![ok.await]), None);
+        assert_eq!(first_upload_error(vec![cancelled.await]), None);
+        assert_eq!(
+            first_upload_error(vec![failed.await]),
+            Some("upload returned status 500".to_string())
+        );
     }
 
     #[test]

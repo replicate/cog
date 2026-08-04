@@ -261,6 +261,9 @@ The client should ensure prediction slots are available
 before creating a new prediction with a different ID.
 
 Clients are responsible for providing unique prediction IDs.
+IDs must be 1 to 128 ASCII characters and may contain only letters, numbers,
+hyphens (`-`), underscores (`_`), and periods (`.`). The values `.` and `..`
+are not valid IDs.
 We recommend generating a UUIDv4 or [UUIDv7](https://uuid7.com),
 base32-encoding that value,
 and removing padding characters (`==`).

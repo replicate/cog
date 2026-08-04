@@ -164,24 +164,27 @@ fn submit_async_coroutine(
     Ok(future.unbind())
 }
 
+/// Hand a run-returned path to Coglet, which takes ownership of the file.
+fn send_path_output(
+    item: &Bound<'_, PyAny>,
+    slot_sender: &SlotSender,
+) -> Result<(), PredictionError> {
+    let path: String = item
+        .call_method0("__fspath__")
+        .and_then(|path| path.extract())
+        .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
+    // The transfer is blocking file I/O on files that can be very large, so let
+    // other Python threads run while it happens.
+    item.py()
+        .detach(|| slot_sender.send_user_file_output(std::path::PathBuf::from(path), None))
+        .map_err(|e| PredictionError::Failed(format!("Failed to send file output: {}", e)))
+}
+
 /// Send a single output item over IPC, routing file outputs to disk.
 ///
 /// For Path outputs (os.PathLike): transfers the file to Coglet-managed storage.
 /// For IOBase outputs: reads bytes, writes to output_dir via write_file_output.
 /// For everything else: processes through make_encodeable + upload_files, then send_output.
-fn send_path_output(
-    item: &Bound<'_, PyAny>,
-    slot_sender: &SlotSender,
-) -> Result<(), PredictionError> {
-    let path_str: String = item
-        .call_method0("__fspath__")
-        .and_then(|path| path.extract())
-        .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
-    slot_sender
-        .send_user_file_output(std::path::PathBuf::from(path_str), None)
-        .map_err(|e| PredictionError::Failed(format!("Failed to send file output: {}", e)))
-}
-
 fn send_output_item(
     py: Python<'_>,
     item: &Bound<'_, PyAny>,

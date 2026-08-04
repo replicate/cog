@@ -617,6 +617,24 @@ mod tests {
         insta::assert_json_snapshot!(resp);
     }
 
+    /// A worker built before `managed` existed omits the field. Defaulting to
+    /// false is what keeps the parent from deleting a file it does not own.
+    #[test]
+    fn slot_file_output_without_managed_deserializes_as_unmanaged() {
+        let json = json!({
+            "type": "file_output",
+            "filename": "/home/user/model/output.wav",
+            "kind": { "type": "file_type" }
+        });
+
+        let resp: SlotResponse = serde_json::from_value(json).unwrap();
+
+        match resp {
+            SlotResponse::FileOutput { managed, .. } => assert!(!managed),
+            resp => panic!("expected a FileOutput, got {resp:?}"),
+        }
+    }
+
     #[test]
     fn slot_file_output_oversized_serializes() {
         let resp = SlotResponse::FileOutput {

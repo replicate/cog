@@ -1791,6 +1791,9 @@ The client should ensure prediction slots are available
 before creating a new prediction with a different ID.
 
 Clients are responsible for providing unique prediction IDs.
+IDs must be 1 to 128 ASCII characters and may contain only letters, numbers,
+hyphens (`-`), underscores (`_`), and periods (`.`). The values `.` and `..`
+are not valid IDs.
 We recommend generating a UUIDv4 or [UUIDv7](https://uuid7.com),
 base32-encoding that value,
 and removing padding characters (`==`).
@@ -2784,7 +2787,8 @@ class Runner(BaseRunner):
         upscaled_image = do_some_processing(image)
 
         # To output cog.Path objects the file needs to exist, so create a temporary file first.
-        # This file will automatically be deleted by Cog after it has been returned.
+        # Cog deletes this temporary file once the output has been delivered, so
+        # write it again before returning the same path twice.
         output_path = Path(tempfile.mkdtemp()) / "upscaled.png"
         upscaled_image.save(output_path)
         return Path(output_path)

@@ -302,6 +302,37 @@ fn invalid_prediction_id_response(msg: &str) -> Response {
         .into_response()
 }
 
+/// Validate a caller-supplied ID, generating one when the request omits it.
+///
+/// Rejecting here keeps a bad ID from reaching input validation, so the response
+/// names the ID rather than whatever else is wrong with the request. Returns the
+/// reason for the rejection, which callers pass to
+/// [`invalid_prediction_id_response`].
+fn resolve_prediction_id(id: Option<String>) -> Result<String, &'static str> {
+    let Some(id) = id else {
+        return Ok(generate_prediction_id());
+    };
+    validate_prediction_id(&id)?;
+    Ok(id)
+}
+
+/// Check the ID in the body against the one in the URL for idempotent requests.
+///
+/// The URL ID is already validated, so an invalid body ID cannot match it and is
+/// reported as a mismatch. `subject` names the resource in the error message.
+fn check_body_id_matches_url(
+    body_id: Option<&String>,
+    url_id: &str,
+    subject: &str,
+) -> Result<(), String> {
+    match body_id {
+        Some(body_id) if body_id != url_id => Err(format!(
+            "{subject} ID must match the ID supplied in the URL"
+        )),
+        _ => Ok(()),
+    }
+}
+
 async fn create_prediction(
     State(service): State<Arc<PredictionService>>,
     headers: HeaderMap,
@@ -314,14 +345,9 @@ async fn create_prediction(
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
-    let prediction_id = match request.id {
-        Some(id) => {
-            if let Err(msg) = validate_prediction_id(&id) {
-                return invalid_prediction_id_response(msg);
-            }
-            id
-        }
-        None => generate_prediction_id(),
+    let prediction_id = match resolve_prediction_id(request.id) {
+        Ok(id) => id,
+        Err(message) => return invalid_prediction_id_response(message),
     };
     let response_mode = prediction_response_mode(&headers);
     let trace_context = extract_trace_context(&headers);
@@ -357,23 +383,10 @@ async fn create_prediction_idempotent(
         webhook_events_filter: default_webhook_events_filter(),
     });
 
-    if let Some(ref req_id) = request.id {
-        if let Err(msg) = validate_prediction_id(req_id) {
-            return invalid_prediction_id_response(msg);
-        }
-        if req_id != &prediction_id {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(serde_json::json!({
-                    "detail": [{
-                        "loc": ["body", "id"],
-                        "msg": "prediction ID must match the ID supplied in the URL",
-                        "type": "value_error"
-                    }]
-                })),
-            )
-                .into_response();
-        }
+    if let Err(message) =
+        check_body_id_matches_url(request.id.as_ref(), &prediction_id, "prediction")
+    {
+        return invalid_prediction_id_response(&message);
     }
 
     let response_mode = prediction_response_mode(&headers);
@@ -540,6 +553,9 @@ async fn create_prediction_with_id(
             match service.subscribe_prediction_stream(&prediction_id) {
                 Ok(subscription) => Some(subscription),
                 Err(error) => {
+                    unregistered_slot.release_unused(format!(
+                        "Failed to subscribe to prediction stream: {error}"
+                    ));
                     service.remove_prediction(&prediction_id);
                     return stream_subscription_error_response(error);
                 }
@@ -865,14 +881,9 @@ async fn create_training(
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
-    let prediction_id = match request.id {
-        Some(id) => {
-            if let Err(msg) = validate_prediction_id(&id) {
-                return invalid_prediction_id_response(msg);
-            }
-            id
-        }
-        None => generate_prediction_id(),
+    let prediction_id = match resolve_prediction_id(request.id) {
+        Ok(id) => id,
+        Err(message) => return invalid_prediction_id_response(message),
     };
     let response_mode = json_response_mode(&headers);
     let trace_context = extract_trace_context(&headers);
@@ -912,23 +923,8 @@ async fn create_training_idempotent(
         webhook_events_filter: default_webhook_events_filter(),
     });
 
-    if let Some(ref req_id) = request.id {
-        if let Err(msg) = validate_prediction_id(req_id) {
-            return invalid_prediction_id_response(msg);
-        }
-        if req_id != &training_id {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(serde_json::json!({
-                    "detail": [{
-                        "loc": ["body", "id"],
-                        "msg": "training ID must match the ID supplied in the URL",
-                        "type": "value_error"
-                    }]
-                })),
-            )
-                .into_response();
-        }
+    if let Err(message) = check_body_id_matches_url(request.id.as_ref(), &training_id, "training") {
+        return invalid_prediction_id_response(&message);
     }
 
     // Idempotent: return existing state if already submitted
@@ -1671,6 +1667,32 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 
+    /// Cleanup is wired into the request path, not just available as a helper:
+    /// without this, deleting the `remove_prediction` calls leaves every test green
+    /// while prediction directories pile up and completed IDs stay unusable.
+    #[tokio::test]
+    async fn completed_prediction_releases_its_id_and_directory() {
+        let service = create_ready_service().await;
+        let id = format!("cleanup-wiring-{}", uuid::Uuid::new_v4());
+        let dir = std::path::PathBuf::from("/tmp/coglet/predictions").join(&id);
+        let app = routes(Arc::clone(&service));
+
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(r#"{{"id":"{id}","input":{{}}}}"#)))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response_json(response).await["status"], "succeeded");
+        assert!(!service.prediction_exists(&id), "ID should be reusable");
+        assert!(!dir.exists(), "prediction dir should be deleted");
+    }
+
     #[tokio::test]
     async fn prediction_rejects_duplicate_id() {
         // Use an orchestrator that never completes so the first prediction stays
@@ -1693,9 +1715,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
-
-        // Small delay to let the async task register the prediction
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        // submit_prediction registers the ID before the 202 is returned, so the
+        // duplicate below cannot race it.
+        assert!(service.prediction_exists("dup-1"));
 
         let app2 = routes(service);
         let response = app2
@@ -1708,7 +1730,14 @@ mod tests {
             .await
             .unwrap();
 
+        // AtCapacity is also 409, so check the body: with the permit taken before
+        // the duplicate check, this test would pass for the wrong reason.
         assert_eq!(response.status(), StatusCode::CONFLICT);
+        let json = response_json(response).await;
+        assert!(
+            json["error"].as_str().unwrap().contains("already exists"),
+            "expected a duplicate-ID error, got {json}"
+        );
     }
 
     #[tokio::test]

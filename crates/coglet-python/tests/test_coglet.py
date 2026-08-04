@@ -1,5 +1,6 @@
 """Tests for coglet Python bindings."""
 
+import base64
 import queue
 import re
 import socket
@@ -363,6 +364,41 @@ predict: "predict.py:Predictor"
     return predictor
 
 
+@pytest.fixture
+def path_output_predictor(tmp_path: Path) -> Path:
+    """Create a predictor that returns a Path it wrote to its own temp directory.
+
+    This is the shape from issue #1434: the run makes a directory, writes a file
+    into it, hands the path back, and never touches it again. predict() records
+    the path it returned in ``returned_path.txt`` so tests can check afterwards
+    whether the file survived.
+    """
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import tempfile
+from pathlib import Path
+
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+
+    def predict(self, text: str = "hello") -> Path:
+        output = Path(tempfile.mkdtemp()) / "output.txt"
+        output.write_text(text)
+        (Path(__file__).parent / "returned_path.txt").write_text(str(output))
+        return output
+""")
+
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
 class CogletServer:
     """Context manager for running coglet server."""
 
@@ -518,6 +554,33 @@ class TestSyncPredictor:
             assert "metrics" in result
             assert "predict_time" in result["metrics"]
             assert result["metrics"]["predict_time"] >= 0
+
+
+class TestPathOutput:
+    """Tests for handing a returned Path over to Coglet."""
+
+    def test_returned_file_is_encoded_and_then_deleted(
+        self, path_output_predictor: Path
+    ):
+        """Returning a Path transfers ownership: Coglet reads the file, then unlinks it.
+
+        The unit tests cover each half of this on its own. This one is the whole
+        round trip through a real server, so a break in the Python-to-Rust handoff
+        cannot slip through with the Rust side still passing.
+        """
+        with CogletServer(path_output_predictor) as server:
+            result = server.predict({"text": "reclaim me"})
+
+        assert result["status"] == "succeeded"
+        output = result["output"]
+        assert output.startswith("data:"), f"expected a data URL, got {output!r}"
+        payload = base64.b64decode(output.split("base64,", 1)[1])
+        assert payload == b"reclaim me"
+
+        returned = Path(
+            (path_output_predictor.parent / "returned_path.txt").read_text()
+        )
+        assert not returned.exists(), f"{returned} should have been reclaimed"
 
 
 class TestSecretInput:

@@ -537,7 +537,8 @@ class Runner(BaseRunner):
         upscaled_image = do_some_processing(image)
 
         # To output cog.Path objects the file needs to exist, so create a temporary file first.
-        # This file will automatically be deleted by Cog after it has been returned.
+        # Cog deletes this temporary file once the output has been delivered, so
+        # write it again before returning the same path twice.
         output_path = Path(tempfile.mkdtemp()) / "upscaled.png"
         upscaled_image.save(output_path)
         return Path(output_path)
