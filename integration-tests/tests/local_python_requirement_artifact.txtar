@@ -1,5 +1,5 @@
 mkdir dist
-exec python3 -m zipfile -c dist/local_pkg-0.1.0.zip setup.py local_pkg/__init__.py
+exec tar -czf dist/local_pkg-0.1.0.tar.gz setup.py local_pkg
 
 # Ensure the import depends on the artifact being installed.
 rm local_pkg
@@ -16,7 +16,7 @@ build:
 predict: predict.py:Predictor
 
 -- requirements.txt --
-./dist/local_pkg-0.1.0.zip
+./dist/local_pkg-0.1.0.tar.gz
 
 -- setup.py --
 from setuptools import setup

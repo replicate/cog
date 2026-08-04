@@ -14,26 +14,26 @@ func ParseLocalArtifactRequirement(line string) (string, bool, error) {
 	if line == "" {
 		return "", false, nil
 	}
-	if strings.HasPrefix(line, "file:") {
+	if isFileURL(line) {
 		return "", false, fmt.Errorf("local file URL requirements are not supported: %s", line)
 	}
 	if name, target, ok := strings.Cut(line, "@"); ok {
 		spaced := name != strings.TrimSpace(name) || target != strings.TrimSpace(target)
 		name, target = strings.TrimSpace(name), strings.TrimSpace(target)
-		if name != "" && PackageName(name) == name && strings.HasPrefix(target, "file:") {
+		if name != "" && PackageName(name) == name && isFileURL(target) {
 			return "", false, fmt.Errorf("local file URL requirements are not supported: %s", line)
 		}
 		if name != "" && PackageName(name) == name && (isLocalPath(target) || spaced && isLocalArtifact(target)) {
 			return "", false, fmt.Errorf("local direct reference requirements (`name @ path`) are not supported; list the path directly instead: %s", line)
 		}
 	}
-	if isRemoteRequirement(line) {
-		return "", false, nil
-	}
 	if strings.HasPrefix(line, "-") {
 		if option := unsupportedLocalOption(line); option != "" {
 			return "", false, fmt.Errorf("local requirements option %q is not supported: %s", option, line)
 		}
+		return "", false, nil
+	}
+	if isRemoteRequirement(line) {
 		return "", false, nil
 	}
 	if base, _, ok := strings.Cut(line, ";"); ok && isLocalArtifact(strings.TrimSpace(base)) {
@@ -66,7 +66,7 @@ func unsupportedLocalOption(line string) string {
 			value, ok = strings.CutPrefix(line, option+"=")
 		}
 		value = strings.TrimSpace(value)
-		if ok && value != "" && !isRemoteRequirement(value) && !strings.HasPrefix(value, "file:") {
+		if ok && value != "" && (isFileURL(value) || !isRemoteRequirement(value)) {
 			return option
 		}
 	}
@@ -79,6 +79,10 @@ func isLocalArtifact(path string) bool {
 
 func isRemoteRequirement(line string) bool {
 	return strings.Contains(line, "://") || strings.HasPrefix(line, "git+")
+}
+
+func isFileURL(line string) bool {
+	return strings.HasPrefix(strings.ToLower(line), "file:")
 }
 
 func isLocalPath(line string) bool {
