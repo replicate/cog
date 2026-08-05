@@ -49,7 +49,7 @@ jobs:
           # runner, so a provider error looks like a silent stall: a deprecated
           # model returning 429 cost us a week of timeouts with an empty log.
           OPENCODE_PRINT_LOGS: '1'
-          OPENCODE_LOG_LEVEL: DEBUG
+          OPENCODE_LOG_LEVEL: INFO
         with:
           model: 'cf-gateway/nemotron-3-120b'
           forks: 'false'
