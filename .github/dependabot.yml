@@ -18,3 +18,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Actions are pinned to major tags (e.g. @v4), which float to the latest
+    # minor/patch. Only surface major-version bumps so Dependabot doesn't churn
+    # on minor/patch updates that the major tag already tracks.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"

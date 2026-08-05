@@ -323,7 +323,7 @@ jobs:
       # setup-python provides a shared-library Python (libpython3.x.so) needed
       # by stub_gen at runtime (PyO3 auto-initialize). mise's
       # python-build-standalone is statically linked and doesn't ship the .so.
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         id: setup-python
         with:
           python-version: ${{ env.PYTHON_VERSION }}
