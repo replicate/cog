@@ -1,0 +1,27 @@
+architecture/04-container-runtime.md
+  s_1d5b923cf47322::t_8c7629037e5043 178-187,309,375,377-379
+crates/coglet/src/bridge/snapshots/coglet__bridge__protocol__tests__slot_file_output_managed_serializes.snap
+  s_1d5b923cf47322::t_d9786713ede5e6 12-13
+crates/coglet/src/bridge/snapshots/coglet__bridge__protocol__tests__slot_file_output_oversized_serializes.snap
+  s_1d5b923cf47322::t_2eb691a893070b 11-12
+crates/coglet/src/permit/slot.rs
+  s_1d5b923cf47322::t_0f55cf18d0523c 51,68,82,84,177-178,222-239
+crates/coglet/src/worker.rs
+  s_1d5b923cf47322::t_b44b9b5ad9b315 138,147-154,260-263,265-267,271-282,299-307,325-329,335-341,347-397,427-439,462-467,514-515,1319-1342,1401-1425,1482-1519,1533
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "06d813258631b29b73d6962367c34053103817d4",
+  "prompts": {},
+  "sessions": {
+    "s_1d5b923cf47322": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_02c9ace4cffeU8y1w339HWWIL0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
