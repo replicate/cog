@@ -1,0 +1,21 @@
+.github/workflows/bonk.yml
+  s_45a9f0258c9953::t_83d4b095854a23 46
+.github/workflows/new-pr-review.yml
+  s_45a9f0258c9953::t_c6a382c4467afd 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "f80f6d2c724d043effc541c89ecca72d3ec04b56",
+  "prompts": {},
+  "sessions": {
+    "s_45a9f0258c9953": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_02c8701cdffed5uF3ICtoWJ0R8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
