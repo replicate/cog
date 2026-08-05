@@ -184,7 +184,7 @@ fn send_path_output(
 ///
 /// For Path outputs (os.PathLike): transfers the file to Coglet-managed storage.
 /// For IOBase outputs: reads bytes, writes to output_dir via write_file_output.
-/// For everything else: processes through make_encodeable + upload_files, then send_output.
+/// For everything else: normalizes the value and stages any nested files.
 fn send_output_item(
     py: Python<'_>,
     item: &Bound<'_, PyAny>,
@@ -245,8 +245,9 @@ fn send_output_item(
         return Ok(());
     }
 
-    // Non-file output - process normally
-    let processed = output::process_output_item(py, item)
+    // Preserve nested file locations so the parent can upload them without
+    // flattening dict or model outputs.
+    let (processed, files) = output::process_output_for_ipc(py, item, slot_sender)
         .map_err(|e| PredictionError::Failed(format!("Failed to process output item: {}", e)))?;
 
     let item_str: String = json_module
@@ -258,9 +259,17 @@ fn send_output_item(
     let item_json: serde_json::Value = serde_json::from_str(&item_str)
         .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
 
-    slot_sender
-        .send_output(item_json)
-        .map_err(|e| PredictionError::Failed(format!("Failed to send output: {}", e)))?;
+    if files.is_empty() {
+        slot_sender
+            .send_output(item_json)
+            .map_err(|e| PredictionError::Failed(format!("Failed to send output: {}", e)))?;
+    } else {
+        slot_sender
+            .send_structured_output(item_json, files)
+            .map_err(|e| {
+                PredictionError::Failed(format!("Failed to send structured output: {}", e))
+            })?;
+    }
 
     Ok(())
 }
@@ -995,9 +1004,7 @@ impl PythonPredictor {
             return Ok(PredictionOutput::Single(serde_json::Value::Null));
         }
 
-        // List/tuple output — iterate items so file outputs (Path, IOBase)
-        // go through the FileOutput IPC path for upload instead of being
-        // base64-encoded inline by process_output.
+        // List/tuple output — send each item with its own output index.
         if let Ok(list) = result.cast::<pyo3::types::PyList>() {
             for item in list.iter() {
                 send_output_item(py, &item, json_module, slot_sender)?;
@@ -1011,22 +1018,8 @@ impl PythonPredictor {
             return Ok(PredictionOutput::Stream(vec![]));
         }
 
-        // Non-file output — process normally
-        let processed = output::process_output(py, result)
-            .map_err(|e| PredictionError::Failed(format!("Failed to process output: {}", e)))?;
-
-        let result_str: String = json_module
-            .call_method1("dumps", (&processed,))
-            .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
-            .extract()
-            .map_err(|e| {
-                PredictionError::Failed(format!("Failed to extract output string: {}", e))
-            })?;
-
-        let output_json: serde_json::Value = serde_json::from_str(&result_str)
-            .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
-
-        Ok(PredictionOutput::Single(output_json))
+        send_output_item(py, result, json_module, slot_sender)?;
+        Ok(PredictionOutput::Single(serde_json::Value::Null))
     }
 
     /// Worker mode async predict - submits to shared event loop.

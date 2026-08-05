@@ -135,6 +135,7 @@ use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
     ControlRequest, ControlResponse, FileOutputKind, LogSource, MAX_INLINE_IPC_SIZE, MetricMode,
     SLOT_RESPONSE_PROTOCOL_VERSION, SlotId, SlotOutcome, SlotRequest, SlotResponse,
+    StructuredOutput, StructuredOutputFile,
 };
 use crate::bridge::transport::{ChildTransportInfo, connect_transport};
 use crate::orchestrator::HealthcheckResult;
@@ -142,6 +143,14 @@ use crate::worker_tracing_layer::WorkerTracingLayer;
 
 type SlotWriter =
     Arc<tokio::sync::Mutex<FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>>>;
+
+#[derive(Debug, Clone)]
+pub struct StagedFileOutput {
+    pub filename: String,
+    pub upload_filename: String,
+    pub mime_type: Option<String>,
+    pub managed: bool,
+}
 
 /// Handle for sending messages on a slot socket.
 ///
@@ -248,15 +257,28 @@ impl SlotSender {
         mime_type: Option<String>,
         managed: bool,
     ) -> io::Result<()> {
-        let filename = path
-            .to_str()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))?
+        let upload_filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("output")
             .to_string();
-        let msg = SlotResponse::FileOutput {
-            filename,
-            kind: FileOutputKind::FileType,
+        let staged = StagedFileOutput {
+            filename: path_to_string(&path)?,
+            upload_filename,
             mime_type,
             managed,
+        };
+        self.send_staged_file_output(staged, self.next_output_index())
+    }
+
+    fn send_staged_file_output(&self, file: StagedFileOutput, index: u64) -> io::Result<()> {
+        let msg = SlotResponse::FileOutput {
+            filename: file.filename,
+            kind: FileOutputKind::FileType,
+            mime_type: file.mime_type,
+            managed: file.managed,
+            upload_filename: Some(file.upload_filename),
+            index,
         };
         self.tx
             .send(msg)
@@ -274,6 +296,15 @@ impl SlotSender {
         path: PathBuf,
         mime_type: Option<String>,
     ) -> io::Result<()> {
+        let staged = self.stage_user_file_output(path, mime_type)?;
+        self.send_staged_file_output(staged, self.next_output_index())
+    }
+
+    pub fn stage_user_file_output(
+        &self,
+        path: PathBuf,
+        mime_type: Option<String>,
+    ) -> io::Result<StagedFileOutput> {
         if !path.exists() {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -291,22 +322,79 @@ impl SlotSender {
             .and_then(|e| e.to_str())
             .unwrap_or("bin")
             .to_string();
+        let upload_filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("output.bin")
+            .to_string();
         // Close our handle before transferring: rename replaces the entry and
         // copy reopens it, so holding it open buys nothing.
         let (file, dest) = self.create_output_file(&extension)?;
         drop(file);
 
-        let transfer = if self.owns_scratch_file(&path) {
-            move_file(&path, &dest)
-        } else {
-            std::fs::copy(&path, &dest).map(|_| ())
-        };
+        let is_symlink = std::fs::symlink_metadata(&path)?.file_type().is_symlink();
+        let transfer =
+            if self.owns_scratch_file(&path) || (is_symlink && self.owns_scratch_entry(&path)) {
+                move_file(&path, &dest)
+            } else {
+                std::fs::copy(&path, &dest).map(|_| ())
+            };
         if let Err(e) = transfer {
             let _ = std::fs::remove_file(&dest);
             return Err(e);
         }
 
-        self.send_file_output(dest, mime_type, true)
+        Ok(StagedFileOutput {
+            filename: path_to_string(&dest)?,
+            upload_filename,
+            mime_type,
+            managed: true,
+        })
+    }
+
+    pub fn stage_file_output(
+        &self,
+        data: &[u8],
+        upload_filename: Option<String>,
+        mime_type: Option<String>,
+    ) -> io::Result<StagedFileOutput> {
+        let upload_filename = upload_filename
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "output.bin".to_string());
+        let extension = std::path::Path::new(&upload_filename)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or("bin");
+        let (mut file, path) = self.create_output_file(extension)?;
+        file.write_all(data)?;
+        Ok(StagedFileOutput {
+            filename: path_to_string(&path)?,
+            upload_filename,
+            mime_type,
+            managed: true,
+        })
+    }
+
+    pub fn send_structured_output(
+        &self,
+        output: serde_json::Value,
+        files: Vec<StructuredOutputFile>,
+    ) -> io::Result<()> {
+        let payload = serde_json::to_vec(&StructuredOutput { output, files })
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let (mut file, path) = self.create_output_file("json")?;
+        file.write_all(&payload)?;
+        let msg = SlotResponse::FileOutput {
+            filename: path_to_string(&path)?,
+            kind: FileOutputKind::Structured,
+            mime_type: None,
+            managed: true,
+            upload_filename: None,
+            index: self.next_output_index(),
+        };
+        self.tx
+            .send(msg)
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
     }
 
     /// Whether Coglet may consume `path` outright instead of copying it.
@@ -336,6 +424,19 @@ impl SlotSender {
             .any(|root| resolved.starts_with(&root) && resolved_parent.starts_with(&root))
     }
 
+    fn owns_scratch_entry(&self, path: &std::path::Path) -> bool {
+        let Some(parent) = path.parent() else {
+            return false;
+        };
+        let Ok(resolved_parent) = parent.canonicalize() else {
+            return false;
+        };
+        self.scratch_roots
+            .iter()
+            .filter_map(|root| root.canonicalize().ok())
+            .any(|root| resolved_parent.starts_with(root))
+    }
+
     /// Send a user metric to the parent process.
     pub fn send_metric(
         &self,
@@ -356,6 +457,12 @@ impl SlotSender {
             .send(msg)
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
     }
+}
+
+fn path_to_string(path: &std::path::Path) -> io::Result<String> {
+    path.to_str()
+        .map(ToString::to_string)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))
 }
 
 /// Move a file, falling back to copy-then-unlink when the two paths live on
@@ -404,6 +511,8 @@ fn build_output_message(
             kind: FileOutputKind::Oversized,
             mime_type: None,
             managed: true,
+            upload_filename: None,
+            index,
         })
     } else {
         Ok(SlotResponse::OutputChunk { output, index })
@@ -1208,6 +1317,30 @@ mod tests {
     }
 
     #[test]
+    fn send_user_file_output_preserves_the_logical_filename() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+        let source_dir = tempfile::tempdir().unwrap();
+        let source = source_dir.path().join("result.png");
+        std::fs::write(&source, b"png").unwrap();
+
+        sender.send_user_file_output(source, None).unwrap();
+
+        match rx.try_recv().unwrap() {
+            SlotResponse::FileOutput {
+                upload_filename,
+                index,
+                ..
+            } => {
+                assert_eq!(upload_filename.as_deref(), Some("result.png"));
+                assert_eq!(index, 0);
+            }
+            response => panic!("expected FileOutput, got {response:?}"),
+        }
+    }
+
+    #[test]
     fn owns_scratch_file_keeps_symlinks_from_crossing_the_boundary() {
         let output_dir = tempfile::tempdir().unwrap();
         let (tx, _rx) = mpsc::unbounded_channel::<SlotResponse>();
@@ -1263,6 +1396,31 @@ mod tests {
         assert!(target.exists(), "the symlink target should survive");
         let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
         assert_eq!(std::fs::read(managed).unwrap(), b"target bytes");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn send_user_file_output_unlinks_a_scratch_symlink_to_an_external_file() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let scratch_dir = tempfile::tempdir().unwrap();
+        let external_dir = tempfile::tempdir().unwrap();
+        let target = external_dir.path().join("asset.txt");
+        std::fs::write(&target, b"asset bytes").unwrap();
+        let link = scratch_dir.path().join("result.txt");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::with_scratch_roots(
+            tx,
+            output_dir.path().to_path_buf(),
+            [scratch_dir.path().to_path_buf()],
+        );
+
+        sender.send_user_file_output(link.clone(), None).unwrap();
+
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"asset bytes");
+        let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_eq!(std::fs::read(managed).unwrap(), b"asset bytes");
     }
 
     #[test]
@@ -1321,6 +1479,44 @@ mod tests {
         assert_eq!(std::fs::read(&managed).unwrap(), b"bytes");
     }
 
+    #[test]
+    fn structured_output_is_spilled_with_its_file_descriptors() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+        let files = vec![StructuredOutputFile {
+            pointer: "/artifact".to_string(),
+            filename: "/tmp/managed.png".to_string(),
+            upload_filename: "result.png".to_string(),
+            mime_type: Some("image/png".to_string()),
+            managed: true,
+        }];
+        let expected = StructuredOutput {
+            output: serde_json::json!({"artifact": null, "label": "result"}),
+            files: files.clone(),
+        };
+
+        sender
+            .send_structured_output(expected.output.clone(), files)
+            .unwrap();
+
+        match rx.try_recv().unwrap() {
+            SlotResponse::FileOutput {
+                filename,
+                kind: FileOutputKind::Structured,
+                managed: true,
+                index: 0,
+                ..
+            } => {
+                let actual =
+                    serde_json::from_slice::<StructuredOutput>(&std::fs::read(filename).unwrap())
+                        .unwrap();
+                assert_eq!(actual, expected);
+            }
+            response => panic!("expected structured FileOutput, got {response:?}"),
+        }
+    }
+
     /// Spilled outputs are Coglet's own files, so the parent has to delete them.
     #[test]
     fn oversized_output_spills_to_a_managed_file() {
@@ -1334,6 +1530,7 @@ mod tests {
                 filename,
                 kind: FileOutputKind::Oversized,
                 managed: true,
+                index: 0,
                 ..
             } => {
                 let spilled: serde_json::Value =

@@ -280,6 +280,31 @@ pub enum FileOutputKind {
     FileType,
     /// Output exceeds size threshold for bridge codec serialization but is not a file-like return type
     Oversized,
+    /// Output contains nested files and is stored as a structured output envelope.
+    Structured,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StructuredOutput {
+    pub output: serde_json::Value,
+    pub files: Vec<StructuredOutputFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StructuredOutputFile {
+    /// RFC 6901 JSON pointer identifying the file's location in `output`.
+    pub pointer: String,
+    pub filename: String,
+    pub upload_filename: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    /// True if Coglet owns this file and may delete it after consumption.
+    #[serde(default)]
+    pub managed: bool,
+}
+
+fn is_zero(value: &u64) -> bool {
+    *value == 0
 }
 
 /// Accumulation mode for user metrics.
@@ -299,7 +324,7 @@ pub enum MetricMode {
 /// The response enum is already serde-tagged with `type`, so this constant and
 /// the optional `ProtocolVersion` message give future protocol changes an
 /// explicit marker without adding a second envelope around every message.
-pub const SLOT_RESPONSE_PROTOCOL_VERSION: u32 = 1;
+pub const SLOT_RESPONSE_PROTOCOL_VERSION: u32 = 2;
 
 /// Messages from worker to parent on slot socket.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -307,9 +332,8 @@ pub const SLOT_RESPONSE_PROTOCOL_VERSION: u32 = 1;
 pub enum SlotResponse {
     /// Protocol version handshake message.
     ///
-    /// Intended to be sent by the worker when the slot connection opens so the
-    /// orchestrator can detect version mismatches and adjust behavior. Currently
-    /// nothing sends this; it is scaffolding for future protocol evolution.
+    /// Sent by the worker when the slot connection opens so the orchestrator can
+    /// detect version mismatches before processing prediction output.
     ProtocolVersion {
         version: u32,
     },
@@ -330,6 +354,13 @@ pub enum SlotResponse {
         /// True if Coglet owns this file and may delete it after consumption.
         #[serde(default)]
         managed: bool,
+        /// Original basename to use at the upload endpoint. The storage filename
+        /// may be an opaque managed name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        upload_filename: Option<String>,
+        /// Position of this value in the prediction's output sequence.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        index: u64,
     },
 
     /// Streaming output chunk for generator and iterator output.
@@ -562,7 +593,7 @@ mod tests {
             serde_json::to_value(resp).unwrap(),
             json!({
                 "type": "protocol_version",
-                "version": 1
+                "version": SLOT_RESPONSE_PROTOCOL_VERSION
             })
         );
     }
@@ -602,6 +633,8 @@ mod tests {
             kind: FileOutputKind::FileType,
             mime_type: Some("image/png".to_string()),
             managed: true,
+            upload_filename: Some("image.png".to_string()),
+            index: 0,
         };
         insta::assert_json_snapshot!(resp);
     }
@@ -613,6 +646,8 @@ mod tests {
             kind: FileOutputKind::FileType,
             mime_type: None,
             managed: false,
+            upload_filename: None,
+            index: 0,
         };
         insta::assert_json_snapshot!(resp);
     }
@@ -630,7 +665,16 @@ mod tests {
         let resp: SlotResponse = serde_json::from_value(json).unwrap();
 
         match resp {
-            SlotResponse::FileOutput { managed, .. } => assert!(!managed),
+            SlotResponse::FileOutput {
+                managed,
+                upload_filename,
+                index,
+                ..
+            } => {
+                assert!(!managed);
+                assert_eq!(upload_filename, None);
+                assert_eq!(index, 0);
+            }
             resp => panic!("expected a FileOutput, got {resp:?}"),
         }
     }
@@ -642,6 +686,8 @@ mod tests {
             kind: FileOutputKind::Oversized,
             mime_type: None,
             managed: true,
+            upload_filename: None,
+            index: 3,
         };
         insta::assert_json_snapshot!(resp);
     }

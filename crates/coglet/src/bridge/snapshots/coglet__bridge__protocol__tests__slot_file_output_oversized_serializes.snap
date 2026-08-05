@@ -8,5 +8,6 @@ expression: resp
   "kind": {
     "type": "oversized"
   },
-  "managed": true
+  "managed": true,
+  "index": 3
 }

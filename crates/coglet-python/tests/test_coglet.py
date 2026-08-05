@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import coglet
@@ -399,12 +400,71 @@ predict: "predict.py:Predictor"
     return predictor
 
 
+@pytest.fixture
+def structured_path_output_predictor(tmp_path: Path) -> Path:
+    """Create a predictor with a Path nested in a structured output."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import tempfile
+from pathlib import Path
+
+from cog import BaseModel, BasePredictor
+
+class Output(BaseModel):
+    artifact: Path
+    metadata: dict[str, str]
+
+class Predictor(BasePredictor):
+    def predict(self, text: str = "nested") -> Output:
+        output = Path(tempfile.mkdtemp()) / "result.txt"
+        output.write_text(text)
+        (Path(__file__).parent / "returned_path.txt").write_text(str(output))
+        return Output(artifact=output, metadata={"label": "kept"})
+""")
+    (tmp_path / "cog.yaml").write_text('predict: "predict.py:Predictor"\n')
+    return predictor
+
+
+@pytest.fixture
+def upload_server():
+    """Run a local PUT endpoint and record uploaded paths and bodies."""
+    uploads = []
+
+    class UploadHandler(BaseHTTPRequestHandler):
+        def do_PUT(self) -> None:
+            length = int(self.headers.get("Content-Length", "0"))
+            uploads.append((self.path, self.rfile.read(length)))
+            self.send_response(200)
+            self.send_header(
+                "Location",
+                f"http://127.0.0.1:{self.server.server_port}{self.path}",
+            )
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), UploadHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/upload/", uploads
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 class CogletServer:
     """Context manager for running coglet server."""
 
-    def __init__(self, predictor_path: Path, port: int = 0):
+    def __init__(
+        self, predictor_path: Path, port: int = 0, upload_url: str | None = None
+    ):
         self.predictor_path = predictor_path
         self.requested_port = port
+        self.upload_url = upload_url
         self.port = None
         self.process = None
         self.stderr_lines = []
@@ -412,10 +472,11 @@ class CogletServer:
         self.stderr_thread = None
 
     def __enter__(self):
+        predictor_ref = f"{self.predictor_path}:Predictor"
         cmd = [
             sys.executable,
             "-c",
-            f"import coglet; coglet.server.serve('{self.predictor_path}:Predictor', port={self.requested_port})",
+            f"import coglet; coglet.server.serve({predictor_ref!r}, port={self.requested_port}, upload_url={self.upload_url!r})",
         ]
         self.process = subprocess.Popen(
             cmd,
@@ -579,6 +640,26 @@ class TestPathOutput:
 
         returned = Path(
             (path_output_predictor.parent / "returned_path.txt").read_text()
+        )
+        assert not returned.exists(), f"{returned} should have been reclaimed"
+
+    def test_structured_path_is_uploaded_with_its_original_name(
+        self,
+        structured_path_output_predictor: Path,
+        upload_server,
+    ):
+        upload_url, uploads = upload_server
+        with CogletServer(
+            structured_path_output_predictor, upload_url=upload_url
+        ) as server:
+            result = server.predict({"text": "structured bytes"})
+
+        assert result["status"] == "succeeded", result
+        assert result["output"]["metadata"] == {"label": "kept"}
+        assert result["output"]["artifact"].endswith("/upload/result.txt")
+        assert uploads == [("/upload/result.txt", b"structured bytes")]
+        returned = Path(
+            (structured_path_output_predictor.parent / "returned_path.txt").read_text()
         )
         assert not returned.exists(), f"{returned} should have been reclaimed"
 

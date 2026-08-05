@@ -9,5 +9,6 @@ expression: resp
     "type": "file_type"
   },
   "mime_type": "image/png",
-  "managed": true
+  "managed": true,
+  "upload_filename": "image.png"
 }

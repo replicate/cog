@@ -175,15 +175,16 @@ Per-prediction data. Using separate sockets per slot avoids head-of-line blockin
 
 **Worker → Parent:**
 
-| Message                                        | Purpose                                                          |
-| ---------------------------------------------- | ---------------------------------------------------------------- |
-| `Log { source, data }`                         | Log line from run()                                              |
-| `Output { output }`                            | Yielded output value (for generators/streaming)                  |
-| `FileOutput { filename, kind, mime_type }`     | File produced by run() -- referenced by path, uploaded by parent |
-| `Metric { name, value, mode }`                 | Custom metric (mode: `replace`, `increment`, or `append`)        |
-| `Done { id, output, predict_time, is_stream }` | Prediction completed successfully                                |
-| `Failed { id, error }`                         | Prediction failed                                                |
-| `Cancelled { id }`                             | Prediction was cancelled                                         |
+| Message                                                          | Purpose                                                                  |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `ProtocolVersion { version }`                                    | Slot protocol compatibility marker                                       |
+| `LogLine { source, data }`                                       | Log line from run()                                                      |
+| `OutputChunk { output, index }`                                  | Indexed yielded or returned output value                                 |
+| `FileOutput { filename, kind, managed, upload_filename, index }` | Indexed file, JSON spill, or structured envelope processed by the parent |
+| `Metric { name, value, mode }`                                   | Custom metric (mode: `replace`, `increment`, or `append`)                |
+| `Done { id, output, predict_time, is_stream }`                   | Prediction completed successfully                                        |
+| `Failed { id, error }`                                           | Prediction failed                                                        |
+| `Cancelled { id }`                                               | Prediction was cancelled                                                 |
 
 ## Health State Machine
 
@@ -305,7 +306,7 @@ Following a single prediction from HTTP request to response:
 
 6. **`predict(**kwargs)`called** on the singleton predictor instance. Inputs arrive as native Python types -- strings, ints,`pathlib.Path` objects -- not as a request object or raw JSON.
 
-7. **Outputs stream back** over the slot socket. For generators, each `yield` sends an `Output` message immediately -- true streaming, not buffered. For single return values, one `Output` or `FileOutput` message is sent.
+7. **Outputs stream back** over the slot socket. For generators, each `yield` sends an indexed `OutputChunk` or `FileOutput` message immediately. Single return values use the same messages.
 
 8. **File outputs uploaded** by the parent process. `cog.Path` return values are uploaded to the configured storage (or base64-encoded for inline responses). This is transparent to the predictor.
 
@@ -371,9 +372,11 @@ When a prediction input exceeds 6MiB, it's too large to send inline through the 
 
 ## File Outputs
 
-When run() produces file outputs (`cog.Path`), the worker sends a `FileOutput` message with the filename and MIME type. The parent handles uploading the file (or base64-encoding it for inline responses). The `output_dir` field in the `Predict` request tells the worker where to write output files.
+When run() produces file outputs (`cog.Path`), the worker transfers them into the prediction's managed output directory. Scratch files are consumed; files outside scratch storage are copied so model assets remain available. The worker sends a `FileOutput` message with the managed path, ownership flag, output index, MIME type, and original basename. The parent uses the original basename for uploads and deletes the managed copy after encoding or a successful upload.
 
-`FileOutputKind` distinguishes between normal file outputs (`FileType`) and oversized outputs (`Oversized`) that exceeded an inline size limit.
+Files nested in object outputs are described in a structured output envelope so the parent can replace each location with its URL without flattening the object. The envelope itself is stored in managed output storage, which keeps large structured outputs below the IPC frame limit.
+
+`FileOutputKind` distinguishes normal file outputs (`FileType`), oversized JSON outputs (`Oversized`), and structured output envelopes (`Structured`). Output processing is part of the prediction lifecycle: cancellation and failure paths stop and join pending output tasks before the prediction becomes terminal and its directory can be reused.
 
 ## Custom Metrics
 

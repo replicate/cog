@@ -49,7 +49,7 @@ coglet-python/
     ├── predictor.rs        # PythonPredictor: wraps Python Predictor class
     ├── worker_bridge.rs    # PythonPredictHandler: implements PredictHandler
     ├── input.rs            # Input processing (Pydantic validation, ADT)
-    ├── output.rs           # Output processing (make_encodeable, upload_files)
+    ├── output.rs           # Output normalization and managed file staging
     ├── log_writer.rs       # SlotLogWriter, ContextVar routing, SetupLogSender
     ├── audit.rs            # Audit hook, TeeWriter for stream protection
     └── cancel.rs           # Cancellation: SIGUSR1, CancelableGuard

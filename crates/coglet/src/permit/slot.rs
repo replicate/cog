@@ -48,7 +48,7 @@ impl UnregisteredPredictionSlot {
         self.prediction_slot.prediction()
     }
 
-    pub fn id(&self) -> String {
+    pub fn id(&self) -> &str {
         self.prediction_slot.id()
     }
 
@@ -65,6 +65,7 @@ impl UnregisteredPredictionSlot {
 ///
 /// On drop: Permit returns to pool (if idle and not poisoned at pool level).
 pub struct PredictionSlot {
+    id: String,
     prediction: Arc<Mutex<Prediction>>,
     slot_id: SlotId,
     permit: Option<AnyPermit>,
@@ -78,7 +79,9 @@ impl PredictionSlot {
         idle_rx: tokio::sync::oneshot::Receiver<SlotIdleToken>,
     ) -> Self {
         let slot_id = permit.slot_id();
+        let id = prediction.id().to_string();
         Self {
+            id,
             prediction: Arc::new(Mutex::new(prediction)),
             slot_id,
             permit: Some(AnyPermit::InUse(permit)),
@@ -171,11 +174,8 @@ impl PredictionSlot {
         self.permit.as_ref().is_some_and(|p| p.is_idle())
     }
 
-    pub fn id(&self) -> String {
-        self.prediction
-            .try_lock()
-            .map(|p| p.id().to_string())
-            .unwrap_or_default()
+    pub fn id(&self) -> &str {
+        &self.id
     }
 }
 
@@ -219,6 +219,24 @@ mod tests {
         let (_idle_tx, idle_rx) = tokio::sync::oneshot::channel();
         let slot = PredictionSlot::new(prediction, permit, idle_rx);
         assert_eq!(slot.slot_id(), slot_id);
+        assert_eq!(slot.id(), "test_123");
+    }
+
+    #[tokio::test]
+    async fn slot_id_does_not_depend_on_prediction_lock() {
+        let pool = PermitPool::new(1);
+        let (a, _b) = UnixStream::pair().unwrap();
+        let (_, write) = a.into_split();
+        pool.add_permit(SlotId::new(), FramedWrite::new(write, JsonCodec::new()));
+
+        let permit = pool.try_acquire().unwrap();
+        let prediction = Prediction::new("locked-prediction".to_string(), None);
+        let (_idle_tx, idle_rx) = tokio::sync::oneshot::channel();
+        let slot = PredictionSlot::new(prediction, permit, idle_rx);
+        let prediction = slot.prediction();
+        let _guard = prediction.lock().unwrap();
+
+        assert_eq!(slot.id(), "locked-prediction");
     }
 
     #[tokio::test]

@@ -653,7 +653,7 @@ impl PredictionService {
         let state = state
             .ok_or_else(|| PredictionError::Failed("No orchestrator configured".to_string()))?;
 
-        let prediction_id = unregistered_slot.id();
+        let prediction_id = unregistered_slot.id().to_string();
 
         // Prepare everything that can fail before the slot is registered, so a
         // failure here can hand the permit straight back to the pool.

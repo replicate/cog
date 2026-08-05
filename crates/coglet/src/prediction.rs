@@ -1,6 +1,6 @@
 //! Prediction state tracking.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -142,7 +142,7 @@ pub struct Prediction {
     started_at: Instant,
     status: PredictionStatus,
     logs: String,
-    outputs: Vec<serde_json::Value>,
+    outputs: BTreeMap<u64, serde_json::Value>,
     output: Option<PredictionOutput>,
     error: Option<String>,
     webhook: Option<WebhookSender>,
@@ -166,7 +166,7 @@ impl Prediction {
             started_at: Instant::now(),
             status: PredictionStatus::Starting,
             logs: String::new(),
-            outputs: Vec::new(),
+            outputs: BTreeMap::new(),
             output: None,
             error: None,
             webhook,
@@ -466,12 +466,15 @@ impl Prediction {
     }
 
     pub fn append_output(&mut self, output: serde_json::Value) {
-        let index = self.outputs.len() as u64;
+        let index = self
+            .outputs
+            .last_key_value()
+            .map_or(0, |(index, _)| index + 1);
         self.append_output_chunk(output, index);
     }
 
     pub fn append_output_chunk(&mut self, output: serde_json::Value, index: u64) {
-        self.outputs.push(output.clone());
+        self.outputs.insert(index, output.clone());
         self.emit_stream_event(PredictionStreamEvent::Output {
             chunk: output,
             index,
@@ -479,12 +482,12 @@ impl Prediction {
         self.fire_webhook(WebhookEventType::Output);
     }
 
-    pub fn outputs(&self) -> &[serde_json::Value] {
-        &self.outputs
+    pub fn outputs(&self) -> Vec<&serde_json::Value> {
+        self.outputs.values().collect()
     }
 
     pub fn take_outputs(&mut self) -> Vec<serde_json::Value> {
-        std::mem::take(&mut self.outputs)
+        std::mem::take(&mut self.outputs).into_values().collect()
     }
 
     pub fn output(&self) -> Option<&PredictionOutput> {
@@ -554,7 +557,7 @@ impl Prediction {
         if let Some(ref output) = self.output {
             payload["output"] = serde_json::json!(output);
         } else if !self.outputs.is_empty() {
-            payload["output"] = serde_json::json!(self.outputs);
+            payload["output"] = serde_json::json!(self.outputs.values().collect::<Vec<_>>());
         }
 
         if let Some(ref error) = self.error {
@@ -690,6 +693,18 @@ mod tests {
         pred.append_output(serde_json::json!("chunk1"));
         pred.append_output(serde_json::json!("chunk2"));
         assert_eq!(pred.outputs().len(), 2);
+    }
+
+    #[test]
+    fn output_values_are_returned_in_protocol_index_order() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.append_output_chunk(serde_json::json!("second"), 1);
+        pred.append_output_chunk(serde_json::json!("first"), 0);
+
+        assert_eq!(
+            pred.take_outputs(),
+            vec![serde_json::json!("first"), serde_json::json!("second")]
+        );
     }
 
     #[tokio::test]
