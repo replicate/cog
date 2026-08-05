@@ -9,11 +9,11 @@
         "apiKey": "{env:CLOUDFLARE_API_TOKEN}"
       },
       "models": {
-        "kimi-k2.5": {
-          "id": "workers-ai/@cf/moonshotai/kimi-k2.5",
-          "name": "Kimi K2.5 (Workers AI via Gateway)",
+        "kimi-k2.7-code": {
+          "id": "workers-ai/@cf/moonshotai/kimi-k2.7-code",
+          "name": "Kimi K2.7 Code (Workers AI via Gateway)",
           "limit": {
-            "context": 256000,
+            "context": 262144,
             "output": 64000
           }
         }
