@@ -34,60 +34,6 @@ jobs:
             echo EOF
           } >> "$GITHUB_OUTPUT"
 
-      # TEMPORARY (debug/bonk-reviewer-hang): every reviewer run since
-      # 2026-07-28 has hung at "Sending message to opencode..." and been killed
-      # at the 30 minute job timeout with zero output. This probe hits the
-      # gateway directly so the job log shows the status code, latency, the
-      # model the gateway actually resolves to, and the raw shape of the
-      # stream. Delete this step once the cause is known.
-      - name: Probe AI Gateway
-        continue-on-error: true
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_GATEWAY_BASE_URL: https://gateway.ai.cloudflare.com/v1/${{ vars.CLOUDFLARE_ACCOUNT_ID }}/${{ vars.CLOUDFLARE_GATEWAY_ID }}/compat
-        run: |
-          # Diagnostics must never fail the job, and a hung or erroring probe is
-          # itself the signal we want, so drop the default -e / pipefail.
-          set +e +o pipefail
-
-          probe() {
-            local model="$1"
-            local stream="$2"
-            local prompt="$3"
-            local body hdr stats
-            echo "::group::model=${model} stream=${stream}"
-            body="$(mktemp)"
-            hdr="$(mktemp)"
-            stats="$(
-              curl -sS -X POST "${CF_GATEWAY_BASE_URL}/chat/completions" \
-                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-                -H 'Content-Type: application/json' \
-                --max-time 120 \
-                -D "${hdr}" -o "${body}" \
-                -w 'http=%{http_code} ttfb=%{time_starttransfer}s total=%{time_total}s bytes=%{size_download}' \
-                -d "{\"model\":\"${model}\",\"stream\":${stream},\"max_tokens\":256,\"messages\":[{\"role\":\"user\",\"content\":\"${prompt}\"}]}"
-            )" || echo "curl failed with exit code $?"
-            echo "${stats}"
-            echo "-- response headers --"
-            grep -iv '^set-cookie' "${hdr}" | head -n 40 || true
-            echo "-- body (first 3000 bytes) --"
-            head -c 3000 "${body}"
-            echo
-            echo "::endgroup::"
-          }
-
-          # Non-streaming. The "model" field in the response reveals whether the
-          # gateway silently aliases deprecated kimi-k2.5 to kimi-k2.6.
-          probe 'workers-ai/@cf/moonshotai/kimi-k2.5' false 'Reply with the single word: pong'
-          probe 'workers-ai/@cf/nvidia/nemotron-3-120b-a12b' false 'Reply with the single word: pong'
-
-          # Streaming with a prompt that forces reasoning. Shows whether tokens
-          # arrive as content, reasoning, or reasoning_content. If they land in
-          # a field the openai-compatible provider ignores, opencode would print
-          # nothing while the model runs, which matches the observed hang.
-          probe 'workers-ai/@cf/moonshotai/kimi-k2.5' true 'What is 17 times 23? Think step by step.'
-          probe 'workers-ai/@cf/nvidia/nemotron-3-120b-a12b' true 'What is 17 times 23? Think step by step.'
-
       - name: Run Bonk
         uses: ask-bonk/ask-bonk/github@main
         env:
@@ -97,11 +43,18 @@ jobs:
           # 45m, so on a 30m job opencode's own timeout and retry handling never
           # fires and the runner kills it with no diagnostic.
           OPENCODE_TIMEOUT: 25m
+          # The equivalent of --print-logs and --log-level, which we cannot pass
+          # as flags because the harness spawns `opencode github run` directly.
+          # Without these, opencode only writes to its log file inside the
+          # runner, so a provider error looks like a silent stall: a deprecated
+          # model returning 429 cost us a week of timeouts with an empty log.
+          OPENCODE_PRINT_LOGS: '1'
+          OPENCODE_LOG_LEVEL: DEBUG
         with:
           model: 'cf-gateway/nemotron-3-120b'
           forks: 'false'
           permissions: write
-          opencode_version: '1.2.27'
+          opencode_version: '1.18.13'
           # The auto-reviewer must never push to PR branches. NO_PUSH
           # enforces that at the token level.
           token_permissions: 'NO_PUSH'

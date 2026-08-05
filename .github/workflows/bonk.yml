@@ -37,11 +37,18 @@ jobs:
           # 45m, so on a 30m job opencode's own timeout and retry handling never
           # fires and the runner kills it with no diagnostic.
           OPENCODE_TIMEOUT: 25m
+          # The equivalent of --print-logs and --log-level, which we cannot pass
+          # as flags because the harness spawns `opencode github run` directly.
+          # Without these, opencode only writes to its log file inside the
+          # runner, so a provider error looks like a silent stall: a deprecated
+          # model returning 429 cost us a week of timeouts with an empty log.
+          OPENCODE_PRINT_LOGS: '1'
+          OPENCODE_LOG_LEVEL: DEBUG
         with:
           model: 'cf-gateway/nemotron-3-120b'
           mentions: '/bonk,@ask-bonk'
           forks: 'false'
           permissions: write
-          opencode_version: '1.2.27'
+          opencode_version: '1.18.13'
           # token_permissions defaults to WRITE so bonk can push commits
           # when asked via /bonk.

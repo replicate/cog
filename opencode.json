@@ -16,14 +16,6 @@
             "context": 256000,
             "output": 32000
           }
-        },
-        "kimi-k2.5": {
-          "id": "workers-ai/@cf/moonshotai/kimi-k2.5",
-          "name": "Kimi K2.5 (Workers AI via Gateway, deprecated)",
-          "limit": {
-            "context": 256000,
-            "output": 64000
-          }
         }
       }
     }
