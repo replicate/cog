@@ -74,7 +74,7 @@
         "python_requirements": {
           "$id": "#/properties/build/properties/python_requirements",
           "type": "string",
-          "description": "A pip requirements file specifying the Python packages to install. Local wheel and source archive paths in the requirements file are supported when they point to files inside the project."
+          "description": "A pip requirements file specifying the Python packages to install. Bare local wheel and source archive paths in the requirements file are supported when they point to files inside the project."
         },
         "system_packages": {
           "$id": "#/properties/build/properties/system_packages",

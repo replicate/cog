@@ -1,13 +1,18 @@
 mkdir dist
 exec tar -czf dist/local_pkg-0.1.0.tar.gz setup.py local_pkg
+exec python3 make_artifacts.py
 
-# Ensure the import depends on the artifact being installed.
+# Ensure the imports depend on the artifacts being installed.
 rm local_pkg
+rm local_zip_pkg
+rm local_wheel_pkg
 rm setup.py
+rm zip_setup.py
+rm make_artifacts.py
 
 cog build -t $TEST_IMAGE
 cog predict $TEST_IMAGE
-stdout 'hello from local package 0.1.0'
+stdout 'tar package 0.1.0; zip package 0.2.0; wheel package 0.3.0'
 
 -- cog.yaml --
 build:
@@ -17,6 +22,8 @@ predict: predict.py:Predictor
 
 -- requirements.txt --
 ./dist/local_pkg-0.1.0.tar.gz
+./dist/local zip pkg-0.2.0.zip
+./dist/local_wheel_pkg-0.3.0-py3-none-any.whl
 
 -- setup.py --
 from setuptools import setup
@@ -24,16 +31,62 @@ from setuptools import setup
 setup(name="local-pkg", version="0.1.0", packages=["local_pkg"])
 
 -- local_pkg/__init__.py --
-MESSAGE = "hello from local package"
+MESSAGE = "tar package"
+
+-- zip_setup.py --
+from setuptools import setup
+
+setup(name="local-zip-pkg", version="0.2.0", packages=["local_zip_pkg"])
+
+-- local_zip_pkg/__init__.py --
+MESSAGE = "zip package"
+
+-- local_wheel_pkg/__init__.py --
+MESSAGE = "wheel package"
+
+-- make_artifacts.py --
+from zipfile import ZIP_DEFLATED, ZipFile
+
+
+with ZipFile("dist/local zip pkg-0.2.0.zip", "w", ZIP_DEFLATED) as archive:
+    archive.write("zip_setup.py", "setup.py")
+    archive.write("local_zip_pkg/__init__.py", "local_zip_pkg/__init__.py")
+
+dist_info = "local_wheel_pkg-0.3.0.dist-info"
+with ZipFile(
+    "dist/local_wheel_pkg-0.3.0-py3-none-any.whl", "w", ZIP_DEFLATED
+) as wheel:
+    wheel.write("local_wheel_pkg/__init__.py", "local_wheel_pkg/__init__.py")
+    wheel.writestr(
+        f"{dist_info}/METADATA",
+        "Metadata-Version: 2.1\nName: local-wheel-pkg\nVersion: 0.3.0\n",
+    )
+    wheel.writestr(
+        f"{dist_info}/WHEEL",
+        "Wheel-Version: 1.0\nGenerator: cog-test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+    )
+    wheel.writestr(
+        f"{dist_info}/RECORD",
+        "local_wheel_pkg/__init__.py,,\n"
+        f"{dist_info}/METADATA,,\n"
+        f"{dist_info}/WHEEL,,\n"
+        f"{dist_info}/RECORD,,\n",
+    )
 
 -- predict.py --
 from importlib.metadata import version
 
 from cog import BasePredictor
 
-from local_pkg import MESSAGE
+from local_pkg import MESSAGE as TAR_MESSAGE
+from local_wheel_pkg import MESSAGE as WHEEL_MESSAGE
+from local_zip_pkg import MESSAGE as ZIP_MESSAGE
 
 
 class Predictor(BasePredictor):
     def predict(self) -> str:
-        return f"{MESSAGE} {version('local-pkg')}"
+        return (
+            f"{TAR_MESSAGE} {version('local-pkg')}; "
+            f"{ZIP_MESSAGE} {version('local-zip-pkg')}; "
+            f"{WHEEL_MESSAGE} {version('local-wheel-pkg')}"
+        )

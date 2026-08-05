@@ -395,6 +395,9 @@ func validateFrameworkCompatibility(cfg *configFile, reqs []string, result *Vali
 // findPackageVersion finds a package version in requirements.
 func findPackageVersion(reqs []string, name string) string {
 	for _, req := range reqs {
+		if isLocalPackageArtifactRequirement(req) {
+			continue
+		}
 		pkgName := requirements.PackageName(req)
 		if pkgName == name {
 			versions := requirements.Versions(req)

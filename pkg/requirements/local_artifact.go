@@ -33,6 +33,9 @@ func ParseLocalArtifactRequirement(line string) (string, bool, error) {
 		}
 		return "", false, nil
 	}
+	if hasInlineOption(line) {
+		return "", false, fmt.Errorf("local package artifact requirements do not support inline options or hashes: %s", line)
+	}
 	if isRemoteRequirement(line) {
 		return "", false, nil
 	}
@@ -43,13 +46,6 @@ func ParseLocalArtifactRequirement(line string) (string, bool, error) {
 		return "", false, fmt.Errorf("extras are not supported on local package artifact requirements: %s", line)
 	}
 
-	fields := strings.Fields(line)
-	if len(fields) > 1 {
-		if isLocalArtifact(fields[0]) {
-			return "", false, fmt.Errorf("local package artifact requirements do not support inline options or hashes: %s", line)
-		}
-		return "", false, nil
-	}
 	if !isLocalPath(line) && !hasLocalArtifactSuffix(line) {
 		return "", false, nil
 	}
@@ -61,16 +57,50 @@ func ParseLocalArtifactRequirement(line string) (string, bool, error) {
 
 func unsupportedLocalOption(line string) string {
 	for _, option := range []string{"--find-links", "--requirement", "-f", "-r"} {
-		value, ok := strings.CutPrefix(line, option+" ")
-		if !ok && strings.HasPrefix(option, "--") {
-			value, ok = strings.CutPrefix(line, option+"=")
-		}
-		value = strings.TrimSpace(value)
+		value, ok := requirementOptionValue(line, option)
 		if ok && value != "" && (isFileURL(value) || !isRemoteRequirement(value)) {
 			return option
 		}
 	}
 	return ""
+}
+
+func requirementOptionValue(line string, option string) (string, bool) {
+	rest, ok := strings.CutPrefix(line, option)
+	if !ok || rest == "" {
+		return "", false
+	}
+	if strings.HasPrefix(option, "--") {
+		switch rest[0] {
+		case '=':
+			rest = rest[1:]
+		case ' ', '\t':
+		default:
+			return "", false
+		}
+	}
+	return strings.TrimSpace(rest), true
+}
+
+func hasInlineOption(line string) bool {
+	for i := 0; i < len(line); i++ {
+		if line[i] != ' ' && line[i] != '\t' {
+			continue
+		}
+		rest := strings.TrimLeft(line[i:], " \t")
+		if !isLocalArtifact(strings.TrimSpace(line[:i])) {
+			continue
+		}
+		if strings.HasPrefix(rest, "--") {
+			return true
+		}
+		for _, option := range []string{"-f", "-r"} {
+			if _, ok := requirementOptionValue(rest, option); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isLocalArtifact(path string) bool {

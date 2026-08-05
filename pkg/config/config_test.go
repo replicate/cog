@@ -199,21 +199,48 @@ flask>0.4
 func TestPythonRequirementsLocalPackageArtifacts(t *testing.T) {
 	tmpDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "requirements", "dist"), 0o755))
-	wheelPath := path.Join(tmpDir, "requirements", "dist", "local_pkg-0.1.0-py3-none-any.whl")
+	require.NoError(t, os.Mkdir(path.Join(tmpDir, "objects"), 0o755))
+	wheelPath := path.Join(tmpDir, "objects", "blob")
+	wheelLink := path.Join(tmpDir, "requirements", "dist", "local_pkg-0.1.0-py3-none-any.whl")
 	require.NoError(t, os.WriteFile(wheelPath, []byte("wheel"), 0o644))
-	require.NoError(t, os.Symlink(wheelPath, path.Join(tmpDir, "requirements", "dist", "latest.whl")))
-	require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements", "requirements.txt"), []byte("./dist/latest.whl  # vendored helper"), 0o644))
+	require.NoError(t, os.Symlink(wheelPath, wheelLink))
+	require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements", "requirements.txt"), []byte("./dist/local_pkg-0.1.0-py3-none-any.whl  # vendored helper"), 0o644))
 
 	config := &Config{Build: &Build{PythonVersion: "3.10", PythonRequirements: "requirements/requirements.txt"}}
 	require.NoError(t, config.Complete(tmpDir))
+	require.NoError(t, config.ResolveLocalPackageArtifacts(tmpDir))
 
 	artifacts := config.LocalPackageArtifacts()
 	canonicalWheelPath, err := filepath.EvalSymlinks(wheelPath)
 	require.NoError(t, err)
 	require.Len(t, artifacts, 1)
-	assert.Equal(t, "./dist/latest.whl", artifacts[0].Requirement)
+	assert.Equal(t, "./dist/local_pkg-0.1.0-py3-none-any.whl", artifacts[0].Requirement)
 	assert.Equal(t, canonicalWheelPath, artifacts[0].SourcePath)
 	assert.Equal(t, path.Join("requirements", "dist", "local_pkg-0.1.0-py3-none-any.whl"), artifacts[0].RelativePath)
+}
+
+func TestPythonRequirementsDoesNotParseLocalArtifactAsPackage(t *testing.T) {
+	projectDir := t.TempDir()
+	requirement := "torch==custom.whl"
+	require.NoError(t, os.WriteFile(path.Join(projectDir, "requirements.txt"), []byte(requirement), 0o644))
+	config := &Config{Build: &Build{PythonVersion: "3.10", PythonRequirements: "requirements.txt"}}
+	require.NoError(t, config.Complete(projectDir))
+
+	_, ok := config.TorchVersion()
+	assert.False(t, ok)
+	resolved, err := config.PythonRequirementsForArch("linux", "amd64", []string{"torch==2.0.0"})
+	require.NoError(t, err)
+	assert.Equal(t, requirement+"\ntorch==2.0.0", resolved)
+}
+
+func TestCompleteDefersInvalidLocalFrameworkRequirement(t *testing.T) {
+	projectDir := t.TempDir()
+	requirement := "torch @ file:./torch.whl"
+	require.NoError(t, os.WriteFile(path.Join(projectDir, "requirements.txt"), []byte(requirement), 0o644))
+	config := &Config{Build: &Build{GPU: true, PythonVersion: "3.10", PythonRequirements: "requirements.txt"}}
+
+	require.NoError(t, config.Complete(projectDir))
+	require.ErrorContains(t, config.ResolveLocalPackageArtifacts(projectDir), "local file URL requirements are not supported")
 }
 
 func TestPythonRequirementsLocalPackageArtifactValidation(t *testing.T) {
@@ -261,7 +288,27 @@ func TestPythonRequirementsLocalPackageArtifactValidation(t *testing.T) {
 			}
 			require.NoError(t, os.WriteFile(path.Join(projectDir, "requirements.txt"), []byte(line), 0o644))
 			config := &Config{Build: &Build{PythonVersion: "3.10", PythonRequirements: "requirements.txt"}}
-			require.ErrorContains(t, config.Complete(projectDir), tc.expectedErr)
+			require.NoError(t, config.Complete(projectDir))
+			require.ErrorContains(t, config.ResolveLocalPackageArtifacts(projectDir), tc.expectedErr)
+		})
+	}
+}
+
+func TestCompleteDefersLocalPackageArtifactValidation(t *testing.T) {
+	testCases := []string{
+		"./generated-later.whl",
+		"-r requirements-local.txt",
+		"name @ file:./package.whl",
+	}
+
+	for _, requirement := range testCases {
+		t.Run(requirement, func(t *testing.T) {
+			projectDir := t.TempDir()
+			require.NoError(t, os.WriteFile(path.Join(projectDir, "requirements.txt"), []byte(requirement), 0o644))
+			config := &Config{Build: &Build{PythonVersion: "3.10", PythonRequirements: "requirements.txt"}}
+
+			require.NoError(t, config.Complete(projectDir))
+			assert.Empty(t, config.LocalPackageArtifacts())
 		})
 	}
 }

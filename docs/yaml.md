@@ -69,9 +69,9 @@ Requirements files can list a local wheel or source archive:
 ./packages/localpkg.tar.gz
 ```
 
-Cog supports `.whl`, `.zip`, `.tar.gz`, `.tgz`, `.tar.bz2`, and `.tar.xz` files. Paths are resolved relative to the requirements file and must stay inside the project directory.
+Cog supports `.whl`, `.zip`, `.tar.gz`, `.tgz`, `.tar.bz2`, and `.tar.xz` files. Paths may contain spaces, are resolved relative to the requirements file, and must stay inside the project directory.
 
-Only bare paths are supported. Local directories, direct references, and options, hashes, extras, or markers on a local artifact line are rejected. Use `build.sdk_version` or `COG_SDK_WHEEL` for Cog, and `COGLET_WHEEL` for Coglet.
+Only bare paths are supported. Local directories, local direct references such as `name @ path`, and options, hashes, extras, or markers on a local artifact line are rejected. Remote direct references remain supported. Cog overrides any `cog` or `coglet` distribution installed by a local artifact; use `build.sdk_version` or `COG_SDK_WHEEL` for Cog, and `COGLET_WHEEL` for Coglet.
 
 To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
 
