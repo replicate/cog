@@ -9,9 +9,17 @@
         "apiKey": "{env:CLOUDFLARE_API_TOKEN}"
       },
       "models": {
+        "nemotron-3-120b": {
+          "id": "workers-ai/@cf/nvidia/nemotron-3-120b-a12b",
+          "name": "Nemotron 3 120B (Workers AI via Gateway)",
+          "limit": {
+            "context": 256000,
+            "output": 32000
+          }
+        },
         "kimi-k2.5": {
           "id": "workers-ai/@cf/moonshotai/kimi-k2.5",
-          "name": "Kimi K2.5 (Workers AI via Gateway)",
+          "name": "Kimi K2.5 (Workers AI via Gateway, deprecated)",
           "limit": {
             "context": 256000,
             "output": 64000
