@@ -16,6 +16,10 @@
             "context": 262144,
             "output": 64000
           }
+        },
+        "nemotron-3-120b-a12b": {
+          "id": "workers-ai/@cf/nvidia/nemotron-3-120b-a12b",
+          "name": "NVIDIA Nemotron 3 Super (Workers AI via Gateway)"
         }
       }
     }
