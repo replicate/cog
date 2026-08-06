@@ -1,7 +1,7 @@
 ---
 description: Read-only code reviewer for pull requests
 mode: primary
-model: cf-gateway/glm-5.2
+model: cf-gateway/nemotron-3-120b-a12b
 temperature: 0.1
 permission:
   edit: deny

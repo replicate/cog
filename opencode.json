@@ -9,9 +9,9 @@
         "apiKey": "{env:CLOUDFLARE_API_TOKEN}"
       },
       "models": {
-        "glm-5.2": {
-          "id": "workers-ai/@cf/zai-org/glm-5.2",
-          "name": "Z.ai GLM 5.2 (Workers AI via Gateway)",
+        "nemotron-3-120b-a12b": {
+          "id": "workers-ai/@cf/nvidia/nemotron-3-120b-a12b",
+          "name": "NVIDIA Nemotron 3 Super (Workers AI via Gateway)",
           "limit": {
             "context": 262144,
             "output": 64000

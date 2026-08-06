@@ -44,7 +44,7 @@ jobs:
           OPENCODE_PRINT_LOGS: '1'
           OPENCODE_LOG_LEVEL: INFO
         with:
-          model: 'cf-gateway/glm-5.2'
+          model: 'cf-gateway/nemotron-3-120b-a12b'
           forks: 'false'
           permissions: write
           opencode_version: '1.18.13'
