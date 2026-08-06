@@ -9,12 +9,12 @@
         "apiKey": "{env:CLOUDFLARE_API_TOKEN}"
       },
       "models": {
-        "gpt-oss-120b": {
-          "id": "workers-ai/@cf/openai/gpt-oss-120b",
-          "name": "OpenAI GPT-OSS 120B (Workers AI via Gateway)",
+        "kimi-k2.6": {
+          "id": "workers-ai/@cf/moonshotai/kimi-k2.6",
+          "name": "Kimi K2.6 (Workers AI via Gateway)",
           "limit": {
-            "context": 128000,
-            "output": 32768
+            "context": 262144,
+            "output": 64000
           }
         }
       }

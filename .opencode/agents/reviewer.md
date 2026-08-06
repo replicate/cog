@@ -1,7 +1,7 @@
 ---
 description: Read-only code reviewer for pull requests
 mode: primary
-model: cf-gateway/gpt-oss-120b
+model: cf-gateway/kimi-k2.6
 temperature: 0.1
 permission:
   edit: deny

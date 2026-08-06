@@ -38,7 +38,7 @@ jobs:
           OPENCODE_PRINT_LOGS: '1'
           OPENCODE_LOG_LEVEL: INFO
         with:
-          model: 'cf-gateway/gpt-oss-120b'
+          model: 'cf-gateway/kimi-k2.6'
           mentions: '/bonk,@ask-bonk'
           forks: 'false'
           permissions: write
