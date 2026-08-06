@@ -45,3 +45,5 @@ jobs:
           OPENCODE_LOG_LEVEL: INFO
         with:
           prompt: ${{ steps.prompt.outputs.value }}
+          # The auto-reviewer must never push to PR branches.
+          token_permissions: 'NO_PUSH'
