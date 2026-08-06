@@ -1,0 +1,34 @@
+name: Bonk review
+description: Run Bonk with a Nemotron fallback when Kimi fails
+
+inputs:
+  prompt:
+    description: Prompt to send to Bonk
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Run Bonk with Kimi
+      id: kimi
+      continue-on-error: true
+      uses: ask-bonk/ask-bonk/github@main
+      with:
+        model: 'cf-gateway/kimi-k2.7-code'
+        forks: 'false'
+        permissions: write
+        opencode_version: '1.18.13'
+        # The auto-reviewer must never push to PR branches.
+        token_permissions: 'NO_PUSH'
+        prompt: ${{ inputs.prompt }}
+
+    - name: Retry Bonk with Nemotron
+      if: steps.kimi.outcome == 'failure'
+      uses: ask-bonk/ask-bonk/github@main
+      with:
+        model: 'cf-gateway/nemotron-3-120b-a12b'
+        forks: 'false'
+        permissions: write
+        opencode_version: '1.18.13'
+        token_permissions: 'NO_PUSH'
+        prompt: ${{ inputs.prompt }}
