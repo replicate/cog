@@ -1,7 +1,7 @@
 ---
 description: Read-only code reviewer for pull requests
 mode: primary
-model: cf-gateway/kimi-k2.7-code
+model: cf-gateway/glm-5.2
 temperature: 0.1
 permission:
   edit: deny
