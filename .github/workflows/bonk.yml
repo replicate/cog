@@ -38,7 +38,7 @@ jobs:
           OPENCODE_PRINT_LOGS: '1'
           OPENCODE_LOG_LEVEL: INFO
         with:
-          model: 'cf-gateway/kimi-k2.7-code'
+          model: 'cf-gateway/nemotron-3-120b-a12b'
           mentions: '/bonk,@ask-bonk'
           forks: 'false'
           permissions: write
