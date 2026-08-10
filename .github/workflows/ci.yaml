@@ -250,6 +250,11 @@ jobs:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test playground
+        env:
+          # mise does not generate lock entries for task-local tools. Keep the
+          # exact versions pinned on the playground tasks without making Node
+          # part of every root CI job.
+          MISE_LOCKED: 0
         run: |
           mise run fmt:playground
           mise run lint:playground
