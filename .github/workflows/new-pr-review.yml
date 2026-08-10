@@ -44,11 +44,10 @@ jobs:
           OPENCODE_PRINT_LOGS: '1'
           OPENCODE_LOG_LEVEL: INFO
         with:
-          model: 'cf-gateway/kimi-k2.7-code'
+          model: 'cf-gateway/nemotron-3-120b-a12b'
           forks: 'false'
           permissions: write
           opencode_version: '1.18.13'
-          # The auto-reviewer must never push to PR branches. NO_PUSH
-          # enforces that at the token level.
-          token_permissions: 'NO_PUSH'
           prompt: ${{ steps.prompt.outputs.value }}
+          # The auto-reviewer must never push to PR branches.
+          token_permissions: 'NO_PUSH'
