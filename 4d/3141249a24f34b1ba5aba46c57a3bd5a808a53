@@ -1,0 +1,19 @@
+mise.lock
+  s_ec5d064e864648::t_fb41016900de82 373-404,409-412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "4d3141249a24f34b1ba5aba46c57a3bd5a808a53",
+  "prompts": {},
+  "sessions": {
+    "s_ec5d064e864648": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_013aacdb3ffevRiZEAKyKJ0sN5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
