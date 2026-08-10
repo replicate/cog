@@ -1,0 +1,57 @@
+pkg/cli/playground/THIRD_PARTY_LICENSES.md
+  s_ec5d064e864648::t_6d2466debe734f 1-462
+pkg/cli/playground/assets/index-Drl0ZOSQ.css
+  s_ec5d064e864648::t_28f1bfb94c2594 1
+pkg/cli/playground/assets/index-K-ukfAsh.js
+  s_ec5d064e864648::t_dca760e97a609e 1-26
+pkg/cli/playground/assets/validation.worker-B9kjY37O.js
+  s_ec5d064e864648::t_198bbd508711e5 1-8
+pkg/cli/playground/index.html
+  s_ec5d064e864648::t_5d96eaf57c4c04 8-9
+playground/package.json
+  s_ec5d064e864648::t_27d2911480743a 1-42
+playground/pnpm-lock.yaml
+  s_ec5d064e864648::t_87b36aff37a6cc 1-2856
+playground/scripts/merge-licenses.ts
+  s_ec5d064e864648::t_d80b87dbc4216d 1-18,20-30,32-67
+playground/scripts/worker-license-plugin.ts
+  s_ec5d064e864648::t_e7134e23cf4dee 1-67
+playground/src/lib/state/connection-state.ts
+  s_ec5d064e864648::t_3d3db8d04a0ca8 1-6,15-33,41,43-44,54,82,86-87,104,125,133-135,137-138,143,146,152-153,160
+playground/src/lib/transport/api.ts
+  s_ec5d064e864648::t_3bc1b83dcf8eac 1-11,13,19,21-22,26,30,33-34,38,59,73,81,84-85,90-97,107-108,117-125
+playground/src/lib/transport/guards.ts
+  s_25869c393af1f4::t_becebde6c8335c 1-8,10,15-18,21,24,26,30-31,33,38-42,62,65-80,82-87,90-91,94-95,100-105,108-117,131,146,153,162-176,178-184,187
+playground/src/lib/transport/http.ts
+  s_ec5d064e864648::t_6baba99652684c 1,3,5-6,12-15,22,29,31,33-34,36,47-57,60,72
+playground/src/playground.css
+  s_ec5d064e864648::t_c06019cec97ec7 38
+playground/tests/files.test.ts
+  s_ec5d064e864648::t_ebff81e43e6fd0 2,4-5,9,16,23,29,70-76,81-87
+playground/tests/validation.test.ts
+  s_ec5d064e864648::t_4ad80fd98d59e7 2,9,19-29,45,56,69,108,145,149-153,156-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "818b5ce9a541beb50c7e0b98d9c5a1f85a7c9d1b",
+  "prompts": {},
+  "sessions": {
+    "s_25869c393af1f4": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_01305d063ffez5GWFSgKwLSWod",
+        "model": "@cf/deepseek-ai/deepseek-v4-flash-0731"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    },
+    "s_ec5d064e864648": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_013aacdb3ffevRiZEAKyKJ0sN5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
