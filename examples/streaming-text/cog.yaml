@@ -1,6 +1,7 @@
 # Streaming text generation example using a small open-weight language model.
 
 build:
+  gpu: false
   python_version: "3.12"
   python_requirements: requirements.txt
 

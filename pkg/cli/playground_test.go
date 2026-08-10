@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -55,13 +56,10 @@ func TestPlaygroundServesUI(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Contains(t, string(body), "Cog Playground")
 
-	for _, path := range []string{
-		"/app.js",
-		"/app.css",
-		"/worker/validation.js",
-		"/cdn/codemirror.js",
-		"/cdn/ajv.js",
-	} {
+	assets := regexp.MustCompile(`(?:href|src)="([^"]+)"`).FindAllStringSubmatch(string(body), -1)
+	require.NotEmpty(t, assets)
+	for _, asset := range assets {
+		path := asset[1]
 		assetResp, err := http.Get(ts.URL + path)
 		require.NoError(t, err, "requesting %s", path)
 		assetResp.Body.Close()
@@ -400,18 +398,22 @@ func TestPlaygroundSetsBrowserSecurityHeaders(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'")
-	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "script-src 'self' https://cdnjs.cloudflare.com https://esm.unpkg.com")
+	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "script-src 'self'")
+	assert.NotContains(t, resp.Header.Get("Content-Security-Policy"), "cdnjs.cloudflare.com")
 	assert.NotContains(t, resp.Header.Get("Content-Security-Policy"), "'unsafe-eval'")
 	assert.Equal(t, "no-referrer", resp.Header.Get("Referrer-Policy"))
 	assert.Equal(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/worker/validation.js", nil)
+	workers, err := fs.Glob(playgroundUI, "playground/assets/validation.worker-*.js")
+	require.NoError(t, err)
+	require.Len(t, workers, 1)
+	request := httptest.NewRequest(http.MethodGet, "/"+strings.TrimPrefix(workers[0], "playground/"), nil)
 	request.RemoteAddr = "127.0.0.1:1234"
 	request.Host = "127.0.0.1"
 	protectPlayground(http.NotFoundHandler()).ServeHTTP(recorder, request)
 	workerCSP := recorder.Header().Get("Content-Security-Policy")
-	assert.Contains(t, workerCSP, "script-src 'self' 'unsafe-eval' https://cdnjs.cloudflare.com")
+	assert.Contains(t, workerCSP, "script-src 'self' 'unsafe-eval'")
 	assert.Contains(t, workerCSP, "connect-src 'none'")
 }
 

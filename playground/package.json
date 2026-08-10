@@ -1,0 +1,42 @@
+{
+  "name": "@replicate/cog-playground",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build && tsx scripts/merge-licenses.ts",
+    "fmt": "oxfmt .",
+    "fmt:check": "oxfmt --check .",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/kumo": "2.7.0",
+    "@codemirror/commands": "6.10.4",
+    "@codemirror/lang-json": "6.0.2",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/state": "6.7.1",
+    "@codemirror/view": "6.43.6",
+    "@lezer/highlight": "1.2.3",
+    "ajv": "8.20.0",
+    "ajv-draft-04": "1.0.0",
+    "ajv-formats": "3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@vitest/coverage-v8": "4.1.10",
+    "jsdom": "27.2.0",
+    "oxfmt": "0.58.0",
+    "oxlint": "1.50.0",
+    "tsx": "4.23.2",
+    "typescript": "5.9.3",
+    "vite": "8.1.4",
+    "vitest": "4.1.10"
+  },
+  "engines": {
+    "node": "24.18.0"
+  },
+  "packageManager": "pnpm@11.11.0"
+}

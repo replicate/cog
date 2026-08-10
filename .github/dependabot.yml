@@ -14,6 +14,10 @@ updates:
     directory: "/crates"
     schedule:
       interval: "weekly"
+  - package-ecosystem: "npm"
+    directory: "/playground"
+    schedule:
+      interval: "weekly"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

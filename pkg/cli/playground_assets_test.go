@@ -44,4 +44,23 @@ func TestPlaygroundAssetGraphComplete(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+	licenses, err := playgroundUI.ReadFile("playground/THIRD_PARTY_LICENSES.md")
+	require.NoError(t, err)
+	require.NotEmpty(t, licenses)
+	for _, dependency := range []string{"@cloudflare/kumo", "@codemirror/state", "ajv", "ajv-draft-04", "ajv-formats", "fast-uri"} {
+		require.Contains(t, string(licenses), "## "+dependency+" -")
+	}
+	for _, host := range []string{"cdnjs.cloudflare.com", "esm.unpkg.com", "esm.sh"} {
+		err := fs.WalkDir(playgroundUI, "playground", func(name string, entry fs.DirEntry, walkErr error) error {
+			require.NoError(t, walkErr)
+			if entry.IsDir() || (!strings.HasSuffix(name, ".js") && !strings.HasSuffix(name, ".css") && !strings.HasSuffix(name, ".html")) {
+				return nil
+			}
+			contents, err := playgroundUI.ReadFile(name)
+			require.NoError(t, err)
+			require.NotContains(t, string(contents), host, "%s references %s", name, host)
+			return nil
+		})
+		require.NoError(t, err)
+	}
 }

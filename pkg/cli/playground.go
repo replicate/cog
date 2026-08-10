@@ -227,13 +227,11 @@ func protectPlayground(next http.Handler) http.Handler {
 }
 
 func setPlaygroundSecurityHeaders(w http.ResponseWriter, path string) {
-	// Browser dependencies are loaded from CDNs: CodeMirror from esm.unpkg.com,
-	// Ajv from cdnjs, and the Kumo stylesheet from esm.sh.
-	csp := "default-src 'self'; connect-src 'self'; img-src 'self' data: http: https:; media-src 'self' data: http: https:; script-src 'self' https://cdnjs.cloudflare.com https://esm.unpkg.com; style-src 'self' 'unsafe-inline' https://esm.sh; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
-	if path == "/worker/validation.js" {
+	csp := "default-src 'self'; connect-src 'self'; img-src 'self' data: http: https:; media-src 'self' data: http: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+	if strings.HasPrefix(path, "/assets/validation.worker-") && strings.HasSuffix(path, ".js") {
 		// Ajv compiles dynamic model schemas. Confine the required code generation
 		// to this network-isolated worker rather than relaxing the page policy.
-		csp = "default-src 'none'; script-src 'self' 'unsafe-eval' https://cdnjs.cloudflare.com; connect-src 'none'; base-uri 'none'; form-action 'none'"
+		csp = "default-src 'none'; script-src 'self' 'unsafe-eval'; connect-src 'none'; base-uri 'none'; form-action 'none'"
 	}
 	w.Header().Set("Content-Security-Policy", csp)
 	w.Header().Set("Referrer-Policy", "no-referrer")

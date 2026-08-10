@@ -75,9 +75,12 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           elif git diff --quiet "$BASE_SHA" "$GITHUB_SHA" -- \
             .github/workflows/ci.yaml \
+            .github/workflows/release-build.yaml \
+            .github/dependabot.yml \
+            .gitignore \
             mise.lock \
             mise.toml \
-            playground-tests \
+            playground \
             'pkg/cli/playground*' \
             pkg/cli/playground \
             pkg/cli/root.go; then
@@ -242,17 +245,17 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24.18.0
       - uses: jdx/mise-action@v4
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test playground
         run: |
-          npm install --prefix playground-tests --no-save --no-package-lock --ignore-scripts --no-audit --no-fund ajv@8.17.1
-          node --test 'playground-tests/*.test.js'
+          mise run fmt:playground
+          mise run lint:playground
+          mise run typecheck:playground
+          mise run test:playground
+          mise run build:playground:check
           go test ./pkg/cli -run '^TestPlayground' -count=1
 # =============================================================================
 # Format Checks - Fast, parallel
