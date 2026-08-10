@@ -39,7 +39,7 @@ jobs:
           OPENCODE_LOG_LEVEL: INFO
         with:
           oidc_base_url: https://ask-bonk.cloudflare-exponent.workers.dev/auth
-          model: 'cf-gateway/nemotron-3-120b-a12b'
+          model: 'cf-gateway/kimi-k2.7-code'
           mentions: '/bonk,@ask-bonk'
           forks: 'false'
           permissions: write
