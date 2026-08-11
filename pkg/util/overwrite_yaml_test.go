@@ -10,25 +10,25 @@ import (
 func TestOverwriteYAML(t *testing.T) {
 	var yamlData1 = `build:
     command: "build.sh"
+    environment:
+        - "VAR1=value1"
+        - "VAR2=value2"
 image: "my-image"
 predict: "predict.py"
 train: "train.py"
 concurrency:
     max: 5
-environment:
-    - "VAR1=value1"
-    - "VAR2=value2"
 `
 
 	var yamlData2 = `build:
   command: "build_new.sh"
+  environment:
+    - "VAR1=new_value1"
+    - "VAR3=value3"
 image: "new-image"
 predict: "new_predict.py"
 concurrency:
   max: 10
-environment:
-  - "VAR1=new_value1"
-  - "VAR3=value3"
 `
 	content, err := OverwriteYAML([]byte(yamlData1), []byte(yamlData2))
 	require.NoError(t, err)
@@ -39,38 +39,38 @@ environment:
 func TestOverwriteYAMLWithComments(t *testing.T) {
 	var sourceYaml = `build:
   command: "build_new.sh"
+  environment:
+    - "VAR1=new_value1"
+    - "VAR3=value3"
 image: "new-image"
 predict: "new_predict.py"
 concurrency:
   max: 10
-environment:
-  - "VAR1=new_value1"
-  - "VAR3=value3"
 `
 
 	var destinationYaml = `# This here is a YAML Comment
 build:
     command: "build.sh"
+    environment:
+        - "VAR1=value1"
+        - "VAR2=value2"
 image: "my-image"
 predict: "predict.py"
 train: "train.py"
 concurrency:
     max: 5
-environment:
-    - "VAR1=value1"
-    - "VAR2=value2"
 `
 
 	expected := `# This here is a YAML Comment
 build:
     command: "build_new.sh"
+    environment:
+        - "VAR1=new_value1"
+        - "VAR3=value3"
 image: "new-image"
 predict: "new_predict.py"
 concurrency:
     max: 10
-environment:
-    - "VAR1=new_value1"
-    - "VAR3=value3"
 `
 
 	content, err := OverwriteYAML([]byte(sourceYaml), []byte(destinationYaml))
@@ -81,40 +81,40 @@ environment:
 func TestOverwriteYAMLWithLineComments(t *testing.T) {
 	var sourceYaml = `build:
   command: "build_new.sh"
+  environment:
+    - "VAR1=new_value1"
+    - "VAR3=value3"
 image: "new-image"
 predict: "new_predict.py"
 concurrency:
   max: 10
-environment:
-  - "VAR1=new_value1"
-  - "VAR3=value3"
 `
 
 	var destinationYaml = `# This here is a YAML Comment
 build:
     # And we put this comment here for good measure
     command: "build.sh"
+    environment:
+        - "VAR1=value1"
+        - "VAR2=value2"
 image: "my-image"
 predict: "predict.py"
 train: "train.py"
 concurrency:
     max: 5
-environment:
-    - "VAR1=value1"
-    - "VAR2=value2"
 `
 
 	expected := `# This here is a YAML Comment
 build:
     # And we put this comment here for good measure
     command: "build_new.sh"
+    environment:
+        - "VAR1=new_value1"
+        - "VAR3=value3"
 image: "new-image"
 predict: "new_predict.py"
 concurrency:
     max: 10
-environment:
-    - "VAR1=new_value1"
-    - "VAR3=value3"
 `
 	content, err := OverwriteYAML([]byte(sourceYaml), []byte(destinationYaml))
 	require.NoError(t, err)
