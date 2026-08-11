@@ -372,7 +372,7 @@ When a prediction input exceeds 6MiB, it's too large to send inline through the 
 
 ## File Outputs
 
-When run() produces file outputs (`cog.Path`), the worker transfers them into the prediction's managed output directory. Scratch files are consumed; files outside scratch storage are copied so model assets remain available. The worker sends a `FileOutput` message with the managed path, ownership flag, output index, MIME type, and original basename. The parent uses the original basename for uploads and deletes the managed copy after encoding or a successful upload.
+When run() produces file outputs (`cog.Path`), returning the path transfers ownership of its directory entry to Coglet. The worker moves the file into the prediction's managed output directory, falling back to copy then unlink across filesystems. Symlink entries are unlinked after their target bytes are copied, without deleting the target. The worker sends a `FileOutput` message with the managed path, ownership flag, output index, MIME type, and original basename. The parent uses the original basename for uploads and deletes the managed copy after encoding or a successful upload.
 
 Files nested in object outputs are described in a structured output envelope so the parent can replace each location with its URL without flattening the object. The envelope itself is stored in managed output storage, which keeps large structured outputs below the IPC frame limit.
 

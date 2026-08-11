@@ -160,27 +160,15 @@ pub struct StagedFileOutput {
 pub struct SlotSender {
     tx: mpsc::UnboundedSender<SlotResponse>,
     output_dir: PathBuf,
-    /// Directories whose files Coglet may consume. See `owns_scratch_file`.
-    scratch_roots: Arc<[PathBuf]>,
     file_counter: Arc<AtomicUsize>,
     output_counter: Arc<AtomicU64>,
 }
 
 impl SlotSender {
     pub fn new(tx: mpsc::UnboundedSender<SlotResponse>, output_dir: PathBuf) -> Self {
-        let scratch_roots = [output_dir.clone(), std::env::temp_dir()];
-        Self::with_scratch_roots(tx, output_dir, scratch_roots)
-    }
-
-    fn with_scratch_roots(
-        tx: mpsc::UnboundedSender<SlotResponse>,
-        output_dir: PathBuf,
-        scratch_roots: impl Into<Arc<[PathBuf]>>,
-    ) -> Self {
         Self {
             tx,
             output_dir,
-            scratch_roots: scratch_roots.into(),
             file_counter: Arc::new(AtomicUsize::new(0)),
             output_counter: Arc::new(AtomicU64::new(0)),
         }
@@ -288,9 +276,8 @@ impl SlotSender {
     /// Transfer a run-returned file into Coglet's managed output directory.
     ///
     /// Returning a path hands the data to Coglet, which deletes the managed copy
-    /// once the parent has read it. Scratch files are moved so nothing is left
-    /// behind; files from anywhere else are copied so a run cannot delete assets
-    /// baked into the image. See `owns_scratch_file`.
+    /// once the parent has read it. The source path is consumed during the transfer
+    /// so it cannot be returned again unless the predictor rewrites it.
     pub fn send_user_file_output(
         &self,
         path: PathBuf,
@@ -332,14 +319,7 @@ impl SlotSender {
         let (file, dest) = self.create_output_file(&extension)?;
         drop(file);
 
-        let is_symlink = std::fs::symlink_metadata(&path)?.file_type().is_symlink();
-        let transfer =
-            if self.owns_scratch_file(&path) || (is_symlink && self.owns_scratch_entry(&path)) {
-                move_file(&path, &dest)
-            } else {
-                std::fs::copy(&path, &dest).map(|_| ())
-            };
-        if let Err(e) = transfer {
+        if let Err(e) = move_file(&path, &dest) {
             let _ = std::fs::remove_file(&dest);
             return Err(e);
         }
@@ -395,46 +375,6 @@ impl SlotSender {
         self.tx
             .send(msg)
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
-    }
-
-    /// Whether Coglet may consume `path` outright instead of copying it.
-    ///
-    /// True for the places a run writes per-prediction scratch files: the output
-    /// dir Coglet handed it, and the temp dir. Reclaiming those is the point of
-    /// the ownership handoff. Anything else (weights, a bundled sample image, a
-    /// cache shared between predictions) is copied instead, because unlinking it
-    /// would break every later prediction.
-    ///
-    /// Both the directory entry and its resolved target must be under the same
-    /// scratch root. This keeps a symlink on either side of the boundary from
-    /// granting ownership of the other side.
-    fn owns_scratch_file(&self, path: &std::path::Path) -> bool {
-        let Ok(resolved) = path.canonicalize() else {
-            return false;
-        };
-        let Some(parent) = path.parent() else {
-            return false;
-        };
-        let Ok(resolved_parent) = parent.canonicalize() else {
-            return false;
-        };
-        self.scratch_roots
-            .iter()
-            .filter_map(|root| root.canonicalize().ok())
-            .any(|root| resolved.starts_with(&root) && resolved_parent.starts_with(&root))
-    }
-
-    fn owns_scratch_entry(&self, path: &std::path::Path) -> bool {
-        let Some(parent) = path.parent() else {
-            return false;
-        };
-        let Ok(resolved_parent) = parent.canonicalize() else {
-            return false;
-        };
-        self.scratch_roots
-            .iter()
-            .filter_map(|root| root.canonicalize().ok())
-            .any(|root| resolved_parent.starts_with(root))
     }
 
     /// Send a user metric to the parent process.
@@ -1281,39 +1221,27 @@ mod tests {
         assert_eq!(std::fs::read(&managed).unwrap(), b"world");
     }
 
-    /// Returning a file from outside the scratch roots must not delete it, or the
-    /// first prediction to return a bundled asset would break every later one.
     #[test]
-    fn send_user_file_output_copies_a_file_outside_the_scratch_roots() {
+    fn send_user_file_output_consumes_a_file_outside_the_output_dir() {
         let output_dir = tempfile::tempdir().unwrap();
         let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
-        // Only the output dir counts as scratch here, so the asset dir below
-        // stands in for wherever a run's own files live: the model directory, a
-        // weights cache, anything baked into the image.
-        let sender = SlotSender::with_scratch_roots(
-            tx,
-            output_dir.path().to_path_buf(),
-            [output_dir.path().to_path_buf()],
-        );
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
 
-        let asset_dir = tempfile::tempdir().unwrap();
-        let asset = asset_dir.path().join("placeholder.png");
-        std::fs::write(&asset, b"asset").unwrap();
+        let source_dir = tempfile::tempdir_in(std::env::current_dir().unwrap()).unwrap();
+        let source = source_dir.path().join("fixed-output.png");
+        std::fs::write(&source, b"output").unwrap();
 
-        sender.send_user_file_output(asset.clone(), None).unwrap();
+        sender.send_user_file_output(source.clone(), None).unwrap();
 
-        assert!(
-            asset.exists(),
-            "a file outside the scratch roots must survive"
-        );
+        assert!(!source.exists(), "returned source path should be consumed");
         let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
-        assert_eq!(std::fs::read(&managed).unwrap(), b"asset");
+        assert_eq!(std::fs::read(&managed).unwrap(), b"output");
 
-        // Returning it again still works, because the source is untouched.
-        sender.send_user_file_output(asset.clone(), None).unwrap();
-        let second = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
-        assert_ne!(second, managed);
-        assert_eq!(std::fs::read(&second).unwrap(), b"asset");
+        let error = sender
+            .send_user_file_output(source, None)
+            .expect_err("a consumed path cannot return stale output");
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert!(rx.try_recv().is_err(), "stale path must not be sent again");
     }
 
     #[test]
@@ -1340,43 +1268,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn owns_scratch_file_keeps_symlinks_from_crossing_the_boundary() {
-        let output_dir = tempfile::tempdir().unwrap();
-        let (tx, _rx) = mpsc::unbounded_channel::<SlotResponse>();
-        let sender = SlotSender::with_scratch_roots(
-            tx,
-            output_dir.path().to_path_buf(),
-            [output_dir.path().to_path_buf()],
-        );
-
-        let outside_dir = tempfile::tempdir().unwrap();
-        let outside = outside_dir.path().join("outside.txt");
-        std::fs::write(&outside, b"outside").unwrap();
-        let link = output_dir.path().join("link.txt");
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&outside, &link).unwrap();
-
-        let inside = output_dir.path().join("inside.txt");
-        std::fs::write(&inside, b"inside").unwrap();
-        let outside_link = outside_dir.path().join("outside-link.txt");
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&inside, &outside_link).unwrap();
-
-        assert!(sender.owns_scratch_file(&inside));
-        #[cfg(unix)]
-        {
-            assert!(
-                !sender.owns_scratch_file(&link),
-                "a link inside a scratch root must not grant ownership of its target"
-            );
-            assert!(
-                !sender.owns_scratch_file(&outside_link),
-                "a target inside a scratch root must not grant ownership of an outside link"
-            );
-        }
-    }
-
     #[cfg(unix)]
     #[test]
     fn send_user_file_output_copies_a_relative_symlink_before_unlinking_it() {
@@ -1400,7 +1291,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn send_user_file_output_unlinks_a_scratch_symlink_to_an_external_file() {
+    fn send_user_file_output_unlinks_a_symlink_without_deleting_its_target() {
         let output_dir = tempfile::tempdir().unwrap();
         let scratch_dir = tempfile::tempdir().unwrap();
         let external_dir = tempfile::tempdir().unwrap();
@@ -1409,11 +1300,7 @@ mod tests {
         let link = scratch_dir.path().join("result.txt");
         std::os::unix::fs::symlink(&target, &link).unwrap();
         let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
-        let sender = SlotSender::with_scratch_roots(
-            tx,
-            output_dir.path().to_path_buf(),
-            [scratch_dir.path().to_path_buf()],
-        );
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
 
         sender.send_user_file_output(link.clone(), None).unwrap();
 

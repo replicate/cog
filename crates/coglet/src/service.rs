@@ -52,7 +52,7 @@ pub enum CreatePredictionError {
     #[error("At capacity (no slots available)")]
     AtCapacity,
     #[error("A prediction with this ID already exists")]
-    DuplicateId,
+    DuplicateId(ExistingPrediction),
     #[error("Invalid prediction ID: {0}")]
     InvalidId(&'static str),
 }
@@ -108,9 +108,70 @@ struct PredictionEntry {
     cancel_on_stream_drop: bool,
 }
 
+pub struct ExistingPrediction {
+    id: String,
+    prediction: Arc<StdMutex<Prediction>>,
+    input: serde_json::Value,
+    cancel_on_stream_drop: bool,
+}
+
+impl std::fmt::Debug for ExistingPrediction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExistingPrediction")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ExistingPrediction {
+    fn from_entry(id: &str, entry: &PredictionEntry) -> Self {
+        Self {
+            id: id.to_string(),
+            prediction: Arc::clone(&entry.prediction),
+            input: entry.input.clone(),
+            cancel_on_stream_drop: entry.cancel_on_stream_drop,
+        }
+    }
+
+    pub fn response(&self) -> Option<serde_json::Value> {
+        let pred = self.prediction.lock().ok()?;
+        let mut response = pred.build_state_snapshot();
+        response["input"] = self.input.clone();
+        Some(response)
+    }
+
+    pub fn subscribe(
+        &self,
+        service: &Arc<PredictionService>,
+    ) -> Result<PredictionStreamSubscription, SubscribePredictionStreamError> {
+        let stream = {
+            let Some(prediction) = try_lock_prediction(&self.prediction) else {
+                return Err(SubscribePredictionStreamError::Unavailable);
+            };
+            if prediction.stream_receiver_count() >= MAX_STREAM_SUBSCRIBERS {
+                return Err(SubscribePredictionStreamError::TooManySubscribers);
+            }
+            prediction.subscribe_stream_replay()
+        };
+        Ok(PredictionStreamSubscription {
+            id: self.id.clone(),
+            replay: stream.replay,
+            skipped: stream.skipped,
+            receiver: stream.receiver,
+            guard: PredictionStreamGuard {
+                id: self.id.clone(),
+                prediction: Arc::clone(&self.prediction),
+                service: Arc::clone(service),
+                cancel_on_stream_drop: self.cancel_on_stream_drop,
+            },
+        })
+    }
+}
+
 /// Handle to a submitted prediction for cancellation on disconnect.
 pub struct PredictionHandle {
     id: String,
+    prediction: Arc<StdMutex<Prediction>>,
     cancel_token: CancellationToken,
 }
 
@@ -129,7 +190,7 @@ impl PredictionHandle {
     /// `service.cancel(id)` which fires the CancellationToken AND
     /// delegates to the orchestrator to cancel the worker subprocess.
     pub fn sync_guard(&self, service: Arc<PredictionService>) -> SyncPredictionGuard {
-        SyncPredictionGuard::new(self.id.clone(), service)
+        SyncPredictionGuard::new(self.id.clone(), Arc::clone(&self.prediction), service)
     }
 }
 
@@ -162,6 +223,7 @@ impl PredictionStreamSubscription {
 
 pub struct PredictionStreamGuard {
     id: String,
+    prediction: Arc<StdMutex<Prediction>>,
     service: Arc<PredictionService>,
     cancel_on_stream_drop: bool,
 }
@@ -172,14 +234,8 @@ impl Drop for PredictionStreamGuard {
             return;
         }
 
-        // Prediction cleanup may remove the service entry before the SSE response
-        // finishes draining. Missing entries deliberately report zero receivers and
-        // terminal state so this guard cannot cancel an already-cleaned prediction.
-        if self.service.stream_receiver_count(&self.id) == 0
-            && !self.service.prediction_is_terminal(&self.id)
-        {
-            self.service.cancel(&self.id);
-        }
+        self.service
+            .cancel_abandoned_stream(&self.id, &self.prediction);
     }
 }
 
@@ -191,13 +247,19 @@ impl Drop for PredictionStreamGuard {
 /// (Rust-side observers) and the orchestrator (worker subprocess cancel).
 pub struct SyncPredictionGuard {
     prediction_id: Option<String>,
+    prediction: Arc<StdMutex<Prediction>>,
     service: Arc<PredictionService>,
 }
 
 impl SyncPredictionGuard {
-    pub fn new(prediction_id: String, service: Arc<PredictionService>) -> Self {
+    pub fn new(
+        prediction_id: String,
+        prediction: Arc<StdMutex<Prediction>>,
+        service: Arc<PredictionService>,
+    ) -> Self {
         Self {
             prediction_id: Some(prediction_id),
+            prediction,
             service,
         }
     }
@@ -210,7 +272,7 @@ impl SyncPredictionGuard {
 impl Drop for SyncPredictionGuard {
     fn drop(&mut self) {
         if let Some(ref id) = self.prediction_id {
-            self.service.cancel(id);
+            self.service.cancel_if_current(id, &self.prediction);
         }
     }
 }
@@ -255,6 +317,8 @@ pub struct PredictionService {
     input_validator: RwLock<Option<InputValidator>>,
     train_validator: RwLock<Option<InputValidator>>,
     supports_prediction_streaming: RwLock<bool>,
+    #[cfg(test)]
+    idempotent_pre_submit_barrier: RwLock<Option<Arc<tokio::sync::Barrier>>>,
 }
 
 impl PredictionService {
@@ -275,6 +339,8 @@ impl PredictionService {
             input_validator: RwLock::new(None),
             train_validator: RwLock::new(None),
             supports_prediction_streaming: RwLock::new(false),
+            #[cfg(test)]
+            idempotent_pre_submit_barrier: RwLock::new(None),
         }
     }
 
@@ -331,6 +397,19 @@ impl PredictionService {
 
     pub async fn supports_prediction_streaming(&self) -> bool {
         *self.supports_prediction_streaming.read().await
+    }
+
+    #[cfg(test)]
+    pub async fn set_idempotent_pre_submit_barrier(&self, barrier: Arc<tokio::sync::Barrier>) {
+        *self.idempotent_pre_submit_barrier.write().await = Some(barrier);
+    }
+
+    #[cfg(test)]
+    pub async fn wait_idempotent_pre_submit_barrier(&self) {
+        let barrier = self.idempotent_pre_submit_barrier.read().await.clone();
+        if let Some(barrier) = barrier {
+            barrier.wait().await;
+        }
     }
 
     /// Get the permit pool from orchestrator.
@@ -544,8 +623,10 @@ impl PredictionService {
         // cannot consume slot capacity.
         let prediction_entry = match self.predictions.entry(id.clone()) {
             dashmap::Entry::Vacant(entry) => entry,
-            dashmap::Entry::Occupied(_) => {
-                return Err(CreatePredictionError::DuplicateId);
+            dashmap::Entry::Occupied(entry) => {
+                return Err(CreatePredictionError::DuplicateId(
+                    ExistingPrediction::from_entry(&id, entry.get()),
+                ));
             }
         };
 
@@ -560,13 +641,17 @@ impl PredictionService {
         let prediction_arc = slot.prediction();
 
         prediction_entry.insert(PredictionEntry {
-            prediction: prediction_arc,
+            prediction: Arc::clone(&prediction_arc),
             cancel_token: cancel_token.clone(),
             input,
             cancel_on_stream_drop,
         });
 
-        let handle = PredictionHandle { id, cancel_token };
+        let handle = PredictionHandle {
+            id,
+            prediction: prediction_arc,
+            cancel_token,
+        };
 
         Ok((handle, UnregisteredPredictionSlot::new(slot, idle_tx)))
     }
@@ -581,65 +666,72 @@ impl PredictionService {
     /// Locks the real Prediction to read current state — no stale copies.
     /// Adds `input` from the PredictionEntry on top of the shared snapshot.
     pub fn get_prediction_response(&self, id: &str) -> Option<serde_json::Value> {
+        self.get_existing_prediction(id)?.response()
+    }
+
+    pub fn get_existing_prediction(&self, id: &str) -> Option<ExistingPrediction> {
         let entry = self.predictions.get(id)?;
-        let pred = entry.prediction.lock().ok()?;
-
-        let mut response = pred.build_state_snapshot();
-        response["input"] = entry.input.clone();
-
-        Some(response)
+        Some(ExistingPrediction::from_entry(id, &entry))
     }
 
     pub fn subscribe_prediction_stream(
         self: &Arc<Self>,
         id: &str,
     ) -> Result<PredictionStreamSubscription, SubscribePredictionStreamError> {
-        let entry = self
-            .predictions
-            .get(id)
-            .ok_or(SubscribePredictionStreamError::NotFound)?;
-        let stream = {
-            let Some(prediction) = try_lock_prediction(&entry.prediction) else {
-                return Err(SubscribePredictionStreamError::Unavailable);
-            };
-            if prediction.stream_receiver_count() >= MAX_STREAM_SUBSCRIBERS {
-                return Err(SubscribePredictionStreamError::TooManySubscribers);
-            }
-            prediction.subscribe_stream_replay()
+        self.get_existing_prediction(id)
+            .ok_or(SubscribePredictionStreamError::NotFound)?
+            .subscribe(self)
+    }
+
+    fn cancel_abandoned_stream(&self, id: &str, expected: &Arc<StdMutex<Prediction>>) {
+        let Some(entry) = self.predictions.get(id) else {
+            return;
         };
-        let cancel_on_stream_drop = entry.cancel_on_stream_drop;
-        let id = id.to_string();
-        Ok(PredictionStreamSubscription {
-            id: id.clone(),
-            replay: stream.replay,
-            skipped: stream.skipped,
-            receiver: stream.receiver,
-            guard: PredictionStreamGuard {
-                id,
-                service: Arc::clone(self),
-                cancel_on_stream_drop,
-            },
-        })
+        if !Arc::ptr_eq(&entry.prediction, expected) {
+            return;
+        }
+        let should_cancel = entry
+            .prediction
+            .lock()
+            .map(|prediction| prediction.stream_receiver_count() == 0 && !prediction.is_terminal())
+            .unwrap_or(false);
+        if !should_cancel {
+            return;
+        }
+
+        entry.cancel_token.cancel();
+        let orchestrator = match self.orchestrator.try_read() {
+            Ok(guard) => guard.as_ref().map(|state| Arc::clone(&state.orchestrator)),
+            Err(_) => {
+                tracing::warn!(prediction_id = %id, "Skipped worker cancel: orchestrator lock unavailable");
+                None
+            }
+        };
+        if let Some(orchestrator) = orchestrator {
+            spawn_orchestrator_cancel(orchestrator, Arc::clone(expected));
+        }
     }
 
-    fn stream_receiver_count(&self, id: &str) -> usize {
-        self.predictions
-            .get(id)
-            .and_then(|entry| {
-                entry
-                    .prediction
-                    .lock()
-                    .ok()
-                    .map(|p| p.stream_receiver_count())
-            })
-            .unwrap_or(0)
-    }
+    fn cancel_if_current(&self, id: &str, expected: &Arc<StdMutex<Prediction>>) -> bool {
+        let Some(entry) = self.predictions.get(id) else {
+            return false;
+        };
+        if !Arc::ptr_eq(&entry.prediction, expected) {
+            return false;
+        }
 
-    fn prediction_is_terminal(&self, id: &str) -> bool {
-        self.predictions
-            .get(id)
-            .and_then(|entry| entry.prediction.lock().ok().map(|p| p.is_terminal()))
-            .unwrap_or(true)
+        entry.cancel_token.cancel();
+        let orchestrator = match self.orchestrator.try_read() {
+            Ok(guard) => guard.as_ref().map(|state| Arc::clone(&state.orchestrator)),
+            Err(_) => {
+                tracing::warn!(prediction_id = %id, "Skipped worker cancel: orchestrator lock unavailable");
+                None
+            }
+        };
+        if let Some(orchestrator) = orchestrator {
+            spawn_orchestrator_cancel(orchestrator, Arc::clone(expected));
+        }
+        true
     }
 
     /// Run a prediction to completion via orchestrator.
@@ -709,7 +801,7 @@ impl PredictionService {
         if was_cancelled_before_send
             && let Err(e) = state
                 .orchestrator
-                .cancel_by_prediction_id(&prediction_id)
+                .cancel_prediction(Arc::clone(&prediction_arc))
                 .await
         {
             tracing::error!(
@@ -787,7 +879,7 @@ impl PredictionService {
 
             // Delegate to orchestrator to actually cancel the worker-side prediction.
             // This must be non-blocking since cancel() is sync, so we spawn a task.
-            let id_owned = id.to_string();
+            let prediction = Arc::clone(&entry.prediction);
             let orchestrator = match self.orchestrator.try_read() {
                 Ok(guard) => guard.as_ref().map(|s| Arc::clone(&s.orchestrator)),
                 Err(_) => {
@@ -796,7 +888,7 @@ impl PredictionService {
                 }
             };
             if let Some(orch) = orchestrator {
-                spawn_orchestrator_cancel(orch, id_owned);
+                spawn_orchestrator_cancel(orch, prediction);
             }
             true
         } else {
@@ -980,13 +1072,16 @@ fn prepare_slot_request(
     .map_err(|e| format!("Failed to build slot request: {e}"))
 }
 
-fn spawn_orchestrator_cancel(orch: Arc<dyn Orchestrator>, id: String) {
+fn spawn_orchestrator_cancel(orch: Arc<dyn Orchestrator>, prediction: Arc<StdMutex<Prediction>>) {
+    let id = try_lock_prediction(&prediction)
+        .map(|prediction| prediction.id().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
     let Ok(handle) = tokio::runtime::Handle::try_current() else {
         tracing::warn!(prediction_id = %id, "No tokio runtime available to cancel prediction");
         return;
     };
     handle.spawn(async move {
-        if let Err(e) = orch.cancel_by_prediction_id(&id).await {
+        if let Err(e) = orch.cancel_prediction(prediction).await {
             tracing::error!(
                 prediction_id = %id,
                 error = %e,
@@ -1092,9 +1187,9 @@ mod tests {
             }
         }
 
-        async fn cancel_by_prediction_id(
+        async fn cancel_prediction(
             &self,
-            _prediction_id: &str,
+            _prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
         ) -> Result<(), crate::orchestrator::OrchestratorError> {
             Ok(())
         }
@@ -1136,9 +1231,9 @@ mod tests {
         ) {
         }
 
-        async fn cancel_by_prediction_id(
+        async fn cancel_prediction(
             &self,
-            _prediction_id: &str,
+            _prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
         ) -> Result<(), crate::orchestrator::OrchestratorError> {
             self.cancel_count.fetch_add(1, Ordering::SeqCst);
             Ok(())
@@ -1157,14 +1252,12 @@ mod tests {
 
     struct CancelRecordingOrchestrator {
         cancel_count: AtomicUsize,
-        prediction: std::sync::Mutex<Option<Arc<std::sync::Mutex<crate::prediction::Prediction>>>>,
     }
 
     impl CancelRecordingOrchestrator {
         fn new() -> Self {
             Self {
                 cancel_count: AtomicUsize::new(0),
-                prediction: std::sync::Mutex::new(None),
             }
         }
 
@@ -1178,21 +1271,18 @@ mod tests {
         async fn register_prediction(
             &self,
             slot_id: SlotId,
-            prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
+            _prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
             idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
         ) {
-            *self.prediction.lock().unwrap() = Some(prediction);
             let _ = idle_sender.send(InactiveSlotIdleToken::new(slot_id).activate());
         }
 
-        async fn cancel_by_prediction_id(
+        async fn cancel_prediction(
             &self,
-            _prediction_id: &str,
+            prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
         ) -> Result<(), crate::orchestrator::OrchestratorError> {
             self.cancel_count.fetch_add(1, Ordering::SeqCst);
-            if let Some(prediction) = self.prediction.lock().unwrap().as_ref() {
-                prediction.lock().unwrap().set_canceled();
-            }
+            prediction.lock().unwrap().set_canceled();
             Ok(())
         }
 
@@ -1558,6 +1648,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dropping_stale_stream_subscription_does_not_cancel_reused_id() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(2).await;
+        let orchestrator = Arc::new(CountingCancelOrchestrator::new());
+        let orchestrator_ref = Arc::clone(&orchestrator);
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (_old_handle, _old_slot) = svc
+            .submit_prediction(
+                "reused-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let old_subscription = svc.subscribe_prediction_stream("reused-stream").unwrap();
+        svc.remove_prediction("reused-stream");
+
+        let (new_handle, _new_slot) = svc
+            .submit_prediction(
+                "reused-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        drop(old_subscription);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+
+        assert!(!new_handle.cancel_token().is_cancelled());
+        assert_eq!(orchestrator_ref.cancel_count(), 0);
+    }
+
+    #[tokio::test]
     async fn submit_returns_at_capacity_when_no_slots() {
         let svc = PredictionService::new_no_pool();
         let pool = create_test_pool(1).await;
@@ -1840,6 +1968,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stale_sync_guard_does_not_cancel_reused_id() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(2).await;
+        let orchestrator = Arc::new(CountingCancelOrchestrator::new());
+        let orchestrator_ref = Arc::clone(&orchestrator);
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (old_handle, _old_slot) = svc
+            .submit_prediction(
+                "reused-sync".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        let old_guard = old_handle.sync_guard(Arc::clone(&svc));
+        svc.remove_prediction("reused-sync");
+
+        let (new_handle, _new_slot) = svc
+            .submit_prediction(
+                "reused-sync".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        drop(old_guard);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+
+        assert!(!new_handle.cancel_token().is_cancelled());
+        assert_eq!(orchestrator_ref.cancel_count(), 0);
+    }
+
+    #[tokio::test]
     async fn sync_guard_disarm_prevents_cancel() {
         let svc = Arc::new(PredictionService::new_no_pool());
         let pool = create_test_pool(1).await;
@@ -2074,7 +2240,7 @@ mod tests {
             )
             .await;
 
-        assert!(matches!(result, Err(CreatePredictionError::DuplicateId)));
+        assert!(matches!(result, Err(CreatePredictionError::DuplicateId(_))));
         assert_eq!(pool.available(), 1, "duplicate must not consume a permit");
 
         let unrelated = svc
@@ -2116,7 +2282,7 @@ mod tests {
         while let Some(result) = submits.join_next().await {
             match result.unwrap() {
                 Ok(()) => admitted += 1,
-                Err(CreatePredictionError::DuplicateId) => duplicates += 1,
+                Err(CreatePredictionError::DuplicateId(_)) => duplicates += 1,
                 Err(e) => panic!("unexpected submit error: {e}"),
             }
         }

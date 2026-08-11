@@ -22,8 +22,8 @@ use crate::health::{HealthResponse, SetupResult};
 use crate::prediction::SharedPredictionStreamEvent;
 use crate::predictor::PredictionError;
 use crate::service::{
-    CreatePredictionError, HealthSnapshot, PredictionService, PredictionStreamSubscription,
-    SubscribePredictionStreamError, validate_prediction_id,
+    CreatePredictionError, ExistingPrediction, HealthSnapshot, PredictionService,
+    PredictionStreamSubscription, SubscribePredictionStreamError, validate_prediction_id,
 };
 use crate::version::VersionInfo;
 use crate::webhook::{TraceContext, WebhookConfig, WebhookEventType, WebhookSender};
@@ -361,6 +361,7 @@ async fn create_prediction(
         response_mode,
         trace_context,
         false,
+        false,
     )
     .await
 }
@@ -391,16 +392,16 @@ async fn create_prediction_idempotent(
 
     let response_mode = prediction_response_mode(&headers);
 
-    // Check if prediction with this ID is already in-flight
-    if let Some(response) = service.get_prediction_response(&prediction_id) {
-        if response_mode == PredictionResponseMode::AsyncSse {
-            if !service.supports_prediction_streaming().await {
-                return streaming_not_supported_response();
-            }
-            return stream_prediction_response(service, &prediction_id);
-        }
-        return (StatusCode::ACCEPTED, Json(response)).into_response();
+    // Check if prediction with this ID is already in-flight.
+    if let Some(existing) = service.get_existing_prediction(&prediction_id)
+        && let Some(response) =
+            existing_idempotent_response(Arc::clone(&service), existing, response_mode).await
+    {
+        return response;
     }
+
+    #[cfg(test)]
+    service.wait_idempotent_pre_submit_barrier().await;
 
     let trace_context = extract_trace_context(&headers);
     create_prediction_with_id(
@@ -413,8 +414,28 @@ async fn create_prediction_idempotent(
         response_mode,
         trace_context,
         false,
+        true,
     )
     .await
+}
+
+async fn existing_idempotent_response(
+    service: Arc<PredictionService>,
+    existing: ExistingPrediction,
+    response_mode: PredictionResponseMode,
+) -> Option<Response> {
+    if response_mode == PredictionResponseMode::AsyncSse {
+        if !service.supports_prediction_streaming().await {
+            return Some(streaming_not_supported_response());
+        }
+        let subscription = match existing.subscribe(&service) {
+            Ok(subscription) => subscription,
+            Err(error) => return Some(stream_subscription_error_response(error)),
+        };
+        return Some(stream_prediction_subscription_response(subscription));
+    }
+    let response = existing.response()?;
+    Some((StatusCode::ACCEPTED, Json(response)).into_response())
 }
 
 fn build_webhook_sender(
@@ -452,6 +473,7 @@ async fn create_prediction_with_id(
     response_mode: PredictionResponseMode,
     trace_context: TraceContext,
     is_training: bool,
+    is_idempotent: bool,
 ) -> Response {
     if !is_training
         && response_mode == PredictionResponseMode::AsyncSse
@@ -530,7 +552,14 @@ async fn create_prediction_with_id(
             )
                 .into_response();
         }
-        Err(CreatePredictionError::DuplicateId) => {
+        Err(CreatePredictionError::DuplicateId(existing)) => {
+            if is_idempotent
+                && let Some(response) =
+                    existing_idempotent_response(Arc::clone(&service), existing, response_mode)
+                        .await
+            {
+                return response;
+            }
             return (
                 StatusCode::CONFLICT,
                 Json(serde_json::json!({
@@ -805,15 +834,6 @@ fn prediction_sse_stream(
     )
 }
 
-fn stream_prediction_response(service: Arc<PredictionService>, prediction_id: &str) -> Response {
-    let subscription = match service.subscribe_prediction_stream(prediction_id) {
-        Ok(subscription) => subscription,
-        Err(error) => return stream_subscription_error_response(error),
-    };
-
-    stream_prediction_subscription_response(subscription)
-}
-
 fn stream_subscription_error_response(error: SubscribePredictionStreamError) -> Response {
     match error {
         SubscribePredictionStreamError::NotFound => (
@@ -897,6 +917,7 @@ async fn create_training(
         response_mode,
         trace_context,
         true,
+        false,
     )
     .await
 }
@@ -927,10 +948,20 @@ async fn create_training_idempotent(
         return invalid_prediction_id_response(&message);
     }
 
-    // Idempotent: return existing state if already submitted
-    if let Some(response) = service.get_prediction_response(&training_id) {
-        return (StatusCode::ACCEPTED, Json(response)).into_response();
+    // Idempotent: return existing state if already submitted.
+    if let Some(existing) = service.get_existing_prediction(&training_id)
+        && let Some(response) = existing_idempotent_response(
+            Arc::clone(&service),
+            existing,
+            PredictionResponseMode::AsyncJson,
+        )
+        .await
+    {
+        return response;
     }
+
+    #[cfg(test)]
+    service.wait_idempotent_pre_submit_barrier().await;
 
     let response_mode = json_response_mode(&headers);
     let trace_context = extract_trace_context(&headers);
@@ -943,6 +974,7 @@ async fn create_training_idempotent(
         request.webhook_events_filter,
         response_mode,
         trace_context,
+        true,
         true,
     )
     .await
@@ -1136,9 +1168,9 @@ mod tests {
             }
         }
 
-        async fn cancel_by_prediction_id(
+        async fn cancel_prediction(
             &self,
-            _prediction_id: &str,
+            _prediction: Arc<StdMutex<crate::prediction::Prediction>>,
         ) -> Result<(), crate::orchestrator::OrchestratorError> {
             Ok(())
         }
@@ -1186,6 +1218,15 @@ mod tests {
         service.set_orchestrator(pool, orchestrator).await;
         service.set_health(Health::Ready).await;
         service
+    }
+
+    async fn create_never_completing_service() -> (Arc<PredictionService>, Arc<MockOrchestrator>) {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(2).await;
+        let orchestrator = Arc::new(MockOrchestrator::never_complete());
+        service.set_orchestrator(pool, orchestrator.clone()).await;
+        service.set_health(Health::Ready).await;
+        (service, orchestrator)
     }
 
     async fn enable_prediction_streaming(service: &PredictionService) {
@@ -1607,6 +1648,82 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn concurrent_prediction_idempotent_puts_return_the_existing_prediction() {
+        let (service, orchestrator) = create_never_completing_service().await;
+        service
+            .set_idempotent_pre_submit_barrier(Arc::new(tokio::sync::Barrier::new(2)))
+            .await;
+        let app = routes(service);
+        let first = app.clone().oneshot(
+            Request::put("/predictions/idempotent-race")
+                .header("content-type", "application/json")
+                .header("prefer", "respond-async")
+                .body(Body::from(r#"{"input":{}}"#))
+                .unwrap(),
+        );
+        let second = app.oneshot(
+            Request::put("/predictions/idempotent-race")
+                .header("content-type", "application/json")
+                .header("prefer", "respond-async")
+                .body(Body::from(r#"{"input":{}}"#))
+                .unwrap(),
+        );
+
+        let (first, second) = tokio::join!(first, second);
+
+        let first = first.unwrap();
+        let second = second.unwrap();
+        assert_eq!(first.status(), StatusCode::ACCEPTED);
+        assert_eq!(second.status(), StatusCode::ACCEPTED);
+        let first = response_json(first).await;
+        let second = response_json(second).await;
+        assert_eq!(first["id"], "idempotent-race");
+        assert_eq!(second["id"], "idempotent-race");
+        assert_ne!(first["status"], "failed");
+        assert_ne!(second["status"], "failed");
+
+        tokio::time::timeout(Duration::from_millis(100), async {
+            while orchestrator.register_count.load(Ordering::SeqCst) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(orchestrator.register_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn idempotent_duplicate_reservation_returns_the_existing_response() {
+        let (service, _orchestrator) = create_never_completing_service().await;
+
+        for (id, is_training) in [
+            ("prediction-duplicate", false),
+            ("training-duplicate", true),
+        ] {
+            let (_handle, _slot) = service
+                .submit_prediction(id.to_string(), serde_json::json!({}), None, false)
+                .await
+                .unwrap();
+
+            let response = create_prediction_with_id(
+                Arc::clone(&service),
+                id.to_string(),
+                serde_json::json!({}),
+                Default::default(),
+                None,
+                default_webhook_events_filter(),
+                PredictionResponseMode::AsyncJson,
+                TraceContext::default(),
+                is_training,
+                true,
+            )
+            .await;
+
+            assert_eq!(response.status(), StatusCode::ACCEPTED);
+        }
+    }
+
+    #[tokio::test]
     async fn prediction_idempotent_id_mismatch() {
         let service = create_ready_service().await;
         let app = routes(service);
@@ -1904,6 +2021,51 @@ mod tests {
         let json = response_json(response).await;
         assert_eq!(json["id"], "train-123");
         assert_eq!(json["status"], "succeeded");
+    }
+
+    #[tokio::test]
+    async fn concurrent_training_idempotent_puts_return_the_existing_training() {
+        let (service, orchestrator) = create_never_completing_service().await;
+        service
+            .set_idempotent_pre_submit_barrier(Arc::new(tokio::sync::Barrier::new(2)))
+            .await;
+        let app = routes(service);
+        let first = app.clone().oneshot(
+            Request::put("/trainings/idempotent-race")
+                .header("content-type", "application/json")
+                .header("prefer", "respond-async")
+                .body(Body::from(r#"{"input":{}}"#))
+                .unwrap(),
+        );
+        let second = app.oneshot(
+            Request::put("/trainings/idempotent-race")
+                .header("content-type", "application/json")
+                .header("prefer", "respond-async")
+                .body(Body::from(r#"{"input":{}}"#))
+                .unwrap(),
+        );
+
+        let (first, second) = tokio::join!(first, second);
+
+        let first = first.unwrap();
+        let second = second.unwrap();
+        assert_eq!(first.status(), StatusCode::ACCEPTED);
+        assert_eq!(second.status(), StatusCode::ACCEPTED);
+        let first = response_json(first).await;
+        let second = response_json(second).await;
+        assert_eq!(first["id"], "idempotent-race");
+        assert_eq!(second["id"], "idempotent-race");
+        assert_ne!(first["status"], "failed");
+        assert_ne!(second["status"], "failed");
+
+        tokio::time::timeout(Duration::from_millis(100), async {
+            while orchestrator.register_count.load(Ordering::SeqCst) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(orchestrator.register_count.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

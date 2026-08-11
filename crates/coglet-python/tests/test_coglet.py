@@ -1,6 +1,7 @@
 """Tests for coglet Python bindings."""
 
 import base64
+import json
 import queue
 import re
 import socket
@@ -10,6 +11,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import quote, urlsplit
 
 import coglet
 import pytest
@@ -198,6 +200,49 @@ class Predictor(BasePredictor):
 predict: "predict.py:Predictor"
 """)
 
+    return predictor
+
+
+@pytest.fixture
+def blocking_path_generator_predictor(tmp_path: Path) -> Path:
+    """Create a streaming predictor that blocks after yielding a Path."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import tempfile
+import time
+from pathlib import Path
+from typing import Iterator
+
+import cog
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    @cog.streaming
+    def predict(self, release_path: str) -> Iterator[Path]:
+        output = Path(tempfile.mkdtemp()) / "result.txt"
+        output.write_text("streamed file")
+        yield output
+        while not Path(release_path).exists():
+            time.sleep(0.01)
+""")
+    (tmp_path / "cog.yaml").write_text('predict: "predict.py:Predictor"\n')
+    schema_dir = tmp_path / ".cog"
+    schema_dir.mkdir()
+    (schema_dir / "openapi_schema.json").write_text(
+        json.dumps({
+            "paths": {"/predictions": {"post": {"x-cog-streaming": True}}},
+            "components": {
+                "schemas": {
+                    "Input": {
+                        "type": "object",
+                        "properties": {"release_path": {"type": "string"}},
+                        "required": ["release_path"],
+                    },
+                    "Output": {"type": "array", "items": {"type": "string"}},
+                }
+            },
+        })
+    )
     return predictor
 
 
@@ -416,7 +461,7 @@ class Output(BaseModel):
 
 class Predictor(BasePredictor):
     def predict(self, text: str = "nested") -> Output:
-        output = Path(tempfile.mkdtemp()) / "result.txt"
+        output = Path(tempfile.mkdtemp()) / "result?draft.txt"
         output.write_text(text)
         (Path(__file__).parent / "returned_path.txt").write_text(str(output))
         return Output(artifact=output, metadata={"label": "kept"})
@@ -437,7 +482,7 @@ def upload_server():
             self.send_response(200)
             self.send_header(
                 "Location",
-                f"http://127.0.0.1:{self.server.server_port}{self.path}",
+                f"http://127.0.0.1:{self.server.server_port}{quote(urlsplit(self.path).path, safe='/%')}",
             )
             self.send_header("Content-Length", "0")
             self.end_headers()
@@ -656,8 +701,8 @@ class TestPathOutput:
 
         assert result["status"] == "succeeded", result
         assert result["output"]["metadata"] == {"label": "kept"}
-        assert result["output"]["artifact"].endswith("/upload/result.txt")
-        assert uploads == [("/upload/result.txt", b"structured bytes")]
+        assert result["output"]["artifact"].endswith("/upload/result%3Fdraft.txt")
+        assert uploads == [("/upload/result%3Fdraft.txt", b"structured bytes")]
         returned = Path(
             (structured_path_output_predictor.parent / "returned_path.txt").read_text()
         )
@@ -737,6 +782,53 @@ class TestGeneratorPredictor:
         with CogletServer(generator_predictor) as server:
             result = server.predict({"count": 5})
             assert len(result["output"]) == 5
+
+    def test_path_output_streams_before_prediction_completes(
+        self,
+        blocking_path_generator_predictor: Path,
+        upload_server,
+    ):
+        upload_url, _uploads = upload_server
+        release_path = blocking_path_generator_predictor.parent / "release"
+
+        with CogletServer(
+            blocking_path_generator_predictor, upload_url=upload_url
+        ) as server:
+            response = requests.post(
+                f"{server.base_url}/predictions",
+                headers={"Accept": "text/event-stream"},
+                json={"input": {"release_path": str(release_path)}},
+                stream=True,
+                timeout=(3, 5),
+            )
+            response.raise_for_status()
+            events = response.iter_lines(decode_unicode=True)
+            event_name = None
+            output = None
+            try:
+                for line in events:
+                    if line.startswith("event: "):
+                        event_name = line.removeprefix("event: ")
+                    elif line.startswith("data: ") and event_name == "output":
+                        output = json.loads(line.removeprefix("data: "))
+                        break
+
+                assert output is not None, "SSE stream ended before the file output"
+                assert output["index"] == 0
+                assert output["chunk"].endswith("/upload/result.txt")
+                assert not release_path.exists()
+            finally:
+                release_path.touch()
+
+            completed = None
+            for line in events:
+                if line.startswith("event: "):
+                    event_name = line.removeprefix("event: ")
+                elif line.startswith("data: ") and event_name == "completed":
+                    completed = json.loads(line.removeprefix("data: "))
+                    break
+            assert completed is not None
+            assert completed["status"] == "succeeded"
 
 
 class TestAsyncPredictor:
