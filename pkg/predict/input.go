@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -23,6 +22,7 @@ type Input struct {
 	Json   *json.RawMessage
 	Float  *float32
 	Int    *int32
+	Bool   *bool
 }
 
 type Inputs map[string]Input
@@ -33,139 +33,34 @@ func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain b
 		schemaKey = "TrainingInput"
 	}
 	var inputComponent *openapi3.SchemaRef
-	for name, component := range schema.Components.Schemas {
-		if name == schemaKey {
-			inputComponent = component
-			break
-		}
-	}
-	// Fallback: if TrainingInput not found, try Input (legacy schemas)
-	if inputComponent == nil && isTrain {
-		for name, component := range schema.Components.Schemas {
-			if name == "Input" {
-				inputComponent = component
-				break
-			}
+	if schema != nil && schema.Components != nil {
+		inputComponent = schema.Components.Schemas[schemaKey]
+		// Fallback: if TrainingInput not found, try Input (legacy schemas)
+		if inputComponent == nil && isTrain {
+			inputComponent = schema.Components.Schemas["Input"]
 		}
 	}
 
 	input := Inputs{}
 	for key, vals := range keyVals {
+		// Resolve allOf/$ref to find the actual type. cog-schema-gen emits
+		// allOf:[{$ref: ...}] for choices/enums, where the referenced schema
+		// has the concrete type.
+		originalSchema := lookupPropertySchema(inputComponent, key)
+
 		if len(vals) == 1 {
-			val := vals[0]
-			if strings.HasPrefix(val, "@") {
-				val = val[1:]
-				input[key] = Input{File: &val}
-			} else {
-				// Check if we should explicitly parse the JSON based on a known schema
-				if inputComponent != nil {
-					properties, err := inputComponent.JSONLookup("properties")
-					if err != nil {
-						return input, err
-					}
-					propertiesSchemas := properties.(openapi3.Schemas)
-					property, err := propertiesSchemas.JSONLookup(key)
-					if err == nil {
-						originalSchema := property.(*openapi3.Schema)
-						// Resolve allOf/$ref to find the actual type.
-						// cog-schema-gen emits allOf:[{$ref: ...}] for choices/enums,
-						// where the referenced schema has the concrete type.
-						propertySchema := resolveSchemaType(originalSchema)
-						switch {
-						case propertySchema.Type.Is("object"):
-							encodedVal := json.RawMessage(val)
-							input[key] = Input{Json: &encodedVal}
-							continue
-						case propertySchema.Type.Is("array"):
-							var parsed any
-							err := json.Unmarshal([]byte(val), &parsed)
-							if err == nil {
-								t := reflect.TypeOf(parsed)
-								if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
-									encodedVal := json.RawMessage(val)
-									input[key] = Input{Json: &encodedVal}
-									continue
-								}
-							}
-							var arr = []any{val}
-							input[key] = Input{Array: &arr}
-							continue
-						case propertySchema.Type.Is("number"):
-							value, err := strconv.ParseInt(val, 10, 32)
-							if err == nil {
-								valueInt := int32(value)
-								input[key] = Input{Int: &valueInt}
-								continue
-							} else {
-								value, err := strconv.ParseFloat(val, 32)
-								if err != nil {
-									// For a union like `float | str` the schema
-									// resolves to the numeric member first; a
-									// non-numeric value should fall back to the
-									// string member instead of erroring.
-									if schemaAcceptsString(originalSchema) {
-										break
-									}
-									return input, err
-								}
-								float := float32(value)
-								input[key] = Input{Float: &float}
-								continue
-							}
-						case propertySchema.Type.Is("integer"):
-							value, err := strconv.ParseInt(val, 10, 32)
-							if err != nil {
-								// For a union like `int | float` the schema
-								// resolves to the integer member first; a
-								// fractional value should fall back to the float
-								// member instead of erroring.
-								if schemaAcceptsFloat(originalSchema) {
-									if value, err := strconv.ParseFloat(val, 32); err == nil {
-										float := float32(value)
-										input[key] = Input{Float: &float}
-										continue
-									}
-								}
-								// See the number case above: fall back to a string
-								// member for unions such as `int | str`.
-								if schemaAcceptsString(originalSchema) {
-									break
-								}
-								return input, err
-							}
-							valueInt := int32(value)
-							input[key] = Input{Int: &valueInt}
-							continue
-						case schemaAcceptsNumber(originalSchema):
-							// Union input (anyOf) that includes a numeric member, e.g.
-							// `str | float`. Parse numeric-looking values as numbers so
-							// the runtime receives the intended type; otherwise fall
-							// through to the string member below.
-							if value, err := strconv.ParseInt(val, 10, 32); err == nil {
-								valueInt := int32(value)
-								input[key] = Input{Int: &valueInt}
-								continue
-							}
-							// Only parse fractional values as float when the
-							// union actually accepts a float member; otherwise a
-							// value like `1.5` for `str | int` must fall back to
-							// the string member below.
-							if schemaAcceptsFloat(originalSchema) {
-								if value, err := strconv.ParseFloat(val, 32); err == nil {
-									float := float32(value)
-									input[key] = Input{Float: &float}
-									continue
-								}
-							}
-						}
-					}
-				}
-				input[key] = Input{String: &val}
-			}
-		} else if len(vals) > 1 {
-			var anyVals = make([]any, len(vals))
+			input[key] = newSingleInput(vals[0], originalSchema)
+			continue
+		}
+
+		if len(vals) > 1 {
+			// Repeated `-i name=v` flags form an array; coerce each element to
+			// the array's item type so numeric/boolean arrays pass validation
+			// and reach the runtime with the intended types.
+			itemSchema := arrayItemSchema(originalSchema)
+			anyVals := make([]any, len(vals))
 			for i, v := range vals {
-				anyVals[i] = v
+				anyVals[i] = coerceScalarValue(v, itemSchema)
 			}
 			input[key] = Input{Array: &anyVals}
 		}
@@ -173,9 +68,66 @@ func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain b
 	return input, nil
 }
 
-func (inputs *Inputs) toMap() (map[string]any, error) {
+func newSingleInput(value string, schema *openapi3.Schema) Input {
+	if strings.HasPrefix(value, "@") {
+		file := value[1:]
+		return Input{File: &file}
+	}
+	if schema == nil {
+		return Input{String: &value}
+	}
+
+	resolved := resolveSchemaType(schema)
+	switch {
+	case resolved.Type != nil && resolved.Type.Is("object"):
+		raw := json.RawMessage(value)
+		return Input{Json: &raw}
+	case resolved.Type != nil && resolved.Type.Is("array"):
+		return newSingleArrayInput(value, schema)
+	default:
+		return newScalarInput(value, schema)
+	}
+}
+
+func newSingleArrayInput(value string, schema *openapi3.Schema) Input {
+	var array []any
+	if err := json.Unmarshal([]byte(value), &array); err == nil && array != nil {
+		raw := json.RawMessage(value)
+		return Input{Json: &raw}
+	}
+	if schemaAcceptsString(schema) && scalarCandidateIsValid(value, schema) {
+		return Input{String: &value}
+	}
+
+	array = []any{coerceScalarValue(value, arrayItemSchema(schema))}
+	if schemaAcceptsString(schema) && !scalarCandidateIsValid(array, schema) {
+		return Input{String: &value}
+	}
+	return Input{Array: &array}
+}
+
+func newScalarInput(value string, schema *openapi3.Schema) Input {
+	switch coerced := coerceScalarValue(value, schema).(type) {
+	case bool:
+		return Input{Bool: &coerced}
+	case int32:
+		return Input{Int: &coerced}
+	case float32:
+		return Input{Float: &coerced}
+	default:
+		return Input{String: &value}
+	}
+}
+
+func (inputs Inputs) toMap() (map[string]any, error) {
+	keyVals, _, err := inputs.materialize()
+	return keyVals, err
+}
+
+func (inputs Inputs) materialize() (map[string]any, Inputs, error) {
 	keyVals := map[string]any{}
-	for key, input := range *inputs {
+	materializedFiles := Inputs{}
+	for key, input := range inputs {
 		switch {
 		case input.String != nil:
 			// Directly assign the string value
@@ -184,35 +136,42 @@ func (inputs *Inputs) toMap() (map[string]any, error) {
 			// Single file handling: read content and convert to a data URL
 			dataURL, err := fileToDataURL(*input.File)
 			if err != nil {
-				return keyVals, err
+				return nil, nil, fmt.Errorf("input %q: %w", key, err)
 			}
 			keyVals[key] = dataURL
+			materializedFiles[key] = Input{String: &dataURL}
 		case input.Array != nil:
-			// Handle array, potentially containing file paths
-			dataURLs := make([]string, len(*input.Array))
+			// Handle array elements, which may be file paths (strings prefixed
+			// with '@') or values already coerced to their schema type.
+			values := make([]any, len(*input.Array))
+			hasFile := false
 			for i, elem := range *input.Array {
 				if str, ok := elem.(string); ok && strings.HasPrefix(str, "@") {
-					filePath := str[1:] // Remove '@' prefix
-					dataURL, err := fileToDataURL(filePath)
+					dataURL, err := fileToDataURL(str[1:]) // strip '@' prefix
 					if err != nil {
-						return keyVals, err
+						return nil, nil, fmt.Errorf("input %q: %w", key, err)
 					}
-					dataURLs[i] = dataURL
-				} else if ok {
-					// Directly use the string if it's not a file path
-					dataURLs[i] = str
+					values[i] = dataURL
+					hasFile = true
+					continue
 				}
+				values[i] = elem
 			}
-			keyVals[key] = dataURLs
+			keyVals[key] = values
+			if hasFile {
+				materializedFiles[key] = Input{Array: &values}
+			}
 		case input.Json != nil:
 			keyVals[key] = *input.Json
 		case input.Float != nil:
 			keyVals[key] = *input.Float
 		case input.Int != nil:
 			keyVals[key] = *input.Int
+		case input.Bool != nil:
+			keyVals[key] = *input.Bool
 		}
 	}
-	return keyVals, nil
+	return keyVals, materializedFiles, nil
 }
 
 // Helper function to read file content and convert to a data URL
@@ -237,23 +196,7 @@ func fileToDataURL(filePath string) (string, error) {
 // string member when a numeric parse fails for unions such as `float | str`,
 // where resolveSchemaType resolves to the numeric member.
 func schemaAcceptsString(s *openapi3.Schema) bool {
-	if s == nil {
-		return false
-	}
-	if s.Type != nil && s.Type.Is("string") {
-		return true
-	}
-	for _, ref := range s.AnyOf {
-		if ref.Value != nil && schemaAcceptsString(ref.Value) {
-			return true
-		}
-	}
-	for _, ref := range s.AllOf {
-		if ref.Value != nil && schemaAcceptsString(ref.Value) {
-			return true
-		}
-	}
-	return false
+	return schemaAcceptsTypes(s, "string")
 }
 
 // schemaAcceptsFloat reports whether the schema accepts a floating-point
@@ -262,23 +205,7 @@ func schemaAcceptsString(s *openapi3.Schema) bool {
 // fractional value like `1.5` is valid for unions such as `int | float`
 // (accepts float) versus `str | int` (does not).
 func schemaAcceptsFloat(s *openapi3.Schema) bool {
-	if s == nil {
-		return false
-	}
-	if s.Type != nil && s.Type.Is("number") {
-		return true
-	}
-	for _, ref := range s.AnyOf {
-		if ref.Value != nil && schemaAcceptsFloat(ref.Value) {
-			return true
-		}
-	}
-	for _, ref := range s.AllOf {
-		if ref.Value != nil && schemaAcceptsFloat(ref.Value) {
-			return true
-		}
-	}
-	return false
+	return schemaAcceptsTypes(s, "number")
 }
 
 // schemaAcceptsNumber reports whether the schema accepts a numeric value,
@@ -286,23 +213,142 @@ func schemaAcceptsFloat(s *openapi3.Schema) bool {
 // numeric-looking strings for union inputs such as `str | float`, where
 // resolveSchemaType resolves to a non-numeric member.
 func schemaAcceptsNumber(s *openapi3.Schema) bool {
-	if s == nil {
+	return schemaAcceptsTypes(s, "number", "integer")
+}
+
+// schemaAcceptsBool reports whether the schema accepts a boolean value,
+// including composed schema members.
+func schemaAcceptsBool(s *openapi3.Schema) bool {
+	return schemaAcceptsTypes(s, "boolean")
+}
+
+func schemaAcceptsTypes(schema *openapi3.Schema, types ...string) bool {
+	if schema == nil {
 		return false
 	}
-	if s.Type != nil && (s.Type.Is("number") || s.Type.Is("integer")) {
-		return true
-	}
-	for _, ref := range s.AnyOf {
-		if ref.Value != nil && schemaAcceptsNumber(ref.Value) {
+	for _, schemaType := range types {
+		if schema.Type != nil && schema.Type.Is(schemaType) {
 			return true
 		}
 	}
-	for _, ref := range s.AllOf {
-		if ref.Value != nil && schemaAcceptsNumber(ref.Value) {
-			return true
+	for _, refs := range []openapi3.SchemaRefs{schema.AnyOf, schema.AllOf, schema.OneOf} {
+		for _, ref := range refs {
+			if ref.Value != nil && schemaAcceptsTypes(ref.Value, types...) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+func parseJSONBool(value string) (bool, bool) {
+	switch value {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+// lookupPropertySchema returns the schema for the named input property, or nil
+// when the component is unknown or does not declare that property.
+func lookupPropertySchema(component *openapi3.SchemaRef, key string) *openapi3.Schema {
+	if component == nil || component.Value == nil {
+		return nil
+	}
+	property := component.Value.Properties[key]
+	if property == nil {
+		return nil
+	}
+	return property.Value
+}
+
+// arrayItemSchema returns the item schema of an array property, or nil when the
+// schema is not an array or does not declare items.
+func arrayItemSchema(schema *openapi3.Schema) *openapi3.Schema {
+	if schema == nil {
+		return nil
+	}
+	if schema.Items != nil && schema.Items.Value != nil {
+		return schema.Items.Value
+	}
+	itemSchemas := append(arrayItemSchemas(schema.AnyOf), arrayItemSchemas(schema.OneOf)...)
+	if len(itemSchemas) > 0 {
+		return &openapi3.Schema{AnyOf: itemSchemas}
+	}
+	for _, ref := range schema.AllOf {
+		if ref.Value != nil {
+			if item := arrayItemSchema(ref.Value); item != nil {
+				return item
+			}
+		}
+	}
+	return nil
+}
+
+func arrayItemSchemas(refs openapi3.SchemaRefs) openapi3.SchemaRefs {
+	items := make(openapi3.SchemaRefs, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Value == nil {
+			continue
+		}
+		if item := arrayItemSchema(ref.Value); item != nil {
+			items = append(items, &openapi3.SchemaRef{Value: item})
+		}
+	}
+	return items
+}
+
+// coerceScalarValue converts a raw CLI string to the scalar type described by
+// schema (integer, number, or boolean). It returns the original string when
+// the type is unknown or the value does not parse, leaving type mismatches for
+// validation to report.
+func coerceScalarValue(val string, schema *openapi3.Schema) any {
+	if schema == nil {
+		return val
+	}
+	if b, ok := parseJSONBool(val); ok && schemaAcceptsBool(schema) {
+		if shouldUseScalarCandidate(b, schema) {
+			return b
+		}
+	}
+	if !schemaAcceptsNumber(schema) {
+		return val
+	}
+	if n, err := strconv.ParseInt(val, 10, 32); err == nil {
+		candidate := int32(n)
+		if shouldUseScalarCandidate(candidate, schema) {
+			return candidate
+		}
+	}
+	if !schemaAcceptsFloat(schema) {
+		return val
+	}
+	if f, err := strconv.ParseFloat(val, 32); err == nil {
+		candidate := float32(f)
+		if shouldUseScalarCandidate(candidate, schema) {
+			return candidate
+		}
+	}
+	return val
+}
+
+func shouldUseScalarCandidate(value any, schema *openapi3.Schema) bool {
+	return !schemaAcceptsString(schema) || scalarCandidateIsValid(value, schema)
+}
+
+func scalarCandidateIsValid(value any, schema *openapi3.Schema) bool {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return false
+	}
+	var normalized any
+	if err := json.Unmarshal(data, &normalized); err != nil {
+		return false
+	}
+	return schema.VisitJSON(normalized, openapi3.VisitAsRequest()) == nil
 }
 
 // resolveSchemaType walks through allOf/anyOf/$ref wrappers to find a schema

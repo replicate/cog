@@ -1,0 +1,32 @@
+# Inputs to a pre-built image are validated against the image's embedded schema
+# *before* the container starts. Builds once, then exercises the validation
+# paths (unknown/missing) via both -i and --json. None may start the container.
+
+cog build -t $TEST_IMAGE
+
+# --- Unknown input name (-i and --json) ---
+! cog predict $TEST_IMAGE -i nope=value
+stderr 'unknown input "nope"'
+! stderr 'Starting Docker image and running setup'
+
+! cog predict $TEST_IMAGE --json '{"nope": 1}'
+stderr 'unknown input "nope"'
+! stderr 'Starting Docker image and running setup'
+
+# --- Missing a required input ---
+! cog predict $TEST_IMAGE
+stderr 'missing required input "prompt"'
+! stderr 'Starting Docker image and running setup'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> str:
+        return prompt
