@@ -3,7 +3,6 @@
 
 import builtins
 import typing
-from . import _sdk
 
 __all__ = [
     "BuildInfo",

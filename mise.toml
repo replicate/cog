@@ -174,7 +174,7 @@ run = "cargo build --manifest-path crates/Cargo.toml --workspace --release"
 description = "Build coglet Python wheel (development, local install)"
 run = [
   { task = "_setup_venv" },
-  "maturin develop --manifest-path crates/coglet-python/Cargo.toml",
+  "maturin develop --manifest-path crates/coglet-python/Cargo.toml -i .venv/bin/python",
 ]
 
 [tasks."build:coglet:wheel"]
@@ -187,7 +187,7 @@ run = [
     "_setup_dist",
     "_setup_venv",
   ] },
-  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml",
+  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml -i .venv/bin/python",
 ]
 
 [tasks."build:coglet:wheel:linux-x64"]
@@ -199,7 +199,7 @@ run = [
     "_setup_dist",
     "_setup_venv",
   ] },
-  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig",
+  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig -i .venv/bin/python",
 ]
 
 [tasks."build:coglet:wheel:linux-arm64"]
@@ -211,7 +211,7 @@ run = [
     "_setup_dist",
     "_setup_venv",
   ] },
-  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-unknown-linux-gnu --zig",
+  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-unknown-linux-gnu --zig -i .venv/bin/python",
 ]
 
 [tasks."build:coglet:wheel:darwin-arm64"]
@@ -223,7 +223,7 @@ run = [
     "_setup_dist",
     "_setup_venv",
   ] },
-  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-apple-darwin",
+  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-apple-darwin -i .venv/bin/python",
 ]
 
 [tasks."build:coglet:wheel:darwin-x64"]
@@ -235,7 +235,7 @@ run = [
     "_setup_dist",
     "_setup_venv",
   ] },
-  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-apple-darwin",
+  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-apple-darwin -i .venv/bin/python",
 ]
 
 [tasks."build:coglet:wheel:all"]
