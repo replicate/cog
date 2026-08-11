@@ -163,7 +163,7 @@ description = "Install playground dependencies"
 dir = "playground"
 sources = ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "../mise.toml", "../mise.lock"]
 outputs = ["node_modules/.modules.yaml"]
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
+tools = { node = "24.18.0", pnpm = "11.11.0" }
 run = "pnpm install --frozen-lockfile"
 
 # After changing files under playground/, regenerate the embedded assets with:
@@ -174,7 +174,7 @@ run = "pnpm install --frozen-lockfile"
 description = "Build committed playground assets"
 depends = ["playground:install"]
 dir = "playground"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
+tools = { node = "24.18.0", pnpm = "11.11.0" }
 run = "pnpm run build"
 
 [tasks."build:playground:check"]
@@ -356,7 +356,7 @@ run = "nox -s tests -p 3.13"
 description = "Run playground tests"
 depends = ["playground:install"]
 dir = "playground"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
+tools = { node = "24.18.0", pnpm = "11.11.0" }
 run = "pnpm run test:coverage"
 
 [tasks."test:python:all"]
@@ -490,14 +490,14 @@ run = "ruff format ."
 description = "Check playground formatting"
 depends = ["playground:install"]
 dir = "playground"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
+tools = { node = "24.18.0", pnpm = "11.11.0" }
 run = "pnpm run fmt:check"
 
 [tasks."fmt:playground:fix"]
 description = "Format playground code"
 depends = ["playground:install"]
 dir = "playground"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
+tools = { node = "24.18.0", pnpm = "11.11.0" }
 run = "pnpm run fmt"
 
 # Docs formatting
@@ -587,14 +587,14 @@ run = "ruff check --fix ."
 description = "Lint playground code"
 depends = ["playground:install"]
 dir = "playground"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
+tools = { node = "24.18.0", pnpm = "11.11.0" }
 run = "pnpm run lint"
 
 [tasks."lint:playground:fix"]
 description = "Fix playground lint issues"
 depends = ["playground:install"]
 dir = "playground"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
+tools = { node = "24.18.0", pnpm = "11.11.0" }
 run = "pnpm run lint:fix"
 
 # =============================================================================
@@ -617,7 +617,7 @@ run = "nox -s typecheck"
 description = "Type check playground code"
 depends = ["playground:install"]
 dir = "playground"
-tools = { node = "24.18.0", "npm:pnpm" = "11.11.0" }
+tools = { node = "24.18.0", pnpm = "11.11.0" }
 run = "pnpm run typecheck"
 
 # =============================================================================
