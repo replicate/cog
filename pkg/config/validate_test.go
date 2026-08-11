@@ -22,6 +22,20 @@ func TestValidateConfigFile(t *testing.T) {
 	require.False(t, result.HasErrors(), "expected no errors, got: %v", result.Errors)
 }
 
+func TestValidateConfigFileIgnoresLocalArtifactPackageNames(t *testing.T) {
+	cfg := &configFile{
+		Build: &buildFile{
+			GPU:            new(true),
+			PythonVersion:  new("3.10"),
+			PythonPackages: []string{"tensorflow==2.15.0 source.tar.gz"},
+			CUDA:           new("11.8"),
+		},
+	}
+
+	result := ValidateConfigFile(cfg)
+	require.False(t, result.HasErrors(), "expected no errors, got: %v", result.Errors)
+}
+
 func TestValidateConfigFileSuccess(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
