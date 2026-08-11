@@ -328,12 +328,12 @@ A simplified example showing a multi-file predictor with structured output:
 
 ## Code References
 
-| File                        | Purpose                                                              |
-| --------------------------- | -------------------------------------------------------------------- |
-| `pkg/schema/schema_type.go` | `SchemaType` ADT, `ResolveSchemaType()`, `JSONSchema()` generation   |
-| `pkg/schema/types.go`       | `PredictorInfo`, `PrimitiveType`, `FieldType`, `InputField`, imports |
-| `pkg/schema/python/`        | Tree-sitter Python parser and cross-file resolution                  |
-| `pkg/schema/openapi.go`     | OpenAPI document assembly from `PredictorInfo`                       |
-| `pkg/schema/generator.go`   | Top-level `Generate()`, `GenerateCombined()`, `Parser` type          |
-| `pkg/schema/errors.go`      | Typed schema error kinds                                             |
-| `pkg/image/build.go`        | Build-time schema generation entry point and schema file validation  |
+| File                         | Purpose                                                              |
+| ---------------------------- | -------------------------------------------------------------------- |
+| `pkg/schema/schema_type.go`  | `SchemaType` ADT, `ResolveSchemaType()`, `JSONSchema()` generation   |
+| `pkg/schema/types.go`        | `PredictorInfo`, `PrimitiveType`, `FieldType`, `InputField`, imports |
+| `pkg/schema/python/`         | Tree-sitter Python parser and cross-file resolution                  |
+| `pkg/schema/openapi_spec.go` | OpenAPI document assembly from `PredictorInfo`                       |
+| `pkg/schema/generator.go`    | Top-level `Generate()`, `GenerateCombined()`, `Parser` type          |
+| `pkg/schema/errors.go`       | Typed schema error kinds                                             |
+| `pkg/image/build.go`         | Build-time schema generation entry point and schema file validation  |

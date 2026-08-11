@@ -147,6 +147,145 @@ func TestNewInputsForMode_UnionIntFloatAndStrInt(t *testing.T) {
 	}
 }
 
+func TestNewInputsForMode_UnionParsesBool(t *testing.T) {
+	t.Parallel()
+
+	for _, types := range [][]string{{"string", "boolean"}, {"boolean", "string"}} {
+		for _, val := range []string{"true", "false"} {
+			schema := unionInputSchemaOf(types...)
+			inputs, err := NewInputsForMode(map[string][]string{"value": {val}}, schema, false)
+			require.NoError(t, err)
+			require.NotNil(t, inputs["value"].Bool)
+			require.Equal(t, val == "true", *inputs["value"].Bool)
+		}
+	}
+}
+
+func TestNewInputsForMode_MixedNumericBoolUnion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		types []string
+		val   string
+		want  any
+	}{
+		{name: "int before bool parses bool", types: []string{"integer", "boolean"}, val: "true", want: true},
+		{name: "bool before int parses int", types: []string{"boolean", "integer"}, val: "1", want: int32(1)},
+		{name: "bool before float parses float", types: []string{"boolean", "number"}, val: "1.5", want: float32(1.5)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inputs, err := NewInputsForMode(map[string][]string{"value": {tt.val}}, unionInputSchemaOf(tt.types...), false)
+			require.NoError(t, err)
+			got, err := inputs.toMap()
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got["value"])
+		})
+	}
+}
+
+func TestNewInputsForMode_BoolUnionDoesNotParseAliases(t *testing.T) {
+	t.Parallel()
+
+	schema := unionInputSchemaOf("string", "boolean")
+	for _, val := range []string{"1", "0", "t", "f", "TRUE"} {
+		inputs, err := NewInputsForMode(map[string][]string{"value": {val}}, schema, false)
+		require.NoError(t, err)
+		require.NotNil(t, inputs["value"].String)
+		require.Equal(t, val, *inputs["value"].String)
+	}
+}
+
+func TestNewInputsForMode_ArrayUnionCoercesItem(t *testing.T) {
+	t.Parallel()
+
+	arraySchema := func(itemType string) *openapi3.SchemaRef {
+		return &openapi3.SchemaRef{Value: &openapi3.Schema{
+			Type:  &openapi3.Types{"array"},
+			Items: &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{itemType}}},
+		}}
+	}
+	inputSchema := &openapi3.Schema{
+		Type: &openapi3.Types{"object"},
+		Properties: openapi3.Schemas{
+			"values": {Value: &openapi3.Schema{AnyOf: openapi3.SchemaRefs{arraySchema("integer"), arraySchema("number")}}},
+		},
+	}
+	schema := &openapi3.T{Components: &openapi3.Components{Schemas: openapi3.Schemas{"Input": {Value: inputSchema}}}}
+
+	inputs, err := NewInputsForMode(map[string][]string{"values": {"1.5"}}, schema, false)
+	require.NoError(t, err)
+	require.Equal(t, []any{float32(1.5)}, *inputs["values"].Array)
+}
+
+func TestNewInputsForMode_ArrayStringUnionPreservesString(t *testing.T) {
+	t.Parallel()
+
+	valueSchema := &openapi3.Schema{AnyOf: openapi3.SchemaRefs{
+		{Value: &openapi3.Schema{
+			Type:  &openapi3.Types{"array"},
+			Items: &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{"integer"}}},
+		}},
+		{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+	}}
+	inputSchema := &openapi3.Schema{Type: &openapi3.Types{"object"}, Properties: openapi3.Schemas{
+		"value": {Value: valueSchema},
+	}}
+	schema := &openapi3.T{Components: &openapi3.Components{Schemas: openapi3.Schemas{"Input": {Value: inputSchema}}}}
+
+	inputs, err := NewInputsForMode(map[string][]string{"value": {"hello"}}, schema, false)
+	require.NoError(t, err)
+	require.Equal(t, "hello", *inputs["value"].String)
+
+	inputs, err = NewInputsForMode(map[string][]string{"value": {"[1]"}}, schema, false)
+	require.NoError(t, err)
+	require.NotNil(t, inputs["value"].Json)
+}
+
+func TestNewInputsForModeWithoutComponentsPreservesValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		schema *openapi3.T
+	}{
+		{name: "nil schema"},
+		{name: "missing components", schema: &openapi3.T{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inputs, err := NewInputsForMode(map[string][]string{
+				"prompt": {"hello"},
+				"image":  {"@image.png"},
+				"values": {"one", "two"},
+			}, tt.schema, false)
+			require.NoError(t, err)
+			require.NotNil(t, inputs["prompt"].String)
+			require.Equal(t, "hello", *inputs["prompt"].String)
+			require.NotNil(t, inputs["image"].File)
+			require.Equal(t, "image.png", *inputs["image"].File)
+			require.NotNil(t, inputs["values"].Array)
+			require.Equal(t, []any{"one", "two"}, *inputs["values"].Array)
+		})
+	}
+}
+
+func TestNewInputsForModeCoercesOneOfValue(t *testing.T) {
+	t.Parallel()
+
+	schema := validationTestSchema(t)
+	schema.Components.Schemas["Input"].Value.Properties["choice"] = &openapi3.SchemaRef{Value: &openapi3.Schema{OneOf: openapi3.SchemaRefs{
+		{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+		{Value: &openapi3.Schema{Type: &openapi3.Types{"integer"}}},
+	}}}
+	inputs, err := NewInputsForMode(map[string][]string{"choice": {"1"}}, schema, false)
+	require.NoError(t, err)
+	require.NotNil(t, inputs["choice"].Int)
+	require.Equal(t, int32(1), *inputs["choice"].Int)
+}
+
 func TestSchemaAcceptsNumber(t *testing.T) {
 	t.Parallel()
 
@@ -219,6 +358,88 @@ func TestSchemaAcceptsFloat(t *testing.T) {
 		},
 	}
 	require.False(t, schemaAcceptsFloat(strIntUnion))
+}
+
+func TestSchemaAcceptsBool(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, schemaAcceptsBool(&openapi3.Schema{Type: &openapi3.Types{"boolean"}}))
+	require.False(t, schemaAcceptsBool(&openapi3.Schema{Type: &openapi3.Types{"string"}}))
+	require.False(t, schemaAcceptsBool(nil))
+
+	union := &openapi3.Schema{
+		AnyOf: openapi3.SchemaRefs{
+			{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+			{Value: &openapi3.Schema{Type: &openapi3.Types{"boolean"}}},
+		},
+	}
+	require.True(t, schemaAcceptsBool(union))
+}
+
+func TestCoerceScalarValueMixedUnion(t *testing.T) {
+	t.Parallel()
+
+	schema := &openapi3.Schema{AnyOf: openapi3.SchemaRefs{
+		{Value: &openapi3.Schema{Type: &openapi3.Types{"integer"}}},
+		{Value: &openapi3.Schema{Type: &openapi3.Types{"boolean"}}},
+	}}
+	require.Equal(t, true, coerceScalarValue("true", schema))
+	require.Equal(t, int32(1), coerceScalarValue("1", schema))
+}
+
+func TestCoerceScalarValueRespectsUnionConstraints(t *testing.T) {
+	t.Parallel()
+
+	minimum := 10.0
+	numericUnion := &openapi3.Schema{AnyOf: openapi3.SchemaRefs{
+		{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+		{Value: &openapi3.Schema{Type: &openapi3.Types{"integer"}, Min: &minimum}},
+	}}
+	require.Equal(t, "5", coerceScalarValue("5", numericUnion))
+	require.Equal(t, int32(15), coerceScalarValue("15", numericUnion))
+
+	boolUnion := &openapi3.Schema{AnyOf: openapi3.SchemaRefs{
+		{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+		{Value: &openapi3.Schema{Type: &openapi3.Types{"boolean"}, Enum: []any{true}}},
+	}}
+	require.Equal(t, "false", coerceScalarValue("false", boolUnion))
+	require.Equal(t, true, coerceScalarValue("true", boolUnion))
+}
+
+func TestNewInputsForMode_CoercesBool(t *testing.T) {
+	t.Parallel()
+
+	schema := validationTestSchema(t)
+	for _, val := range []string{"true", "false"} {
+		inputs, err := NewInputsForMode(map[string][]string{"prompt": {"hi"}, "flag": {val}}, schema, false)
+		require.NoError(t, err)
+		require.NotNil(t, inputs["flag"].Bool, "flag=%s should coerce to bool", val)
+		require.Equal(t, val == "true", *inputs["flag"].Bool)
+		// The coerced value must satisfy preflight validation.
+		require.NoError(t, ValidateInputsForMode(inputs, schema, false))
+	}
+}
+
+func TestNewInputsForMode_CoercesRepeatedIntArray(t *testing.T) {
+	t.Parallel()
+
+	schema := validationTestSchema(t)
+	inputs, err := NewInputsForMode(map[string][]string{"prompt": {"hi"}, "nums": {"1", "2"}}, schema, false)
+	require.NoError(t, err)
+	require.NotNil(t, inputs["nums"].Array)
+	require.Equal(t, []any{int32(1), int32(2)}, *inputs["nums"].Array)
+	require.NoError(t, ValidateInputsForMode(inputs, schema, false))
+}
+
+func TestNewInputsForMode_CoercesSingleIntArray(t *testing.T) {
+	t.Parallel()
+
+	schema := validationTestSchema(t)
+	inputs, err := NewInputsForMode(map[string][]string{"prompt": {"hi"}, "nums": {"1"}}, schema, false)
+	require.NoError(t, err)
+	require.NotNil(t, inputs["nums"].Array)
+	require.Equal(t, []any{int32(1)}, *inputs["nums"].Array)
+	require.NoError(t, ValidateInputsForMode(inputs, schema, false))
 }
 
 func ptrI32(v int32) *int32     { return &v }

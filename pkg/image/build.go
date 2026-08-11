@@ -28,21 +28,18 @@ import (
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/schema"
+	"github.com/replicate/cog/pkg/schema/openapi"
 	"github.com/replicate/cog/pkg/schema/python"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
-	cogversion "github.com/replicate/cog/pkg/util/version"
 	weightslockfile "github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weightslegacy"
-	"github.com/replicate/cog/pkg/wheels"
 )
 
 // cogBuildContextName is the named build context for build staging
 // artifacts (.cog/build/). Dockerfile COPY instructions reference it
 // via --from=cog_build.
 const cogBuildContextName = "cog_build"
-
-const minimumStaticSchemaSDKVersion = "0.17.0"
 
 // defaultExcludePatterns filters .cog/ out of the project context mount
 // so weight blobs, mount dirs, and build caches are never sent to the
@@ -83,6 +80,7 @@ func Build(
 	useCudaBaseImage string,
 	progressOutput string,
 	schemaFile string,
+	openAPISchema []byte,
 	dockerfileFile string,
 	useCogBaseImage *bool,
 	strip bool,
@@ -137,29 +135,11 @@ func Build(
 	}
 
 	// --- Pre-build static schema generation ---
-	// Generate schema before the Docker build so schema errors fail fast and the
-	// schema file is available in the build context.
-	var schemaJSON []byte
-	switch {
-	case needsSchema:
-		if err := validateStaticSchemaSDKVersion(cfg); err != nil {
-			return "", err
-		}
-		console.Debug("Generating model schema (static)...")
-		data, err := generateStaticSchema(cfg, dir)
-		if err != nil {
-			return "", fmt.Errorf("image build failed: %w", err)
-		}
-		schemaJSON = data
-	case !skipSchemaValidation && schemaFile != "":
-		console.Infof("Validating model schema from %s...", schemaFile)
-		data, err := os.ReadFile(schemaFile)
-		if err != nil {
-			return "", fmt.Errorf("Failed to read schema file: %w", err)
-		}
-		schemaJSON = data
-	case skipSchemaValidation:
-		console.Debug("Skipping model schema validation")
+	// Resolve the schema before the Docker build so schema errors fail fast and
+	// the schema file is available in the build context.
+	schemaJSON, err := resolveBuildSchema(cfg, dir, schemaFile, openAPISchema, needsSchema, skipSchemaValidation)
+	if err != nil {
+		return "", err
 	}
 
 	// Write and validate pre-build schema (static or from file).
@@ -467,13 +447,36 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 	return imageID, nil
 }
 
-// generateStaticSchema runs the Go tree-sitter parser to produce the OpenAPI schema.
-// When both predict and train are configured, it generates both and merges them.
-func generateStaticSchema(cfg *config.Config, dir string) ([]byte, error) {
-	if cfg.Predict == "" && cfg.Train == "" {
-		return nil, fmt.Errorf("no predict or train reference found in cog.yaml")
+// resolveBuildSchema returns the OpenAPI schema JSON to use for the build,
+// choosing among (in priority order): a pre-generated schema supplied by the
+// caller, static generation from source, an external schema file, or nothing
+// when schema validation is skipped.
+func resolveBuildSchema(cfg *config.Config, dir, schemaFile string, openAPISchema []byte, needsSchema, skipSchemaValidation bool) ([]byte, error) {
+	switch {
+	case len(openAPISchema) > 0:
+		// The caller already generated (and validated) the schema for input
+		// preflight; reuse it so validation and the image label share one
+		// source of truth instead of regenerating.
+		console.Debug("Using pre-generated model schema...")
+		return openAPISchema, nil
+	case needsSchema:
+		console.Debug("Generating model schema (static)...")
+		generatedSchema, err := openapi.GenerateSchema(cfg, dir)
+		if err != nil {
+			return nil, fmt.Errorf("image build failed: %w", err)
+		}
+		return generatedSchema, nil
+	case !skipSchemaValidation && schemaFile != "":
+		console.Infof("Validating model schema from %s...", schemaFile)
+		data, err := os.ReadFile(schemaFile)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to read schema file: %w", err)
+		}
+		return data, nil
+	case skipSchemaValidation:
+		console.Debug("Skipping model schema validation")
 	}
-	return schema.GenerateCombined(dir, cfg.Predict, cfg.Train, schema.PathAwareParser(python.ParsePredictorWithSourcePath))
+	return nil, nil
 }
 
 func generatePredictorMetadata(cfg *config.Config, dir string) (*schema.PredictorInfo, error) {
@@ -552,41 +555,6 @@ func splitPythonVersionForBuild(version string) (major int, minor int, err error
 	}
 	return major, minor, nil
 
-}
-
-func validateStaticSchemaSDKVersion(cfg *config.Config) error {
-	sdkVersion := explicitSDKVersion(cfg)
-	if sdkVersion == "" {
-		return nil
-	}
-
-	base := sdkVersion
-	if m := wheels.BaseVersionRe.FindString(base); m != "" {
-		base = m
-	}
-	ver, err := cogversion.NewVersion(base)
-	if err != nil {
-		return nil
-	}
-	minVer := cogversion.MustVersion(minimumStaticSchemaSDKVersion)
-	if ver.GreaterOrEqual(minVer) {
-		return nil
-	}
-	return fmt.Errorf("SDK version %s is not supported by static schema generation; use %s or newer", sdkVersion, minimumStaticSchemaSDKVersion)
-}
-
-func explicitSDKVersion(cfg *config.Config) string {
-	if envVal := os.Getenv(wheels.CogSDKWheelEnvVar); envVal != "" {
-		wc := wheels.ParseWheelValue(envVal)
-		if wc != nil && wc.Source == wheels.WheelSourcePyPI && wc.Version != "" {
-			return wc.Version
-		}
-		return ""
-	}
-	if cfg.Build != nil && cfg.Build.SDKVersion != "" && cfg.Build.SDKVersion != wheels.PreReleaseSentinel {
-		return cfg.Build.SDKVersion
-	}
-	return ""
 }
 
 // writeAndValidateSchema validates the schema JSON as a well-formed OpenAPI 3.0

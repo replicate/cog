@@ -46,11 +46,12 @@ cog run -i prompt="A photo of a cat" -i steps=50
 
 What happens:
 
-1. Builds the image (if needed)
-2. Starts a container running the [Container Runtime](./04-container-runtime.md)
-3. Parses `-i` flags against the [Schema](./02-schema.md)
-4. Sends a [PredictionRequest](./03-prediction-api.md) to the container's HTTP API
-5. Streams output back to terminal
+1. Resolves the [Schema](./02-schema.md) from local source or an existing image label
+2. Parses, coerces, and validates `-i` flags when that schema is available
+3. Builds the image (for local source)
+4. Starts a container running the [Container Runtime](./04-container-runtime.md)
+5. Falls back to the runtime schema for older images without a usable schema label
+6. Sends a [PredictionRequest](./03-prediction-api.md) and streams output to the terminal
 
 Input types are inferred from the schema:
 
@@ -128,9 +129,9 @@ What happens (see [Build System](./05-build-system.md) for details):
 
 1. **Parse** `cog.yaml`
 2. **Resolve** CUDA/cuDNN versions from compatibility matrix
-3. **Generate** Dockerfile
-4. **Build** image via Docker/Buildkit
-5. **Run** container to extract [Schema](./02-schema.md)
+3. **Generate** the [Schema](./02-schema.md) statically from model source
+4. **Generate** Dockerfile
+5. **Build** image via Docker/Buildkit
 6. **Apply** labels (schema, config, pip freeze)
 
 Key flags:
@@ -190,7 +191,9 @@ There's also a separate `base-image` binary (`cmd/base-image/`) with subcommands
 
 ## How CLI Commands Interact with Containers
 
-Commands like `predict` and `serve` follow the same pattern: build an image, start a container, communicate via HTTP. The CLI never runs model code directly.
+Local-source predictions generate and validate against the schema before building, then start a container and communicate over HTTP. Existing-image predictions use the image's schema label when available and otherwise fall back to the runtime schema after startup. `cog serve` builds and starts the same runtime without parsing prediction inputs. The CLI never runs model code directly.
+
+The local-source prediction flow is:
 
 ```mermaid
 sequenceDiagram
@@ -198,7 +201,8 @@ sequenceDiagram
     participant Docker
     participant Container as Container (runtime)
 
-    CLI->>CLI: Parse -i flags, load cog.yaml
+    CLI->>CLI: Load cog.yaml and generate schema
+    CLI->>CLI: Parse, coerce, and validate -i flags
     CLI->>Docker: Build image (if needed)
     Docker-->>CLI: Image ready
 
@@ -251,7 +255,7 @@ Commands delegate to packages under `pkg/`:
 - `pkg/dockerfile/` -- Dockerfile generation and base image selection
 - `pkg/docker/` -- Docker client operations
 - `pkg/predict/` -- Local prediction execution (talks to container's HTTP API)
-- `pkg/schema/` -- Static schema generator (tree-sitter, experimental)
+- `pkg/schema/` -- Static schema generator (tree-sitter)
 - `pkg/wheels/` -- SDK and coglet wheel resolution
 
 **Infrastructure:**

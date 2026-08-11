@@ -51,6 +51,7 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 		opts.UseCudaBaseImage,
 		opts.ProgressOutput,
 		opts.SchemaFile,
+		opts.OpenAPISchema,
 		opts.DockerfileFile,
 		opts.UseCogBaseImage,
 		opts.Strip,
