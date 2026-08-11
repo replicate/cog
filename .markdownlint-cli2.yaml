@@ -7,6 +7,7 @@ ignores:
   - "site/**"
   - "docs/llms.txt"
   - "CLAUDE.md"
+  - "playground/**"
 
 config:
   default: false

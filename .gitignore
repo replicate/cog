@@ -58,3 +58,6 @@ target
 
 # Generated docs
 /site
+
+node_modules/
+/playground/coverage/

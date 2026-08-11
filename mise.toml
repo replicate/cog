@@ -148,7 +148,7 @@ echo "Installed $DEST/cog -> $BINARY"
 
 [tasks."build:cog"]
 description = "Build cog CLI (development)"
-sources = ["cmd/**/*.go", "pkg/**/*.go", "go.mod", "go.sum", "VERSION.txt"]
+sources = ["cmd/**/*.go", "pkg/**/*.go", "pkg/cli/playground/**/*", ".goreleaser.yaml", "go.mod", "go.sum", "mise.toml", "mise.lock", "VERSION.txt"]
 outputs = ["dist/go/*/cog"]
 run = """
 #!/usr/bin/env bash
@@ -156,6 +156,48 @@ set -e
 # Don't set COG_VERSION — let goreleaser's snapshot template produce a dev version
 # (e.g. 0.17.1-dev+gabcdef) so local wheel auto-detection works.
 GOFLAGS=-buildvcs=false go run github.com/goreleaser/goreleaser/v2@latest build --clean --snapshot --single-target --id cog --output cog
+"""
+
+[tasks."playground:install"]
+description = "Install playground dependencies"
+dir = "playground"
+sources = ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "../mise.toml", "../mise.lock"]
+outputs = ["node_modules/.modules.yaml"]
+tools = { node = "24.18.0", pnpm = "11.11.0" }
+run = "pnpm install --frozen-lockfile"
+
+# After changing files under playground/, regenerate the embedded assets with:
+#   mise run build:playground
+# Check that the embedded assets match the source with:
+#   mise run build:playground:check
+[tasks."build:playground"]
+description = "Build committed playground assets"
+depends = ["playground:install"]
+dir = "playground"
+tools = { node = "24.18.0", pnpm = "11.11.0" }
+run = "pnpm run build"
+
+[tasks."build:playground:check"]
+description = "Check committed playground assets are current"
+depends = ["build:playground"]
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+cp -R pkg/cli/playground "$tmpdir/playground"
+mise run build:playground --force
+diff -r "$tmpdir/playground" pkg/cli/playground
+if ! git diff --quiet -- pkg/cli/playground; then
+  git diff -- pkg/cli/playground
+  echo "ERROR: Playground assets are out of date. Run 'mise run build:playground'." >&2
+  exit 1
+fi
+if test -n "$(git ls-files --others --exclude-standard -- pkg/cli/playground)"; then
+  git ls-files --others --exclude-standard -- pkg/cli/playground
+  echo "ERROR: Playground build created untracked assets." >&2
+  exit 1
+fi
 """
 
 [tasks."build:cog:release"]
@@ -310,6 +352,13 @@ description = "Run Python SDK tests (latest supported Python)"
 depends = ["build:coglet:wheel"]
 run = "nox -s tests -p 3.13"
 
+[tasks."test:playground"]
+description = "Run playground tests"
+depends = ["playground:install"]
+dir = "playground"
+tools = { node = "24.18.0", pnpm = "11.11.0" }
+run = "pnpm run test:coverage"
+
 [tasks."test:python:all"]
 description = "Run Python SDK tests on all supported Python versions"
 depends = ["build:coglet:wheel"]
@@ -437,6 +486,20 @@ run = "ruff format --check ."
 description = "Fix Python formatting"
 run = "ruff format ."
 
+[tasks."fmt:playground"]
+description = "Check playground formatting"
+depends = ["playground:install"]
+dir = "playground"
+tools = { node = "24.18.0", pnpm = "11.11.0" }
+run = "pnpm run fmt:check"
+
+[tasks."fmt:playground:fix"]
+description = "Format playground code"
+depends = ["playground:install"]
+dir = "playground"
+tools = { node = "24.18.0", pnpm = "11.11.0" }
+run = "pnpm run fmt"
+
 # Docs formatting
 [tasks."fmt:docs"]
 alias = "fmt:docs:check"
@@ -520,6 +583,20 @@ mise run typecheck:python
 description = "Fix Python lint issues"
 run = "ruff check --fix ."
 
+[tasks."lint:playground"]
+description = "Lint playground code"
+depends = ["playground:install"]
+dir = "playground"
+tools = { node = "24.18.0", pnpm = "11.11.0" }
+run = "pnpm run lint"
+
+[tasks."lint:playground:fix"]
+description = "Fix playground lint issues"
+depends = ["playground:install"]
+dir = "playground"
+tools = { node = "24.18.0", pnpm = "11.11.0" }
+run = "pnpm run lint:fix"
+
 # =============================================================================
 # Typecheck tasks
 # =============================================================================
@@ -535,6 +612,13 @@ run = "cargo check --manifest-path crates/Cargo.toml --workspace"
 [tasks."typecheck:python"]
 description = "Type check Python code"
 run = "nox -s typecheck"
+
+[tasks."typecheck:playground"]
+description = "Type check playground code"
+depends = ["playground:install"]
+dir = "playground"
+tools = { node = "24.18.0", pnpm = "11.11.0" }
+run = "pnpm run typecheck"
 
 # =============================================================================
 # Generate tasks

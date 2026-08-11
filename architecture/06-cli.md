@@ -6,15 +6,16 @@ The Cog CLI is a Go binary that provides commands for the full model lifecycle: 
 
 ## Commands Overview
 
-| Command     | Job To Be Done                        |
-| ----------- | ------------------------------------- |
-| `cog init`  | Bootstrap a new model project         |
-| `cog build` | Create a container image              |
-| `cog run`   | Run a prediction in a container       |
-| `cog exec`  | Run arbitrary commands in a container |
-| `cog serve` | Start HTTP server in a container      |
-| `cog push`  | Deploy to Replicate                   |
-| `cog login` | Authenticate with Replicate           |
+| Command          | Job To Be Done                        |
+| ---------------- | ------------------------------------- |
+| `cog init`       | Bootstrap a new model project         |
+| `cog build`      | Create a container image              |
+| `cog run`        | Run a prediction in a container       |
+| `cog exec`       | Run arbitrary commands in a container |
+| `cog serve`      | Start HTTP server in a container      |
+| `cog playground` | Open a local UI for a model API       |
+| `cog push`       | Deploy to Replicate                   |
+| `cog login`      | Authenticate with Replicate           |
 
 ## Development Commands
 
@@ -98,6 +99,21 @@ Builds the image (if needed) and starts a container running the [Container Runti
 - Check health at `/health-check`
 
 **Code**: `pkg/cli/serve.go`
+
+### cog playground
+
+**Job**: Explore and call a running Cog HTTP API from a browser.
+
+```bash
+cog serve -p 8393
+cog playground --target http://localhost:8393
+```
+
+The command serves an embedded browser-native application and reverse-proxies its requests to the selected model API. Each browser tab is an independent workspace: every request carries that tab's target, and the proxy keeps no shared current-target state, so tabs can use the same or different models concurrently. The UI and proxy accept only loopback connections, even when `--host 0.0.0.0` is used so a container can deliver webhooks. The proxy snapshots upstream response headers into encoded metadata so the request inspector can show model values without including or merging playground security and transport headers. Webhook URLs contain an opaque per-prediction token, which also isolates concurrent tab subscriptions, and payloads are relayed to the browser over server-sent events.
+
+The proxy is intentionally user-directed: this is a local development tool for APIs selected by the user, not a remotely hosted gateway. The TypeScript source and pnpm lockfile live in `playground/`; Vite bundles its deterministic output and license notices into `pkg/cli/playground/`, which Go embeds directly in every binary. Go builds, integration builds, and release builds consume the committed assets without installing or invoking Node. Browser dependencies are bundled from the lockfile, and AJV's dynamic schema compilation is confined to a worker with a narrower content security policy than the page.
+
+**Code**: `pkg/cli/` owns the server, proxy, and embedded generated application; `playground/` owns the TypeScript source and Vitest checks.
 
 ## Build Commands
 
@@ -223,6 +239,7 @@ pkg/cli/
 ├── predict.go      # prediction execution and legacy cog predict
 ├── exec.go         # cog exec
 ├── serve.go        # cog serve
+├── playground.go   # cog playground and local proxy
 ├── push.go         # cog push
 ├── login.go        # cog login
 └── init.go         # cog init
