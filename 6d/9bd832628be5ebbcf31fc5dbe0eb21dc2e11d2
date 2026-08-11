@@ -1,0 +1,21 @@
+crates/coglet/src/service.rs
+  s_5718a8e85154a6::t_2ee23e25fb4244 55,111-170,174,193,226,237-238,250,255-259,262,275,320-321,342-343,402-414,626-629,644,650-654,669-670,672-674,681-707,710-712,715-721,723-734,804,882,891,1075-1078,1084,1190,1192,1234,1236,1274,1280,1282,1285,1650-1687,1970-2007,2243,2285
+docs/llms.txt
+  s_5718a8e85154a6::t_91d270b02212c8 2778,2791
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "6d9bd832628be5ebbcf31fc5dbe0eb21dc2e11d2",
+  "prompts": {},
+  "sessions": {
+    "s_5718a8e85154a6": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_00e68cad3ffeXDixpfwhSOGHDJ",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
