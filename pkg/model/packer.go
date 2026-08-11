@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/weights/store"
 )
 
@@ -376,16 +377,37 @@ func packedFilesFromPlan(layers []packedLayer) []packedFile {
 	return out
 }
 
-// ingressFromInventory streams each file in inv into st using the owners
-// map to call the correct source's Open(). Files already present in the
-// store are skipped. Hash mismatches surface here, loudly, instead of
-// silently producing a tar whose member digest disagrees with the
-// inventory.
+// ingressFromInventory stores each unique file digest from inv. Files already
+// in the store are skipped. Hash mismatches fail instead of producing a tar
+// whose contents disagree with the inventory.
 func ingressFromInventory(ctx context.Context, owners map[string]weightsource.Source, st store.Store, inv weightsource.Inventory) error {
+	return ingressFromInventoryWithProgress(ctx, "", owners, st, inv, nil)
+}
+
+func ingressFromInventoryWithProgress(
+	ctx context.Context,
+	weightName string,
+	owners map[string]weightsource.Source,
+	st store.Store,
+	inv weightsource.Inventory,
+	progressFn func(WeightBuildProgress),
+) error {
+	type missingFile struct {
+		source weightsource.Source
+		file   weightsource.InventoryFile
+	}
+
+	missing := make([]missingFile, 0, len(inv.Files))
+	seenDigests := make(map[string]struct{}, len(inv.Files))
+	var total int64
 	for _, f := range inv.Files {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if _, ok := seenDigests[f.Digest]; ok {
+			continue
+		}
+		seenDigests[f.Digest] = struct{}{}
 		ok, err := st.Exists(ctx, f.Digest)
 		if err != nil {
 			return fmt.Errorf("check store for %s: %w", f.Path, err)
@@ -397,20 +419,65 @@ func ingressFromInventory(ctx context.Context, owners map[string]weightsource.So
 		if !ok {
 			return fmt.Errorf("no source owner for file %s", f.Path)
 		}
-		if err := ingressOne(ctx, src, st, f); err != nil {
-			return fmt.Errorf("ingress %s: %w", f.Path, err)
+		missing = append(missing, missingFile{source: src, file: f})
+		total += f.Size
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+	if progressFn != nil && total > 0 {
+		progressFn(WeightBuildProgress{WeightName: weightName, Total: total})
+	}
+
+	var complete int64
+	for _, m := range missing {
+		baseComplete := complete
+		var report func(int64)
+		if progressFn != nil {
+			report = func(fileComplete int64) {
+				progressFn(WeightBuildProgress{
+					WeightName: weightName,
+					Complete:   baseComplete + fileComplete,
+					Total:      total,
+				})
+			}
 		}
+		if err := ingressOne(ctx, m.source, st, m.file, report); err != nil {
+			return fmt.Errorf("ingress %s: %w", m.file.Path, err)
+		}
+		complete += m.file.Size
+	}
+	if progressFn != nil {
+		progressFn(WeightBuildProgress{
+			WeightName: weightName,
+			Complete:   complete,
+			Total:      total,
+			Done:       true,
+		})
 	}
 	return nil
 }
 
-func ingressOne(ctx context.Context, src weightsource.Source, st store.Store, f weightsource.InventoryFile) error {
+func ingressOne(
+	ctx context.Context,
+	src weightsource.Source,
+	st store.Store,
+	f weightsource.InventoryFile,
+	report func(int64),
+) error {
 	rc, err := src.Open(ctx, f.Path)
 	if err != nil {
 		return fmt.Errorf("open source: %w", err)
 	}
 	defer rc.Close() //nolint:errcheck // best-effort close on read path
-	return st.PutFile(ctx, f.Digest, f.Size, rc)
+
+	var r io.Reader = rc
+	if report != nil {
+		r = util.NewProgressReader(rc, report)
+	}
+
+	return st.PutFile(ctx, f.Digest, f.Size, r)
 }
 
 // writeLayer writes the in-tar layout for a layer: deterministic

@@ -26,6 +26,7 @@ exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "B" > weights-
 # weights.lock, pushes the layers, and warms the local cache as a
 # side effect (cog-i12u: import == build + push + populate cache).
 cog weights import
+stderr 'Download complete'
 stderr 'Pushing 2 weight'
 exists weights.lock
 
@@ -39,6 +40,7 @@ exec sh -c 'rm -rf $WORK/cache/weights/files'
 cog weights pull
 stderr 'Pulling alpha'
 stderr 'Pulling beta'
+stderr 'Download complete'
 stderr 'done'
 stderr 'Pulled'
 

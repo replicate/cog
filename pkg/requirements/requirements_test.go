@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,6 +19,67 @@ func TestReadRequirements(t *testing.T) {
 	requirements, err := ReadRequirements(reqFile)
 	require.NoError(t, err)
 	require.Equal(t, []string{"torch==2.5.1"}, requirements)
+}
+
+func TestParseLocalArtifactRequirement(t *testing.T) {
+	testCases := []struct {
+		name        string
+		line        string
+		expected    string
+		expectedOK  bool
+		expectedErr string
+	}{
+		{name: "Wheel", line: "  ./dist/PKG-0.1.0-PY3-NONE-ANY.WHL  ", expected: "./dist/PKG-0.1.0-PY3-NONE-ANY.WHL", expectedOK: true},
+		{name: "Zip", line: "mylibpackage.zip", expected: "mylibpackage.zip", expectedOK: true},
+		{name: "TarGz", line: "../pkg-0.1.0.tar.gz", expected: "../pkg-0.1.0.tar.gz", expectedOK: true},
+		{name: "Tgz", line: "./dist/pkg-0.1.0.tgz", expected: "./dist/pkg-0.1.0.tgz", expectedOK: true},
+		{name: "TarBz2", line: "/tmp/pkg-0.1.0.tar.bz2", expected: "/tmp/pkg-0.1.0.tar.bz2", expectedOK: true},
+		{name: "TarXz", line: "./dist/pkg-0.1.0.tar.xz", expected: "./dist/pkg-0.1.0.tar.xz", expectedOK: true},
+		{name: "AtInPath", line: "./dist/pkg@1.0.tar.gz", expected: "./dist/pkg@1.0.tar.gz", expectedOK: true},
+		{name: "AtInFilename", line: "pkg@1.0.tar.gz", expected: "pkg@1.0.tar.gz", expectedOK: true},
+		{name: "PathWithSpaces", line: "./vendor/my helper-1.0.tar.gz", expected: "./vendor/my helper-1.0.tar.gz", expectedOK: true},
+		{name: "BarePathWithSpaces", line: "vendor/my helper-1.0.tar.gz", expected: "vendor/my helper-1.0.tar.gz", expectedOK: true},
+		{name: "PackageWithExtras", line: "torch[all]==2.5.1"},
+		{name: "PackageWithMarker", line: `torch==2.5.1; python_version < "3.11"`},
+		{name: "URLWithHash", line: "https://user:pass@example.com/pkg.whl --hash=sha256:abc"},
+		{name: "URLWithAtSign", line: "https://token@file:443/pkg.whl"},
+		{name: "VCS", line: "git+https://example.com/repo.git"},
+		{name: "RemoteDirectReference", line: "name @ https://example.com/pkg.whl"},
+		{name: "RemoteFindLinks", line: "--find-links https://example.com/wheels"},
+		{name: "DirectFileURL", line: "file:///tmp/pkg.whl", expectedErr: "local file URL requirements are not supported"},
+		{name: "UppercaseFileURL", line: "FILE:///tmp/pkg.whl", expectedErr: "local file URL requirements are not supported"},
+		{name: "NamedFileURLNoSpace", line: "name@file:./pkg.whl", expectedErr: "local file URL requirements are not supported"},
+		{name: "NamedUppercaseFileURL", line: "name@FILE:./pkg.whl", expectedErr: "local file URL requirements are not supported"},
+		{name: "LocalFindLinks", line: "--find-links ./wheels", expectedErr: `local requirements option "--find-links" is not supported`},
+		{name: "FileURLFindLinks", line: "--find-links file:///wheels", expectedErr: `local requirements option "--find-links" is not supported`},
+		{name: "LocalRequirement", line: "-r requirements-local.txt", expectedErr: `local requirements option "-r" is not supported`},
+		{name: "LocalRequirementNoSpace", line: "-rrequirements-local.txt", expectedErr: `local requirements option "-r" is not supported`},
+		{name: "LocalFindLinksNoSpace", line: "-f./wheels", expectedErr: `local requirements option "-f" is not supported`},
+		{name: "LocalRequirementTab", line: "-r\trequirements-local.txt", expectedErr: `local requirements option "-r" is not supported`},
+		{name: "RemoteRequirementNoSpace", line: "-rhttps://example.com/requirements.txt"},
+		{name: "UppercaseFileURLRequirement", line: "-r FILE:///tmp/requirements.txt", expectedErr: `local requirements option "-r" is not supported`},
+		{name: "InlineHash", line: "./pkg.whl --hash=sha256:abc", expectedErr: "do not support inline options or hashes"},
+		{name: "InlineRemoteFindLinks", line: "./pkg.whl --find-links=https://example.com", expectedErr: "do not support inline options or hashes"},
+		{name: "InlineShortFindLinks", line: "./pkg.whl -f https://example.com", expectedErr: "do not support inline options or hashes"},
+		{name: "LocalDirectory", line: "./pkg", expectedErr: "is not a supported wheel or source archive"},
+		{name: "ArtifactWithMarker", line: `./dist/pkg.whl; python_version < "3.11"`, expectedErr: "environment markers are not supported"},
+		{name: "ArtifactWithExtras", line: "./dist/pkg.whl[extra]", expectedErr: "extras are not supported"},
+		{name: "DirectRefRelative", line: "name @ ./pkg.whl", expectedErr: "local direct reference requirements"},
+		{name: "DirectRefNoSpace", line: "name@./pkg.whl", expectedErr: "local direct reference requirements"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual, ok, err := ParseLocalArtifactRequirement(tc.line)
+			if tc.expectedErr != "" {
+				require.ErrorContains(t, err, tc.expectedErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedOK, ok)
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
 }
 
 func TestReadRequirementsLineContinuations(t *testing.T) {
@@ -34,7 +96,7 @@ func TestReadRequirementsLineContinuations(t *testing.T) {
 func TestReadRequirementsStripComments(t *testing.T) {
 	srcDir := t.TempDir()
 	reqFile := path.Join(srcDir, "requirements.txt")
-	err := os.WriteFile(reqFile, []byte("torch==\\\n2.5.1# Heres my comment\ntorchvision==2.5.1\n# Heres a beginning of line comment"), 0o644)
+	err := os.WriteFile(reqFile, []byte("torch==\\\n2.5.1  # Heres my comment\ntorchvision==2.5.1\n# Heres a beginning of line comment"), 0o644)
 	require.NoError(t, err)
 
 	requirements, err := ReadRequirements(reqFile)

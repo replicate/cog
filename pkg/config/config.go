@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -60,6 +61,14 @@ type Build struct {
 	SDKVersion string `json:"sdk_version,omitempty" yaml:"sdk_version,omitempty"`
 
 	pythonRequirementsContent []string
+	localPackageArtifacts     []LocalPackageArtifact
+}
+
+// LocalPackageArtifact is a local requirement staged into the Docker build context.
+type LocalPackageArtifact struct {
+	Requirement  string // Normalized requirements-file line.
+	SourcePath   string // Canonical source path used for containment checks and reads.
+	RelativePath string // Project-relative staging path preserving the requirement filename.
 }
 
 type Concurrency struct {
@@ -227,6 +236,9 @@ func (c *Config) cudaFromTF() (tfVersion string, tfCUDA string, tfCuDNN string, 
 
 func (c *Config) pythonPackageVersion(name string) (version string, ok bool) {
 	for _, pkg := range c.Build.pythonRequirementsContent {
+		if isLocalPackageArtifactRequirement(pkg) {
+			continue
+		}
 		pkgName := requirements.PackageName(pkg)
 		if pkgName == name {
 			versions := requirements.Versions(pkg)
@@ -261,6 +273,9 @@ func splitPythonVersion(version string) (major int, minor int, err error) {
 // Use this when building a Config struct directly (not from YAML).
 // For configs loaded from YAML, use Load() instead which handles validation and completion.
 func (c *Config) Complete(projectDir string) error {
+	c.Build.pythonRequirementsContent = nil
+	c.Build.localPackageArtifacts = nil
+
 	// Validate mutual exclusion of python_packages and python_requirements
 	if len(c.Build.PythonPackages) > 0 && c.Build.PythonRequirements != "" {
 		return fmt.Errorf("only one of python_packages or python_requirements can be set in your cog.yaml, not both")
@@ -297,6 +312,93 @@ func (c *Config) Complete(projectDir string) error {
 	return nil
 }
 
+// ResolveLocalPackageArtifacts validates local requirements for a generated Dockerfile
+// and replaces the artifacts returned by LocalPackageArtifacts.
+func (c *Config) ResolveLocalPackageArtifacts(projectDir string) error {
+	c.Build.localPackageArtifacts = nil
+	if c.Build.PythonRequirements == "" {
+		return nil
+	}
+
+	requirementsFilePath := c.Build.PythonRequirements
+	if !filepath.IsAbs(requirementsFilePath) {
+		requirementsFilePath = filepath.Join(projectDir, requirementsFilePath)
+	}
+	return c.loadLocalPackageArtifacts(projectDir, requirementsFilePath)
+}
+
+func (c *Config) loadLocalPackageArtifacts(projectDir string, requirementsFilePath string) error {
+	projectRoot, err := filepath.Abs(projectDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve project directory: %w", err)
+	}
+	projectRoot, err = filepath.EvalSymlinks(projectRoot)
+	if err != nil {
+		return fmt.Errorf("failed to resolve project directory symlinks: %w", err)
+	}
+
+	requirementsDir := filepath.Dir(requirementsFilePath)
+	artifacts := []LocalPackageArtifact{}
+	for _, line := range c.Build.pythonRequirementsContent {
+		requirement := strings.TrimSpace(line)
+		artifactPath, ok, err := requirements.ParseLocalArtifactRequirement(requirement)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+
+		resolvedPath := artifactPath
+		if !filepath.IsAbs(resolvedPath) {
+			resolvedPath = filepath.Join(requirementsDir, resolvedPath)
+		}
+		absPath, err := filepath.Abs(resolvedPath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve local Python package artifact %q: %w", artifactPath, err)
+		}
+		resolvedParent, err := filepath.EvalSymlinks(filepath.Dir(absPath))
+		if err != nil {
+			return fmt.Errorf("local Python package artifact %q not found: %w", artifactPath, err)
+		}
+		stagedPath := filepath.Join(resolvedParent, filepath.Base(absPath))
+		if !pathWithin(projectRoot, stagedPath) {
+			return fmt.Errorf("local Python package artifact %q must be inside the project directory", artifactPath)
+		}
+		canonicalPath, err := filepath.EvalSymlinks(absPath)
+		if err != nil {
+			return fmt.Errorf("local Python package artifact %q not found: %w", artifactPath, err)
+		}
+		info, err := os.Stat(canonicalPath)
+		if err != nil {
+			return fmt.Errorf("failed to inspect local Python package artifact %q: %w", artifactPath, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("local Python package artifact %q must be a regular file", artifactPath)
+		}
+		if !pathWithin(projectRoot, canonicalPath) {
+			return fmt.Errorf("local Python package artifact %q must be inside the project directory", artifactPath)
+		}
+
+		relPath, err := filepath.Rel(projectRoot, stagedPath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve local Python package artifact %q relative to project directory: %w", artifactPath, err)
+		}
+		artifacts = append(artifacts, LocalPackageArtifact{
+			Requirement:  requirement,
+			SourcePath:   canonicalPath,
+			RelativePath: relPath,
+		})
+	}
+	c.Build.localPackageArtifacts = artifacts
+	return nil
+}
+
+func pathWithin(root string, target string) bool {
+	rel, err := filepath.Rel(root, target)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // PythonRequirementsForArch returns a requirements.txt file with all the GPU packages resolved for given OS and architecture.
 func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePackages []string) (string, error) {
 	packages := []string{}
@@ -327,7 +429,10 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 			}
 		}
 
-		packageName := requirements.PackageName(archPkg)
+		packageName := ""
+		if !isLocalPackageArtifactRequirement(archPkg) {
+			packageName = requirements.PackageName(archPkg)
+		}
 		if packageName != "" {
 			foundIdx := -1
 			for i, includePkg := range includePackageNames {
@@ -362,9 +467,17 @@ func (c *Config) PythonRequirementsForArch(goos string, goarch string, includePa
 	return strings.Join(lines, "\n"), nil
 }
 
+func isLocalPackageArtifactRequirement(requirement string) bool {
+	_, ok, err := requirements.ParseLocalArtifactRequirement(requirement)
+	return err != nil || ok
+}
+
 // pythonPackageForArch takes a package==version line and
 // returns a package==version and index URL resolved to the correct GPU package for the given OS and architecture
 func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage string, findLinksList []string, extraIndexURLs []string, err error) {
+	if isLocalPackageArtifactRequirement(pkg) {
+		return pkg, []string{}, []string{}, nil
+	}
 	name, version, findLinksList, extraIndexURLs, err := requirements.SplitPinnedPythonRequirement(pkg)
 	if err != nil {
 		// It's not pinned, so just return the line verbatim
@@ -544,6 +657,13 @@ Compatible cuDNN version is: %s`, c.Build.CuDNN, tfVersion, tfCuDNN)
 
 func (c *Config) RequirementsFile(projectDir string) string {
 	return filepath.Join(projectDir, c.Build.PythonRequirements)
+}
+
+func (c *Config) LocalPackageArtifacts() []LocalPackageArtifact {
+	if c.Build == nil {
+		return nil
+	}
+	return slices.Clone(c.Build.localPackageArtifacts)
 }
 
 func (c *Config) ParsedEnvironment() map[string]string {

@@ -572,12 +572,23 @@ func TestManager_Pull_EmitsEvents(t *testing.T) {
 	_, err := mgr.Pull(ctx, nil, func(e PullEvent) { events = append(events, e) })
 	require.NoError(t, err)
 
-	// Expected sequence for a single weight with one layer of two
-	// files: WeightStart, LayerStart, FileStored x2, LayerDone,
-	// WeightDone.
-	kinds := make([]PullEventKind, len(events))
-	for i, e := range events {
-		kinds[i] = e.Kind
+	var nonProgressKinds []PullEventKind
+	progressByPath := map[string][]PullEvent{}
+	storedPaths := map[string]bool{}
+	var storedEvents []PullEvent
+	for _, e := range events {
+		switch e.Kind {
+		case PullEventFileProgress:
+			assert.False(t, storedPaths[e.FilePath], e.FilePath)
+			progressByPath[e.FilePath] = append(progressByPath[e.FilePath], e)
+		case PullEventFileStored:
+			require.NotEmpty(t, progressByPath[e.FilePath], e.FilePath)
+			storedPaths[e.FilePath] = true
+			storedEvents = append(storedEvents, e)
+			nonProgressKinds = append(nonProgressKinds, e.Kind)
+		default:
+			nonProgressKinds = append(nonProgressKinds, e.Kind)
+		}
 	}
 	require.Equal(t, []PullEventKind{
 		PullEventWeightStart,
@@ -586,7 +597,7 @@ func TestManager_Pull_EmitsEvents(t *testing.T) {
 		PullEventFileStored,
 		PullEventLayerDone,
 		PullEventWeightDone,
-	}, kinds)
+	}, nonProgressKinds)
 
 	// WeightStart carries the manifest reference and file counts.
 	start := events[0]
@@ -596,10 +607,27 @@ func TestManager_Pull_EmitsEvents(t *testing.T) {
 	assert.Equal(t, 2, start.MissingFiles)
 	assert.Equal(t, testRepo+"@"+entry.Digest, start.ManifestRef)
 
-	// FileStored events carry path + digest.
-	for _, e := range events[2:4] {
+	require.Len(t, progressByPath, 2)
+	require.Len(t, storedEvents, 2)
+
+	for path, progressEvents := range progressByPath {
+		require.GreaterOrEqual(t, len(progressEvents), 2, path)
+		assert.Equal(t, int64(0), progressEvents[0].FileComplete, path)
+
+		var previous int64
+		for _, e := range progressEvents {
+			assert.Equal(t, path, e.FilePath)
+			assert.NotEmpty(t, e.FileDigest)
+			assert.GreaterOrEqual(t, e.FileComplete, previous, path)
+			assert.LessOrEqual(t, e.FileComplete, e.FileSize, path)
+			previous = e.FileComplete
+		}
+		assert.Greater(t, previous, int64(0), path)
+	}
+	for _, e := range storedEvents {
 		assert.NotEmpty(t, e.FilePath)
 		assert.NotEmpty(t, e.FileDigest)
+		assert.Greater(t, e.FileSize, int64(0))
 	}
 }
 

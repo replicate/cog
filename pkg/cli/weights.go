@@ -123,6 +123,11 @@ func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose boo
 	builder = model.NewWeightBuilder(src, fileStore, lockPath)
 
 	console.Infof("Building %d weight(s)...", len(weightSpecs))
+	buildProgress := docker.NewProgressWriter()
+	defer buildProgress.Close()
+	builder.SetProgressFn(func(prog model.WeightBuildProgress) {
+		writeWeightBuildProgress(buildProgress, prog)
+	})
 
 	release, err := src.DotCog.Lock(ctx)
 	if err != nil {
@@ -131,6 +136,7 @@ func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose boo
 	defer release()
 
 	artifacts, err := buildWeightArtifactsFromPlans(ctx, builder, weightSpecs, plans)
+	buildProgress.Close()
 	if err != nil {
 		return err
 	}
@@ -148,6 +154,14 @@ func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose boo
 	console.Infof("\nPushing %d weight(s) to %s...", len(artifacts), repo)
 
 	return pushWeightArtifacts(ctx, repo, artifacts, "Imported")
+}
+
+func writeWeightBuildProgress(pw *docker.ProgressWriter, prog model.WeightBuildProgress) {
+	if prog.Done {
+		pw.WriteStatus(prog.WeightName, "Download complete")
+		return
+	}
+	pw.Write(prog.WeightName, "Downloading", prog.Complete, prog.Total)
 }
 
 // planWeightImports runs PlanImport for each spec without side effects.
@@ -303,7 +317,7 @@ func pushWeightArtifacts(ctx context.Context, repo string, artifacts []*model.We
 					status := fmt.Sprintf("Retrying (%d/%d) in %s",
 						event.Attempt, event.MaxAttempts,
 						event.NextRetryIn.Round(time.Second))
-					pw.WriteStatus(event.Name, status)
+					pw.WriteLine(event.Name + ": " + status)
 					if !console.IsTerminal() {
 						console.Warnf("  %s: retrying (%d/%d) in %s: %v",
 							event.Name, event.Attempt, event.MaxAttempts,
@@ -314,11 +328,11 @@ func pushWeightArtifacts(ctx context.Context, repo string, artifacts []*model.We
 			})
 
 			if pushErr != nil {
-				pw.WriteStatus(artName, "FAILED")
+				pw.WriteLine(artName + ": FAILED")
 				return fmt.Errorf("push weight %q: %w", artName, pushErr)
 			}
 
-			pw.WriteStatus(artName, "Pushed")
+			pw.WriteLine(artName + ": Pushed")
 			refs[i] = result.Ref
 			return nil
 		})
@@ -327,6 +341,7 @@ func pushWeightArtifacts(ctx context.Context, repo string, artifacts []*model.We
 	if err := g.Wait(); err != nil {
 		return err
 	}
+	pw.Close()
 
 	var totalSize int64
 	for i, wa := range artifacts {
