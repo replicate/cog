@@ -5,9 +5,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
@@ -336,6 +338,221 @@ build:
 	require.NoError(t, err)
 	fmt.Println(actual)
 	require.Contains(t, actual, `uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt`)
+}
+
+func TestPythonRequirementsLocalPackageArtifact(t *testing.T) {
+	tmpDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "requirements", "cog"), 0o755))
+	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "requirements", "dist"), 0o755))
+	require.NoError(t, os.Mkdir(path.Join(tmpDir, "objects"), 0o755))
+	artifactPath := path.Join(tmpDir, "objects", "blob")
+	wheelName := "local_pkg-0.1.0-py3-none-any.whl"
+	wheelLink := path.Join(tmpDir, "requirements", "cog", wheelName)
+	archiveName := "local helper-0.1.0.tar.gz"
+	require.NoError(t, os.WriteFile(artifactPath, []byte("wheel"), 0o644))
+	require.NoError(t, os.Symlink(artifactPath, wheelLink))
+	require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements", "dist", archiveName), []byte("archive"), 0o644))
+	requirementsContents := "cog/" + wheelName + "  # vendored helper\n./cog/" + wheelName + "\n./dist/" + archiveName
+	require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements", "requirements.txt"), []byte(requirementsContents), 0o644))
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  python_requirements: "requirements/requirements.txt"
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(tmpDir))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	buildDir := t.TempDir()
+	gen, err := NewStandardGenerator(conf, tmpDir, buildDir, "", command, client, true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	artifact := conf.LocalPackageArtifacts()[0]
+	assert.Equal(t, path.Join("requirements", "cog", wheelName), artifact.RelativePath)
+	copyArtifacts := "COPY --from=cog_build local_package_artifacts/ /tmp/local_package_artifacts/"
+	pipInstall := "uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt"
+	require.Contains(t, actual, copyArtifacts)
+	require.Contains(t, actual, pipInstall)
+	assert.Less(t, strings.Index(actual, copyArtifacts), strings.Index(actual, pipInstall))
+
+	stagedArtifact, err := os.ReadFile(path.Join(buildDir, localArtifactsDir, artifact.RelativePath))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("wheel"), stagedArtifact)
+
+	requirements, err := os.ReadFile(path.Join(buildDir, "requirements.txt"))
+	require.NoError(t, err)
+	containerPath := path.Join(localArtifactsContainerDir, filepath.ToSlash(artifact.RelativePath))
+	archivePath := path.Join(localArtifactsContainerDir, "requirements", "dist", archiveName)
+	assert.Equal(t, containerPath+"\n"+containerPath+"\n"+archivePath, string(requirements))
+}
+
+func TestLocalPackageArtifactsResetManagedPackages(t *testing.T) {
+	tmpDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "dist"), 0o755))
+	require.NoError(t, os.WriteFile(path.Join(tmpDir, "dist", "renamed-runtime.tar.gz"), []byte("artifact"), 0o644))
+	require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte("./dist/renamed-runtime.tar.gz"), 0o644))
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  python_requirements: "requirements.txt"
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(tmpDir))
+	gen, err := NewStandardGenerator(conf, tmpDir, t.TempDir(), "", dockertest.NewMockCommand(), registrytest.NewMockRegistryClient(), true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+	userInstall := "uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt"
+	resetManaged := "RUN uv pip uninstall cog coglet"
+	managedInstall := "uv pip install --no-cache cog"
+	require.Contains(t, actual, userInstall)
+	require.Contains(t, actual, resetManaged)
+	require.Contains(t, actual, managedInstall)
+	assert.Less(t, strings.Index(actual, userInstall), strings.Index(actual, resetManaged))
+	assert.Less(t, strings.Index(actual, resetManaged), strings.Index(actual, managedInstall))
+}
+
+func TestLocalPackageArtifactsResetManagedPackagesWithGPU(t *testing.T) {
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(path.Join(projectDir, "package-0.1.0.tar.gz"), []byte("artifact"), 0o644))
+	require.NoError(t, os.WriteFile(path.Join(projectDir, "requirements.txt"), []byte("./package-0.1.0.tar.gz"), 0o644))
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: true
+  python_version: "3.12"
+  python_requirements: "requirements.txt"
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(projectDir))
+	gen, err := NewStandardGenerator(conf, projectDir, t.TempDir(), "", dockertest.NewMockCommand(), registrytest.NewMockRegistryClient(), true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+	require.Contains(t, actual, "RUN uv pip uninstall --break-system-packages cog coglet")
+}
+
+func TestLocalPackageArtifactRejectsSymlinkSwapOutsideProject(t *testing.T) {
+	projectDir := t.TempDir()
+	artifactPath := path.Join(projectDir, "package-0.1.0.tar.gz")
+	require.NoError(t, os.WriteFile(artifactPath, []byte("inside"), 0o644))
+	require.NoError(t, os.WriteFile(path.Join(projectDir, "requirements.txt"), []byte("./package-0.1.0.tar.gz"), 0o644))
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  python_requirements: "requirements.txt"
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(projectDir))
+	gen, err := NewStandardGenerator(conf, projectDir, t.TempDir(), "", dockertest.NewMockCommand(), registrytest.NewMockRegistryClient(), true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
+
+	outsidePath := path.Join(t.TempDir(), "outside.tar.gz")
+	require.NoError(t, os.WriteFile(outsidePath, []byte("outside"), 0o644))
+	require.NoError(t, os.Remove(artifactPath))
+	require.NoError(t, os.Symlink(outsidePath, artifactPath))
+
+	_, _, _, err = gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.ErrorContains(t, err, "failed to stage local Python package artifact")
+}
+
+func TestLocalPackageArtifactDoesNotFollowStagingSymlink(t *testing.T) {
+	projectDir := t.TempDir()
+	artifactName := "package-0.1.0.tar.gz"
+	require.NoError(t, os.WriteFile(path.Join(projectDir, artifactName), []byte("artifact"), 0o644))
+	require.NoError(t, os.WriteFile(path.Join(projectDir, "requirements.txt"), []byte("./"+artifactName), 0o644))
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  python_requirements: "requirements.txt"
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(projectDir))
+	buildDir := t.TempDir()
+	gen, err := NewStandardGenerator(conf, projectDir, buildDir, "", dockertest.NewMockCommand(), registrytest.NewMockRegistryClient(), true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
+
+	victimPath := path.Join(t.TempDir(), "victim")
+	require.NoError(t, os.WriteFile(victimPath, []byte("untouched"), 0o644))
+	stagedPath := path.Join(buildDir, localArtifactsDir, artifactName)
+	require.NoError(t, os.MkdirAll(filepath.Dir(stagedPath), 0o755))
+	require.NoError(t, os.Symlink(victimPath, stagedPath))
+
+	_, _, _, err = gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+	victim, err := os.ReadFile(victimPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("untouched"), victim)
+	staged, err := os.ReadFile(stagedPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("artifact"), staged)
+}
+
+func TestPythonRequirementsDoesNotFollowBuildSymlink(t *testing.T) {
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(path.Join(projectDir, "requirements.txt"), []byte("packaging==26.0"), 0o644))
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  python_requirements: "requirements.txt"
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(projectDir))
+	buildDir := t.TempDir()
+	gen, err := NewStandardGenerator(conf, projectDir, buildDir, "", dockertest.NewMockCommand(), registrytest.NewMockRegistryClient(), true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
+
+	victimPath := path.Join(t.TempDir(), "victim")
+	require.NoError(t, os.WriteFile(victimPath, []byte("untouched"), 0o644))
+	require.NoError(t, os.Symlink(victimPath, path.Join(buildDir, "requirements.txt")))
+
+	_, _, _, err = gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+	victim, err := os.ReadFile(victimPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("untouched"), victim)
+	requirements, err := os.ReadFile(path.Join(buildDir, "requirements.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("packaging==26.0"), requirements)
+}
+
+func TestGenerateRejectsReplacedBuildDirectory(t *testing.T) {
+	projectDir := t.TempDir()
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(projectDir))
+	parentDir := t.TempDir()
+	buildDir := path.Join(parentDir, "build")
+	require.NoError(t, os.Mkdir(buildDir, 0o755))
+	gen, err := NewStandardGenerator(conf, projectDir, buildDir, "", dockertest.NewMockCommand(), registrytest.NewMockRegistryClient(), true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
+
+	require.NoError(t, os.Rename(buildDir, path.Join(parentDir, "old-build")))
+	require.NoError(t, os.Mkdir(buildDir, 0o755))
+	_, _, _, err = gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.ErrorContains(t, err, "build directory changed")
 }
 
 // GPU builds on nvidia/cuda base images install Python via `uv python install`

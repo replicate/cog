@@ -59,6 +59,20 @@ Your `cog.yaml` file can set either `python_packages` or `python_requirements`, 
 
 This follows the standard [requirements.txt](https://pip.pypa.io/en/stable/reference/requirements-file-format/) format.
 
+Requirements files can list a local wheel or source archive:
+
+`requirements.txt`:
+
+```
+./dist/mylib-0.1.0-py3-none-any.whl
+./vendor/helperlib.zip
+./packages/localpkg.tar.gz
+```
+
+Cog supports `.whl`, `.zip`, `.tar.gz`, `.tgz`, `.tar.bz2`, and `.tar.xz` files. Paths may contain spaces, are resolved relative to the requirements file, and must stay inside the project directory.
+
+Only bare paths are supported. Local directories, local direct references such as `name @ path`, and options, hashes, extras, or markers on a local artifact line are rejected. Remote direct references remain supported. Cog overrides any `cog` or `coglet` distribution installed by a local artifact; use `build.sdk_version` or `COG_SDK_WHEEL` for Cog, and `COGLET_WHEEL` for Coglet.
+
 To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
 
 `cog.yaml`:
@@ -136,7 +150,7 @@ build:
     - cd cowsay-3.7.0 && make install
 ```
 
-Your code is _not_ available to commands in `run`. This is so we can build your image efficiently when running locally.
+Your source code is not available to `run` commands. List local wheels and source archives in `python_requirements` instead.
 
 Each command in `run` can be either a string or a dictionary in the following format:
 

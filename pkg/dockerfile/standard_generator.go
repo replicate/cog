@@ -1,8 +1,11 @@
 package dockerfile
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -29,6 +32,11 @@ const uvBreakSystemPackages = "--break-system-packages"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
 
+// localArtifactsDir is the directory local package artifacts are staged into,
+// both under the build context on the host and under /tmp in the container.
+const localArtifactsDir = "local_package_artifacts"
+const localArtifactsContainerDir = "/tmp/" + localArtifactsDir
+
 type StandardGenerator struct {
 	Config         *config.Config
 	Dir            string
@@ -44,7 +52,9 @@ type StandardGenerator struct {
 	precompile       bool
 
 	// absolute path to the build cache dir (.cog/build/)
-	tmpDir string
+	tmpDir        string
+	buildRootInfo os.FileInfo
+	buildRoot     *os.Root
 
 	fileWalker weightslegacy.FileWalker
 
@@ -73,6 +83,16 @@ func NewStandardGenerator(config *config.Config, dir string, buildCacheDir strin
 	if configFilename == "" {
 		configFilename = "cog.yaml"
 	}
+	if err := config.ResolveLocalPackageArtifacts(dir); err != nil {
+		return nil, err
+	}
+	buildRootInfo, err := os.Lstat(buildCacheDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect build directory: %w", err)
+	}
+	if !buildRootInfo.IsDir() {
+		return nil, fmt.Errorf("build path %s must be a directory", buildCacheDir)
+	}
 
 	return &StandardGenerator{
 		Config:         config,
@@ -83,6 +103,7 @@ func NewStandardGenerator(config *config.Config, dir string, buildCacheDir strin
 		GOOS:             "linux",
 		GOARCH:           "amd64",
 		tmpDir:           buildCacheDir,
+		buildRootInfo:    buildRootInfo,
 		fileWalker:       filepath.Walk,
 		useCudaBaseImage: true,
 		useCogBaseImage:  nil,
@@ -148,6 +169,11 @@ func (g *StandardGenerator) uvPipInstallFlags(flags string) string {
 }
 
 func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, error) {
+	if err := g.openBuildRoot(); err != nil {
+		return "", err
+	}
+	defer g.closeBuildRoot()
+
 	baseImage, err := g.BaseImage(ctx)
 	if err != nil {
 		return "", err
@@ -231,6 +257,31 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 	steps = append(steps, LDConfigCacheBuildCommand, runCommands)
 
 	return joinStringsWithoutLineSpace(steps), nil
+}
+
+func (g *StandardGenerator) openBuildRoot() error {
+	root, err := os.OpenRoot(g.tmpDir)
+	if err != nil {
+		return fmt.Errorf("failed to open build directory: %w", err)
+	}
+	info, err := root.Stat(".")
+	if err != nil {
+		_ = root.Close()
+		return fmt.Errorf("failed to inspect build directory: %w", err)
+	}
+	if !os.SameFile(g.buildRootInfo, info) {
+		_ = root.Close()
+		return fmt.Errorf("build directory changed during Dockerfile generation")
+	}
+	g.buildRoot = root
+	return nil
+}
+
+func (g *StandardGenerator) closeBuildRoot() {
+	if g.buildRoot != nil {
+		_ = g.buildRoot.Close()
+		g.buildRoot = nil
+	}
 }
 
 func (g *StandardGenerator) GenerateModelBase(ctx context.Context) (string, error) {
@@ -863,7 +914,7 @@ func (g *StandardGenerator) filterManagedPackages(reqContents string) string {
 					"Remove it from requirements and use build.sdk_version in cog.yaml or %s to control the version.",
 				trimmed,
 				override(baseName),
-				map[string]string{"cog": "COG_SDK_WHEEL", "coglet": "COGLET_WHEEL"}[baseName],
+				map[string]string{"cog": wheels.CogSDKWheelEnvVar, "coglet": wheels.CogletWheelEnvVar}[baseName],
 			)
 			continue
 		}
@@ -899,8 +950,14 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 		return "", err
 	}
 
+	var artifactCopyLine string
+	g.pythonRequirementsContents, artifactCopyLine, err = g.stageLocalPackageArtifacts(g.pythonRequirementsContents)
+	if err != nil {
+		return "", err
+	}
 	// Strip cog/coglet from user requirements — we always install them ourselves
-	// via installCog(). Leaving them in would cause pip to overwrite our version.
+	// via installCog(). Local paths have already been rewritten and cannot be
+	// mistaken for managed package names.
 	g.pythonRequirementsContents = g.filterManagedPackages(g.pythonRequirementsContents)
 
 	if strings.Trim(g.pythonRequirementsContents, "") == "" {
@@ -917,12 +974,152 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
-	return strings.Join([]string{
+	return strings.Join(filterEmpty([]string{
+		artifactCopyLine,
 		copyLine[0],
 		CFlags,
 		pipInstallLine,
 		"ENV CFLAGS=",
-	}, "\n"), nil
+		g.resetManagedPackages(),
+	}), "\n"), nil
+}
+
+func (g *StandardGenerator) resetManagedPackages() string {
+	if !g.requiresCog || len(g.Config.LocalPackageArtifacts()) == 0 {
+		return ""
+	}
+	flags := ""
+	if g.needsBreakSystemPackages() {
+		flags = " " + uvBreakSystemPackages
+	}
+	return "RUN " + uvPip + " uninstall" + flags + " cog coglet"
+}
+
+func (g *StandardGenerator) stageLocalPackageArtifacts(reqContents string) (string, string, error) {
+	artifacts := g.Config.LocalPackageArtifacts()
+	if len(artifacts) == 0 {
+		return reqContents, "", nil
+	}
+
+	root, err := os.OpenRoot(g.Dir)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to open project directory: %w", err)
+	}
+	defer root.Close()
+
+	projectRoot, err := filepath.Abs(g.Dir)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to resolve project directory: %w", err)
+	}
+	projectRoot, err = filepath.EvalSymlinks(projectRoot)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to resolve project directory symlinks: %w", err)
+	}
+	openedRootInfo, err := root.Stat(".")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to inspect project directory: %w", err)
+	}
+	resolvedRootInfo, err := os.Stat(projectRoot)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to inspect resolved project directory: %w", err)
+	}
+	if !os.SameFile(openedRootInfo, resolvedRootInfo) {
+		return "", "", fmt.Errorf("project directory changed while staging local Python package artifacts")
+	}
+	if g.buildRoot == nil {
+		return "", "", fmt.Errorf("build directory is not open")
+	}
+
+	containerPaths := map[string]string{}
+	staged := map[string]bool{}
+	for _, artifact := range artifacts {
+		sourcePath, err := filepath.Rel(projectRoot, artifact.SourcePath)
+		if err != nil || !pathStaysWithinRoot(sourcePath) {
+			return "", "", fmt.Errorf("local Python package artifact %q must be inside the project directory", artifact.Requirement)
+		}
+		if !pathStaysWithinRoot(artifact.RelativePath) {
+			return "", "", fmt.Errorf("invalid staged path for local Python package artifact %q", artifact.Requirement)
+		}
+		if !staged[artifact.RelativePath] {
+			destinationPath := filepath.Join(localArtifactsDir, artifact.RelativePath)
+			if err := copyLocalPackageArtifact(root, sourcePath, g.buildRoot, destinationPath); err != nil {
+				return "", "", fmt.Errorf("failed to stage local Python package artifact %s: %w", artifact.SourcePath, err)
+			}
+			staged[artifact.RelativePath] = true
+		}
+		containerPaths[artifact.Requirement] = path.Join(localArtifactsContainerDir, filepath.ToSlash(artifact.RelativePath))
+	}
+	lines := []string{}
+	matched := map[string]bool{}
+	for line := range strings.SplitSeq(reqContents, "\n") {
+		requirement := strings.TrimSpace(line)
+		if replacement, ok := containerPaths[requirement]; ok {
+			lines = append(lines, replacement)
+			matched[requirement] = true
+		} else {
+			lines = append(lines, line)
+		}
+	}
+	for requirement := range containerPaths {
+		if !matched[requirement] {
+			return "", "", fmt.Errorf("failed to rewrite local Python package artifact %q", requirement)
+		}
+	}
+	return strings.Join(lines, "\n"), fmt.Sprintf("COPY --from=cog_build %s/ %s/", localArtifactsDir, localArtifactsContainerDir), nil
+}
+
+func copyLocalPackageArtifact(sourceRoot *os.Root, sourcePath string, destinationRoot *os.Root, destinationPath string) error {
+	source, err := sourceRoot.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	info, err := source.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("source must be a regular file")
+	}
+	return writeBuildFile(destinationRoot, destinationPath, source)
+}
+
+func writeBuildFile(root *os.Root, destinationPath string, source io.Reader) error {
+	if !pathStaysWithinRoot(destinationPath) {
+		return fmt.Errorf("invalid build path %q", destinationPath)
+	}
+	if err := root.MkdirAll(filepath.Dir(destinationPath), 0o755); err != nil {
+		return err
+	}
+	tmpPath := destinationPath + ".tmp"
+	if err := root.Remove(tmpPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	destination, err := root.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(destination, source); err != nil {
+		_ = destination.Close()
+		_ = root.Remove(tmpPath)
+		return err
+	}
+	if err := destination.Close(); err != nil {
+		_ = root.Remove(tmpPath)
+		return err
+	}
+	if err := root.Rename(tmpPath, destinationPath); err != nil {
+		_ = root.Remove(tmpPath)
+		return err
+	}
+	return nil
+}
+
+func pathStaysWithinRoot(path string) bool {
+	if path == "" || filepath.IsAbs(path) || path == ".." {
+		return false
+	}
+	return !strings.HasPrefix(path, ".."+string(filepath.Separator))
 }
 
 func (g *StandardGenerator) runCommands() (string, error) {
@@ -980,11 +1177,10 @@ func (g *StandardGenerator) installCACert() (string, error) {
 // referenced via the "cog_build" named build context so the path is
 // relative to .cog/build/, not the project root.
 func (g *StandardGenerator) writeTemp(filename string, contents []byte) ([]string, string, error) {
-	path := filepath.Join(g.tmpDir, filename)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return []string{}, "", fmt.Errorf("Failed to write %s: %w", filename, err)
+	if g.buildRoot == nil {
+		return []string{}, "", fmt.Errorf("build directory is not open")
 	}
-	if err := os.WriteFile(path, contents, 0o644); err != nil {
+	if err := writeBuildFile(g.buildRoot, filename, bytes.NewReader(contents)); err != nil {
 		return []string{}, "", fmt.Errorf("Failed to write %s: %w", filename, err)
 	}
 	return []string{fmt.Sprintf("COPY --from=cog_build %s /tmp/%s", filename, filename)}, "/tmp/" + filename, nil
