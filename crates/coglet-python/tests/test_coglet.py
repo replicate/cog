@@ -229,19 +229,21 @@ class Predictor(BasePredictor):
     schema_dir = tmp_path / ".cog"
     schema_dir.mkdir()
     (schema_dir / "openapi_schema.json").write_text(
-        json.dumps({
-            "paths": {"/predictions": {"post": {"x-cog-streaming": True}}},
-            "components": {
-                "schemas": {
-                    "Input": {
-                        "type": "object",
-                        "properties": {"release_path": {"type": "string"}},
-                        "required": ["release_path"],
-                    },
-                    "Output": {"type": "array", "items": {"type": "string"}},
-                }
-            },
-        })
+        json.dumps(
+            {
+                "paths": {"/predictions": {"post": {"x-cog-streaming": True}}},
+                "components": {
+                    "schemas": {
+                        "Input": {
+                            "type": "object",
+                            "properties": {"release_path": {"type": "string"}},
+                            "required": ["release_path"],
+                        },
+                        "Output": {"type": "array", "items": {"type": "string"}},
+                    }
+                },
+            }
+        )
     )
     return predictor
 
