@@ -27,7 +27,7 @@
   "devDependencies": {
     "@types/node": "24.10.1",
     "@vitest/coverage-v8": "4.1.10",
-    "jsdom": "27.2.0",
+    "jsdom": "30.0.1",
     "oxfmt": "0.58.0",
     "oxlint": "1.50.0",
     "tsx": "4.23.2",
