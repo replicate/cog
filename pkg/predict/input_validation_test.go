@@ -3,6 +3,8 @@ package predict
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -123,6 +125,50 @@ func TestValidateInputsForModeValidatesNamesBeforeFileReads(t *testing.T) {
 	require.NotContains(t, err.Error(), missingPath)
 }
 
+func TestValidateInputsForModeMaterializesFilesOnce(t *testing.T) {
+	schema := validationTestSchema(t)
+	schema.Components.Schemas["Input"].Value.Properties["image"] = &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}}
+	schema.Components.Schemas["Input"].Value.Properties["images"] = &openapi3.SchemaRef{Value: &openapi3.Schema{
+		Type:  &openapi3.Types{"array"},
+		Items: &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+	}}
+
+	filePath := filepath.Join(t.TempDir(), "input.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("original contents"), 0o600))
+	arrayFile := "@" + filePath
+	inputs := Inputs{
+		"prompt": {String: strPtr("hello")},
+		"image":  {File: &filePath},
+		"images": {Array: &[]any{arrayFile}},
+	}
+
+	require.NoError(t, ValidateInputsForMode(inputs, schema, false))
+	materializedImage := inputs["image"]
+	materializedImages := inputs["images"]
+	require.Nil(t, materializedImage.File)
+	require.NotNil(t, materializedImage.String)
+	require.NotNil(t, materializedImages.Array)
+	require.NoError(t, os.Remove(filePath))
+
+	inputMap, err := inputs.toMap()
+	require.NoError(t, err)
+	require.Equal(t, *materializedImage.String, inputMap["image"])
+	require.Equal(t, *materializedImages.Array, inputMap["images"])
+}
+
+func TestValidateInputsForModeDoesNotCacheFilesOnFailure(t *testing.T) {
+	schema := validationTestSchema(t)
+	schema.Components.Schemas["Input"].Value.Properties["image"] = &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}}
+
+	filePath := filepath.Join(t.TempDir(), "input.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("contents"), 0o600))
+	inputs := Inputs{"image": {File: &filePath}}
+
+	require.EqualError(t, ValidateInputsForMode(inputs, schema, false), `missing required input "prompt"`)
+	require.NotNil(t, inputs["image"].File)
+	require.Nil(t, inputs["image"].String)
+}
+
 func TestValidateInputMapForModeNoInputs(t *testing.T) {
 	schema := validationTestSchema(t)
 	schema.Components.Schemas["Input"].Value.Properties = openapi3.Schemas{}
@@ -236,6 +282,29 @@ func TestHasInputComponentAcceptsIncompleteDocument(t *testing.T) {
 	schema.Paths = nil
 	require.Error(t, schema.Validate(context.Background()))
 	require.True(t, HasInputComponent(schema, false))
+}
+
+func TestHasInputComponentRequiresProperties(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		inputSchema string
+		want        bool
+	}{
+		{name: "absent properties", inputSchema: `{"type": "object"}`, want: false},
+		{name: "explicit empty properties", inputSchema: `{"type": "object", "properties": {}}`, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := []byte(`{
+  "openapi": "3.0.2",
+  "info": {"title": "Cog", "version": "test"},
+  "paths": {},
+  "components": {"schemas": {"Input": ` + tc.inputSchema + `}}
+}`)
+			schema, err := openapi3.NewLoader().LoadFromData(data)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, HasInputComponent(schema, false))
+		})
+	}
 }
 
 func TestHasInputComponentFallbacks(t *testing.T) {

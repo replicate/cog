@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -14,8 +15,8 @@ import (
 // component needed by preflight validation, so callers can fall back to the
 // runtime schema for images with minimal or missing labels.
 func HasInputComponent(schema *openapi3.T, isTrain bool) bool {
-	_, err := inputComponentForMode(schema, isTrain)
-	return err == nil
+	component, err := inputComponentForMode(schema, isTrain)
+	return err == nil && component.Properties != nil
 }
 
 // ValidateInputsForMode validates CLI inputs after schema-directed coercion.
@@ -27,7 +28,7 @@ func ValidateInputsForMode(inputs Inputs, schema *openapi3.T, isTrain bool) erro
 	if err := validateKnownInputNames(inputs, component); err != nil {
 		return err
 	}
-	inputMap, err := inputs.toMap()
+	inputMap, materializedFiles, err := inputs.materialize()
 	if err != nil {
 		return err
 	}
@@ -35,7 +36,12 @@ func ValidateInputsForMode(inputs Inputs, schema *openapi3.T, isTrain bool) erro
 	if err != nil {
 		return err
 	}
-	return ValidateInputMapForMode(normalized, schema, isTrain)
+	if err := ValidateInputMapForMode(normalized, schema, isTrain); err != nil {
+		return err
+	}
+	// Reuse the exact file contents validated here when sending the request.
+	maps.Copy(inputs, materializedFiles)
+	return nil
 }
 
 // ValidateInputMapForMode validates an already JSON-shaped input map.

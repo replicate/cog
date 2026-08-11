@@ -119,9 +119,15 @@ func newScalarInput(value string, schema *openapi3.Schema) Input {
 	}
 }
 
-func (inputs *Inputs) toMap() (map[string]any, error) {
+func (inputs Inputs) toMap() (map[string]any, error) {
+	keyVals, _, err := inputs.materialize()
+	return keyVals, err
+}
+
+func (inputs Inputs) materialize() (map[string]any, Inputs, error) {
 	keyVals := map[string]any{}
-	for key, input := range *inputs {
+	materializedFiles := Inputs{}
+	for key, input := range inputs {
 		switch {
 		case input.String != nil:
 			// Directly assign the string value
@@ -130,25 +136,31 @@ func (inputs *Inputs) toMap() (map[string]any, error) {
 			// Single file handling: read content and convert to a data URL
 			dataURL, err := fileToDataURL(*input.File)
 			if err != nil {
-				return nil, fmt.Errorf("input %q: %w", key, err)
+				return nil, nil, fmt.Errorf("input %q: %w", key, err)
 			}
 			keyVals[key] = dataURL
+			materializedFiles[key] = Input{String: &dataURL}
 		case input.Array != nil:
 			// Handle array elements, which may be file paths (strings prefixed
 			// with '@') or values already coerced to their schema type.
 			values := make([]any, len(*input.Array))
+			hasFile := false
 			for i, elem := range *input.Array {
 				if str, ok := elem.(string); ok && strings.HasPrefix(str, "@") {
 					dataURL, err := fileToDataURL(str[1:]) // strip '@' prefix
 					if err != nil {
-						return nil, fmt.Errorf("input %q: %w", key, err)
+						return nil, nil, fmt.Errorf("input %q: %w", key, err)
 					}
 					values[i] = dataURL
+					hasFile = true
 					continue
 				}
 				values[i] = elem
 			}
 			keyVals[key] = values
+			if hasFile {
+				materializedFiles[key] = Input{Array: &values}
+			}
 		case input.Json != nil:
 			keyVals[key] = *input.Json
 		case input.Float != nil:
@@ -159,7 +171,7 @@ func (inputs *Inputs) toMap() (map[string]any, error) {
 			keyVals[key] = *input.Bool
 		}
 	}
-	return keyVals, nil
+	return keyVals, materializedFiles, nil
 }
 
 // Helper function to read file content and convert to a data URL
