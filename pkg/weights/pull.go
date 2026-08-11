@@ -9,6 +9,7 @@ import (
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
+	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/weights/lockfile"
 )
@@ -42,16 +43,19 @@ type PullEvent struct {
 	MissingFiles int
 	ManifestRef  string
 
-	// LayerStart / LayerDone / FileStored: layer context.
-	// LayerSize is 0 when the backing layer does not expose a size
-	// (in-memory test layers).
+	// LayerStart / FileProgress / FileStored / LayerDone: layer digest.
 	LayerDigest string
-	LayerSize   int64
 
-	// FileStored: per-file detail for a file just written to the store.
+	// LayerStart: compressed layer size. Zero when unavailable.
+	LayerSize int64
+
+	// FileProgress / FileStored: per-file detail.
 	FilePath   string
 	FileDigest string
 	FileSize   int64
+
+	// FileProgress: bytes read from the current file in the fetched layer.
+	FileComplete int64
 
 	// WeightDone: cumulative totals for the weight. FullyCached is
 	// true when no registry I/O happened.
@@ -69,6 +73,7 @@ const (
 	PullEventUnknown PullEventKind = iota
 	PullEventWeightStart
 	PullEventLayerStart
+	PullEventFileProgress
 	PullEventFileStored
 	PullEventLayerDone
 	PullEventWeightDone
@@ -248,7 +253,21 @@ func (m *Manager) pullLayer(
 			return fmt.Errorf("layer %s: unexpected file %q not in lockfile", layerDigest, hdr.Name)
 		}
 
-		if err := m.store.PutFile(ctx, file.Digest, file.Size, tr); err != nil {
+		reportProgress := func(complete int64) {
+			emit(PullEvent{
+				Kind:         PullEventFileProgress,
+				Weight:       weightName,
+				LayerDigest:  layerDigest,
+				FilePath:     file.Path,
+				FileDigest:   file.Digest,
+				FileSize:     file.Size,
+				FileComplete: complete,
+			})
+		}
+		reportProgress(0)
+
+		reader := util.NewProgressReader(tr, reportProgress)
+		if err := m.store.PutFile(ctx, file.Digest, file.Size, reader); err != nil {
 			return fmt.Errorf("store %s (%s): %w", file.Path, file.Digest, err)
 		}
 		written[file.Path] = true

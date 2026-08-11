@@ -122,6 +122,14 @@ func (b *WeightBuilder) resolveInventory(ctx context.Context, ws *WeightSpec) (*
 	}, nil
 }
 
+// WeightBuildProgress reports aggregate download progress for one weight.
+type WeightBuildProgress struct {
+	WeightName string
+	Complete   int64
+	Total      int64
+	Done       bool
+}
+
 // WeightBuilder is the weight factory: given a WeightSpec (source URI +
 // target), it ingresses the source files into the local
 // content-addressed store, plans tar layers, derives layer digests
@@ -137,9 +145,10 @@ func (b *WeightBuilder) resolveInventory(ctx context.Context, ws *WeightSpec) (*
 // digest it writes into the artifact descriptor is a sha256 of the
 // serialized manifest bytes.
 type WeightBuilder struct {
-	source   *Source
-	store    store.Store
-	lockPath string
+	source     *Source
+	store      store.Store
+	lockPath   string
+	progressFn func(WeightBuildProgress)
 }
 
 // NewWeightBuilder creates a WeightBuilder.
@@ -148,6 +157,11 @@ type WeightBuilder struct {
 // weights.lock is read/written.
 func NewWeightBuilder(source *Source, st store.Store, lockPath string) *WeightBuilder {
 	return &WeightBuilder{source: source, store: st, lockPath: lockPath}
+}
+
+// SetProgressFn sets an optional callback for aggregate download progress.
+func (b *WeightBuilder) SetProgressFn(fn func(WeightBuildProgress)) {
+	b.progressFn = fn
 }
 
 // Build runs the full import pipeline for one weight:
@@ -200,7 +214,7 @@ func (b *WeightBuilder) buildWithResolved(ctx context.Context, spec ArtifactSpec
 	inv := weightsource.Inventory{Files: resolved.mergedFiles}
 
 	// Step 2: ingress the filtered files into the local store.
-	if err := ingressFromInventory(ctx, resolved.owners, b.store, inv); err != nil {
+	if err := ingressFromInventoryWithProgress(ctx, ws.Name(), resolved.owners, b.store, inv, b.progressFn); err != nil {
 		return nil, fmt.Errorf("populate store for weight %q: %w", ws.Name(), err)
 	}
 

@@ -33,6 +33,16 @@ func sourceOwners(src weightsource.Source, inv weightsource.Inventory) map[strin
 	return owners
 }
 
+type countingSource struct {
+	weightsource.Source
+	opened []string
+}
+
+func (s *countingSource) Open(ctx context.Context, path string) (io.ReadCloser, error) {
+	s.opened = append(s.opened, path)
+	return s.Source.Open(ctx, path)
+}
+
 // packTestDir is a convenience test helper that wires a local
 // directory through the new Source/Inventory + ingress +
 // computeLayerDigests pipeline. It hides the boilerplate so test
@@ -144,6 +154,54 @@ func TestPack_SingleSmallFile(t *testing.T) {
 	entries := readLayerEntries(t, r, st)
 	require.Len(t, entries, 1)
 	assert.Equal(t, "config.json", entries[0])
+}
+
+func TestIngressFromInventoryReportsProgress(t *testing.T) {
+	dir := t.TempDir()
+	firstContent := []byte("first file")
+	secondContent := []byte("second file is larger")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "first.bin"), firstContent, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "first-copy.bin"), firstContent, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "second.bin"), secondContent, 0o644))
+
+	fileSource, err := weightsource.NewFileSource("file://"+dir, "")
+	require.NoError(t, err)
+	inv, err := fileSource.Inventory(t.Context())
+	require.NoError(t, err)
+	require.Len(t, inv.Files, 3)
+
+	src := &countingSource{Source: fileSource}
+	st, err := store.NewFileStore(t.TempDir())
+	require.NoError(t, err)
+
+	var events []WeightBuildProgress
+	err = ingressFromInventoryWithProgress(t.Context(), "test-weight", sourceOwners(src, inv), st, inv, func(event WeightBuildProgress) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(events), 4)
+
+	total := int64(len(firstContent) + len(secondContent))
+	first := events[0]
+	assert.Equal(t, "test-weight", first.WeightName)
+	assert.Equal(t, int64(0), first.Complete)
+	assert.Equal(t, total, first.Total)
+	assert.False(t, first.Done)
+
+	var previous int64
+	for i, event := range events {
+		assert.Equal(t, "test-weight", event.WeightName)
+		assert.Equal(t, total, event.Total)
+		assert.GreaterOrEqual(t, event.Complete, previous)
+		assert.LessOrEqual(t, event.Complete, event.Total)
+		assert.Equal(t, i == len(events)-1, event.Done)
+		previous = event.Complete
+	}
+
+	last := events[len(events)-1]
+	assert.Equal(t, total, last.Complete)
+	assert.True(t, last.Done)
+	assert.Len(t, src.opened, 2)
 }
 
 func TestPack_SingleLargeFile_Incompressible(t *testing.T) {

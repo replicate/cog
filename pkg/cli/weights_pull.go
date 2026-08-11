@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/paths"
 	"github.com/replicate/cog/pkg/util/console"
@@ -37,7 +39,7 @@ home directory is on a different filesystem than your project.
 
 ` + weightRegistryResolutionHelp + `
 
-Use --verbose to show per-layer and per-file progress.`,
+Use --verbose to show manifest, layer, and file details.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return weightsPullCommand(cmd, args, verbose)
@@ -45,7 +47,7 @@ Use --verbose to show per-layer and per-file progress.`,
 	}
 
 	addConfigFlag(cmd)
-	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show per-layer and per-file progress")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show manifest, layer, and file details")
 	return cmd
 }
 
@@ -78,27 +80,34 @@ func weightsPullCommand(cmd *cobra.Command, args []string, verbose bool) error {
 		console.Info("")
 	}
 
-	results, err := mgr.Pull(ctx, args, pullEventPrinter(verbose))
+	progress := docker.NewProgressWriter()
+	defer progress.Close()
+	results, err := mgr.Pull(ctx, args, pullEventPrinter(verbose, progress))
+	progress.Close()
 	printPullSummary(results, verbose)
 	return err
 }
 
 // pullEventPrinter returns a PullEvent handler that writes progress to
-// the console. Verbose mode adds per-layer / per-file detail.
-func pullEventPrinter(verbose bool) func(weights.PullEvent) {
+// the console. Verbose mode adds manifest, layer, and file details.
+func pullEventPrinter(verbose bool, progress *docker.ProgressWriter) func(weights.PullEvent) {
+	writeLine := func(format string, args ...any) {
+		progress.WriteLine(fmt.Sprintf(format, args...))
+	}
+
 	return func(e weights.PullEvent) {
 		switch e.Kind {
 		case weights.PullEventWeightStart:
 			if e.MissingFiles == 0 {
-				console.Infof("Pulling %s... cached (%d/%d files)", e.Weight, e.TotalFiles, e.TotalFiles)
+				writeLine("Pulling %s... cached (%d/%d files)", e.Weight, e.TotalFiles, e.TotalFiles)
 				return
 			}
 			if verbose {
-				console.Infof("Pulling %s -> %s", e.Weight, e.Target)
-				console.Infof("  manifest: %s", e.ManifestRef)
-				console.Infof("  files:    %d missing / %d total", e.MissingFiles, e.TotalFiles)
+				writeLine("Pulling %s -> %s", e.Weight, e.Target)
+				writeLine("  manifest: %s", e.ManifestRef)
+				writeLine("  files:    %d missing / %d total", e.MissingFiles, e.TotalFiles)
 			} else {
-				console.Infof("Pulling %s... (%d file(s))", e.Weight, e.MissingFiles)
+				writeLine("Pulling %s... (%d file(s))", e.Weight, e.MissingFiles)
 			}
 		case weights.PullEventLayerStart:
 			if !verbose {
@@ -108,22 +117,30 @@ func pullEventPrinter(verbose bool) func(weights.PullEvent) {
 			if e.LayerSize > 0 {
 				size = formatSize(e.LayerSize)
 			}
-			console.Infof("  layer %s (%s)", model.ShortDigest(e.LayerDigest), size)
+			writeLine("  layer %s (%s)", model.ShortDigest(e.LayerDigest), size)
+		case weights.PullEventFileProgress:
+			progress.Write(pullProgressID(e), "Downloading", e.FileComplete, e.FileSize)
 		case weights.PullEventFileStored:
+			progress.WriteStatus(pullProgressID(e), "Download complete")
 			if !verbose {
 				return
 			}
-			console.Infof("    %s (%s) %s", e.FilePath, formatSize(e.FileSize), model.ShortDigest(e.FileDigest))
+			writeLine("    %s (%s) %s", e.FilePath, formatSize(e.FileSize), model.ShortDigest(e.FileDigest))
 		case weights.PullEventLayerDone:
 			// Layer boundary is implicit from the per-file lines.
 		case weights.PullEventWeightDone:
 			if e.FullyCached {
 				return
 			}
-			console.Infof("Pulling %s... done (%s, %d file(s), %d layer(s))",
+			writeLine("Pulling %s... done (%s, %d file(s), %d layer(s))",
 				e.Weight, formatSize(e.BytesFetched), e.FilesFetched, e.LayersFetched)
 		}
 	}
+}
+
+func pullProgressID(e weights.PullEvent) string {
+	pathHash := sha256.Sum256([]byte(e.Weight + "\x00" + e.FilePath))
+	return fmt.Sprintf("%s-%x", model.ShortDigest(e.FileDigest), pathHash[:4])
 }
 
 func printPullSummary(results []weights.PullResult, verbose bool) {
