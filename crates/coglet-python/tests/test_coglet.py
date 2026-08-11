@@ -480,9 +480,10 @@ def upload_server():
             length = int(self.headers.get("Content-Length", "0"))
             uploads.append((self.path, self.rfile.read(length)))
             self.send_response(200)
+            safe_request_path = self.path.replace("\r", "").replace("\n", "")
             self.send_header(
                 "Location",
-                f"http://127.0.0.1:{self.server.server_port}{quote(urlsplit(self.path).path, safe='/%')}",
+                f"http://127.0.0.1:{self.server.server_port}{quote(urlsplit(safe_request_path).path, safe='/%')}",
             )
             self.send_header("Content-Length", "0")
             self.end_headers()
