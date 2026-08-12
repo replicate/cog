@@ -1,0 +1,102 @@
+# Local-source inputs are validated against the statically-generated schema
+# *before* the Docker image is built. Every command below must fail at preflight
+# with a clear message and must not start a build. Covers run, the deprecated
+# predict alias, and train, across -i and --json, for the full range of
+# validation errors (unknown/missing/type/range/length/regex/enum/null).
+
+# --- Unknown input name (-i and --json) ---
+! cog run -i prompt=hi -i nope=1
+stderr 'unknown input "nope"'
+! stderr 'Building Docker image'
+
+! cog run --json '{"prompt": "hi", "nope": 1}'
+stderr 'unknown input "nope"'
+! stderr 'Building Docker image'
+
+# --- Missing a required input ---
+! cog run
+stderr 'missing required input "prompt"'
+! stderr 'Building Docker image'
+
+# --- Numeric bounds: ge (0 < 1) and le (99 > 10) ---
+! cog run -i prompt=hi -i count=0
+stderr 'invalid input "count"'
+! stderr 'Building Docker image'
+
+! cog run -i prompt=hi -i count=99
+stderr 'invalid input "count"'
+! stderr 'Building Docker image'
+
+# --- Type mismatch (not an integer) ---
+! cog run -i prompt=hi -i count=lots
+stderr 'invalid input "count": expected integer, got string'
+! stderr 'Building Docker image'
+
+# --- Choices / enum ---
+! cog run -i prompt=hi -i size=huge
+stderr 'invalid input "size": must be one of: small, medium, large'
+! stderr 'Building Docker image'
+
+# --- String length (max_length=5) ---
+! cog run -i prompt=hi -i title=toolong
+stderr 'invalid input "title"'
+! stderr 'Building Docker image'
+
+# --- Regex (must match ^[a-z]+$) ---
+! cog run -i prompt=hi -i slug=BAD
+stderr 'invalid input "slug"'
+! stderr 'Building Docker image'
+
+# --- Explicit null is rejected, even for an optional/nullable field ---
+! cog run --json '{"prompt": "hi", "count": null}'
+stderr 'must not be null'
+! stderr 'Building Docker image'
+
+! cog run --json '{"prompt": "hi", "note": null}'
+stderr 'must not be null'
+! stderr 'Building Docker image'
+
+# --- The deprecated `cog predict` local path validates the same way ---
+! cog predict -i prompt=hi -i count=0
+stderr 'invalid input "count"'
+! stderr 'Building Docker image'
+
+# --- Training inputs are validated before build too ---
+! cog train -i epochs=0
+stderr 'invalid input "epochs"'
+! stderr 'Building Docker image'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+train: "train.py:train"
+
+-- predict.py --
+from typing import Optional
+
+from cog import BasePredictor, Input
+
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        prompt: str,
+        count: int = Input(default=5, ge=1, le=10),
+        size: str = Input(default="small", choices=["small", "medium", "large"]),
+        title: str = Input(default="ok", max_length=5),
+        slug: str = Input(default="ok", regex="^[a-z]+$"),
+        note: Optional[str] = Input(default=None),
+    ) -> str:
+        return prompt
+
+-- train.py --
+from cog import BaseModel, Input
+
+
+class TrainingOutput(BaseModel):
+    weights: str
+
+
+def train(epochs: int = Input(ge=1)) -> TrainingOutput:
+    return TrainingOutput(weights="ok")

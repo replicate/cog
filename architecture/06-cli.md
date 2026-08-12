@@ -6,15 +6,16 @@ The Cog CLI is a Go binary that provides commands for the full model lifecycle: 
 
 ## Commands Overview
 
-| Command     | Job To Be Done                        |
-| ----------- | ------------------------------------- |
-| `cog init`  | Bootstrap a new model project         |
-| `cog build` | Create a container image              |
-| `cog run`   | Run a prediction in a container       |
-| `cog exec`  | Run arbitrary commands in a container |
-| `cog serve` | Start HTTP server in a container      |
-| `cog push`  | Deploy to Replicate                   |
-| `cog login` | Authenticate with Replicate           |
+| Command          | Job To Be Done                        |
+| ---------------- | ------------------------------------- |
+| `cog init`       | Bootstrap a new model project         |
+| `cog build`      | Create a container image              |
+| `cog run`        | Run a prediction in a container       |
+| `cog exec`       | Run arbitrary commands in a container |
+| `cog serve`      | Start HTTP server in a container      |
+| `cog playground` | Open a local UI for a model API       |
+| `cog push`       | Deploy to Replicate                   |
+| `cog login`      | Authenticate with Replicate           |
 
 ## Development Commands
 
@@ -45,11 +46,12 @@ cog run -i prompt="A photo of a cat" -i steps=50
 
 What happens:
 
-1. Builds the image (if needed)
-2. Starts a container running the [Container Runtime](./04-container-runtime.md)
-3. Parses `-i` flags against the [Schema](./02-schema.md)
-4. Sends a [PredictionRequest](./03-prediction-api.md) to the container's HTTP API
-5. Streams output back to terminal
+1. Resolves the [Schema](./02-schema.md) from local source or an existing image label
+2. Parses, coerces, and validates `-i` flags when that schema is available
+3. Builds the image (for local source)
+4. Starts a container running the [Container Runtime](./04-container-runtime.md)
+5. Falls back to the runtime schema for older images without a usable schema label
+6. Sends a [PredictionRequest](./03-prediction-api.md) and streams output to the terminal
 
 Input types are inferred from the schema:
 
@@ -98,6 +100,21 @@ Builds the image (if needed) and starts a container running the [Container Runti
 
 **Code**: `pkg/cli/serve.go`
 
+### cog playground
+
+**Job**: Explore and call a running Cog HTTP API from a browser.
+
+```bash
+cog serve -p 8393
+cog playground --target http://localhost:8393
+```
+
+The command serves an embedded browser-native application and reverse-proxies its requests to the selected model API. Each browser tab is an independent workspace: every request carries that tab's target, and the proxy keeps no shared current-target state, so tabs can use the same or different models concurrently. The UI and proxy accept only loopback connections, even when `--host 0.0.0.0` is used so a container can deliver webhooks. The proxy snapshots upstream response headers into encoded metadata so the request inspector can show model values without including or merging playground security and transport headers. Webhook URLs contain an opaque per-prediction token, which also isolates concurrent tab subscriptions, and payloads are relayed to the browser over server-sent events.
+
+The proxy is intentionally user-directed: this is a local development tool for APIs selected by the user, not a remotely hosted gateway. The TypeScript source and pnpm lockfile live in `playground/`; Vite bundles its deterministic output and license notices into `pkg/cli/playground/`, which Go embeds directly in every binary. Go builds, integration builds, and release builds consume the committed assets without installing or invoking Node. Browser dependencies are bundled from the lockfile, and AJV's dynamic schema compilation is confined to a worker with a narrower content security policy than the page.
+
+**Code**: `pkg/cli/` owns the server, proxy, and embedded generated application; `playground/` owns the TypeScript source and Vitest checks.
+
 ## Build Commands
 
 ### cog build
@@ -112,9 +129,9 @@ What happens (see [Build System](./05-build-system.md) for details):
 
 1. **Parse** `cog.yaml`
 2. **Resolve** CUDA/cuDNN versions from compatibility matrix
-3. **Generate** Dockerfile
-4. **Build** image via Docker/Buildkit
-5. **Run** container to extract [Schema](./02-schema.md)
+3. **Generate** the [Schema](./02-schema.md) statically from model source
+4. **Generate** Dockerfile
+5. **Build** image via Docker/Buildkit
 6. **Apply** labels (schema, config, pip freeze)
 
 Key flags:
@@ -174,7 +191,9 @@ There's also a separate `base-image` binary (`cmd/base-image/`) with subcommands
 
 ## How CLI Commands Interact with Containers
 
-Commands like `predict` and `serve` follow the same pattern: build an image, start a container, communicate via HTTP. The CLI never runs model code directly.
+Local-source predictions generate and validate against the schema before building, then start a container and communicate over HTTP. Existing-image predictions use the image's schema label when available and otherwise fall back to the runtime schema after startup. `cog serve` builds and starts the same runtime without parsing prediction inputs. The CLI never runs model code directly.
+
+The local-source prediction flow is:
 
 ```mermaid
 sequenceDiagram
@@ -182,7 +201,8 @@ sequenceDiagram
     participant Docker
     participant Container as Container (runtime)
 
-    CLI->>CLI: Parse -i flags, load cog.yaml
+    CLI->>CLI: Load cog.yaml and generate schema
+    CLI->>CLI: Parse, coerce, and validate -i flags
     CLI->>Docker: Build image (if needed)
     Docker-->>CLI: Image ready
 
@@ -219,6 +239,7 @@ pkg/cli/
 ├── predict.go      # prediction execution and legacy cog predict
 ├── exec.go         # cog exec
 ├── serve.go        # cog serve
+├── playground.go   # cog playground and local proxy
 ├── push.go         # cog push
 ├── login.go        # cog login
 └── init.go         # cog init
@@ -234,7 +255,7 @@ Commands delegate to packages under `pkg/`:
 - `pkg/dockerfile/` -- Dockerfile generation and base image selection
 - `pkg/docker/` -- Docker client operations
 - `pkg/predict/` -- Local prediction execution (talks to container's HTTP API)
-- `pkg/schema/` -- Static schema generator (tree-sitter, experimental)
+- `pkg/schema/` -- Static schema generator (tree-sitter)
 - `pkg/wheels/` -- SDK and coglet wheel resolution
 
 **Infrastructure:**

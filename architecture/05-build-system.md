@@ -12,9 +12,10 @@ flowchart TB
         weights["weights"]
     end
 
-    subgraph cli["CLI (pkg/cli/build.go)"]
+    subgraph cli["Build Orchestration (pkg/image/)"]
         parse["Parse Config"]
         validate["Validate"]
+        schema["Generate OpenAPI Schema"]
     end
 
     subgraph generate["Dockerfile Generation (pkg/dockerfile/)"]
@@ -30,12 +31,12 @@ flowchart TB
     end
 
     subgraph post["Post-Build"]
-        schema["Generate OpenAPI Schema"]
         freeze["pip freeze"]
         labels["Apply Labels"]
     end
 
-    yaml --> parse --> validate
+    yaml --> parse --> validate --> schema
+    code --> schema
     validate --> generator
     compat --> generator
     baseimage --> generator
@@ -44,7 +45,6 @@ flowchart TB
     code --> buildkit
     weights --> buildkit
     buildkit --> image
-    image --> schema
     image --> freeze
     schema --> labels
     freeze --> labels

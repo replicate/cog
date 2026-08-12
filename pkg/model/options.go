@@ -38,6 +38,10 @@ type BuildOptions struct {
 	// SchemaFile is a custom OpenAPI schema file path.
 	SchemaFile string
 
+	// OpenAPISchema is a pre-generated OpenAPI schema (JSON) reused by the build
+	// instead of regenerating, so validation and the image label share one schema.
+	OpenAPISchema []byte
+
 	// DockerfileFile is a custom Dockerfile path.
 	DockerfileFile string
 

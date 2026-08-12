@@ -58,19 +58,19 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	dockerClient, err := docker.NewClient(ctx)
-	if err != nil {
-		return err
-	}
-
-	imageName := ""
-	volumes := []command.Volume{}
-	gpus := gpusFlag
+	var (
+		imageName      string
+		volumes        = []command.Volume{}
+		gpus           = gpusFlag
+		preparedInputs predict.Inputs
+		inputsPrepared = false
+		dockerClient   command.Command
+		err            error
+		m              *model.Model
+	)
 
 	// Managed-weight mounts only apply when we have cog.yaml in scope.
 	var wm *weights.Manager
-
-	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 
 	if len(args) == 0 {
 		// Build image
@@ -80,13 +80,31 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		}
 		defer src.Close()
 
+		openAPISchemaJSON, openAPISchema, err := generateLocalOpenAPISchema(src)
+		if err != nil {
+			return err
+		}
+		preparedInputs, err = prepareIndividualInputs(trainInputFlags, openAPISchema, true)
+		if err != nil {
+			return err
+		}
+		inputsPrepared = true
+
 		if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
 			return err
 		}
 
+		dockerClient, err = docker.NewClient(ctx)
+		if err != nil {
+			return err
+		}
+		resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+
 		console.Info("Building Docker image from environment in cog.yaml...")
 		console.Info("")
-		m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
+		buildOpts := serveBuildOptions(cmd)
+		buildOpts.OpenAPISchema = openAPISchemaJSON
+		m, err = resolver.Build(ctx, src, buildOpts)
 		if err != nil {
 			return err
 		}
@@ -107,6 +125,12 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else {
+		dockerClient, err = docker.NewClient(ctx)
+		if err != nil {
+			return err
+		}
+		resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+
 		// Use existing image
 		imageName = args[0]
 
@@ -115,9 +139,19 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		m, err := resolver.Pull(ctx, ref)
+		m, err = resolver.Pull(ctx, ref)
 		if err != nil {
 			return err
+		}
+
+		// Preflight-validate inputs when the image has a usable input component;
+		// otherwise fall back to the runtime schema after the container starts.
+		if m.Schema != nil && predict.HasInputComponent(m.Schema, true) {
+			preparedInputs, err = prepareIndividualInputs(trainInputFlags, m.Schema, true)
+			if err != nil {
+				return err
+			}
+			inputsPrepared = true
 		}
 
 		if gpus == "" && m.HasGPU() {
@@ -156,5 +190,17 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	return predictIndividualInputs(*predictor, trainInputFlags, trainOutPath, true)
+	// Validate against the runtime schema when the image label was unusable.
+	if !inputsPrepared {
+		schema, err := predictor.GetSchema()
+		if err != nil {
+			return err
+		}
+		preparedInputs, err = prepareIndividualInputs(trainInputFlags, schema, true)
+		if err != nil {
+			return err
+		}
+	}
+
+	return runPrediction(*predictor, preparedInputs, trainOutPath, true, false)
 }
