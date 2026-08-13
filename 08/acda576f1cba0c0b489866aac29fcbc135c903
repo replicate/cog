@@ -1,0 +1,23 @@
+VERSION.txt
+  s_960b2db535ea7e::t_c3664dfa45cc66 1
+crates/Cargo.lock
+  s_960b2db535ea7e::t_a9e9071c53d0de 262,294
+crates/Cargo.toml
+  s_960b2db535ea7e::t_6d97cd2c215836 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "08acda576f1cba0c0b489866aac29fcbc135c903",
+  "prompts": {},
+  "sessions": {
+    "s_960b2db535ea7e": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_002b84416ffeIdMiFjhkKEnlC2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
