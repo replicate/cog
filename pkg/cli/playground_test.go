@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -99,6 +100,35 @@ func TestStartPlayground(t *testing.T) {
 	assert.Contains(t, string(body), "Cog Playground")
 	assert.Equal(t, "127.0.0.1", u.Hostname())
 	assert.NotEqual(t, "8393", u.Port(), "playground should not bind the default model port")
+
+	cancel()
+	require.NoError(t, <-serveDone)
+}
+
+func TestStartPlaygroundForContainerWebhooks(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	uiURL, srv, ln, err := startPlayground(ctx, playgroundConfig{
+		host:        "0.0.0.0",
+		port:        0,
+		target:      "http://127.0.0.1:8393",
+		webhookHost: "host.docker.internal",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = srv.Close() })
+
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- servePlayground(ctx, srv, ln, time.Second) }()
+
+	resp, err := http.Get(uiURL + "config")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var config map[string]string
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&config))
+	assert.Equal(t, "http://127.0.0.1:8393", config["target"])
+	assert.Equal(t, "http://host.docker.internal:"+strconv.Itoa(ln.Addr().(*net.TCPAddr).Port), config["webhookBase"])
 
 	cancel()
 	require.NoError(t, <-serveDone)

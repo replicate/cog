@@ -77,6 +77,31 @@ func TestValidateServePorts(t *testing.T) {
 	}
 }
 
+func TestValidateBoundServePorts(t *testing.T) {
+	tests := []struct {
+		name           string
+		serveHost      string
+		port           int
+		playgroundPort int
+		playgroundHost string
+		wantErr        bool
+	}{
+		{"resolved port differs", command.DefaultHostIP, 8393, 9000, embeddedPlaygroundHost, false},
+		{"resolved port matches", command.DefaultHostIP, 8393, 8393, embeddedPlaygroundHost, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateBoundServePorts(tt.serveHost, tt.port, tt.playgroundPort, tt.playgroundHost)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestPlaygroundTargetURL(t *testing.T) {
 	tests := []struct {
 		name string

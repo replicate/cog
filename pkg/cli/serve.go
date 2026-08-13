@@ -23,6 +23,8 @@ import (
 	"github.com/replicate/cog/pkg/weights"
 )
 
+const embeddedPlaygroundHost = "0.0.0.0"
+
 var (
 	serveHost           = command.DefaultHostIP
 	port                = 8393
@@ -118,12 +120,16 @@ func formatServeURL(host string, port int) string {
 }
 
 // validateServePorts errors when the model and playground would bind the same
-// port on overlapping interfaces. A playground port of 0 asks for a free port,
-// so it never collides.
+// port on overlapping interfaces. A playground port of 0 is checked after the
+// listener chooses a port.
 func validateServePorts(serveHost string, port, playgroundPort int, playgroundHost string) error {
 	if playgroundPort == 0 {
 		return nil
 	}
+	return validateBoundServePorts(serveHost, port, playgroundPort, playgroundHost)
+}
+
+func validateBoundServePorts(serveHost string, port, playgroundPort int, playgroundHost string) error {
 	if playgroundPort == port && hostsOverlap(serveHost, playgroundHost) {
 		return fmt.Errorf("playground port %d must differ from the model port %d", playgroundPort, port)
 	}
@@ -160,7 +166,7 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	defer stop()
 
 	if servePlaygroundFlag {
-		if err := validateServePorts(serveHost, port, servePlaygroundPort, playgroundHost); err != nil {
+		if err := validateServePorts(serveHost, port, servePlaygroundPort, embeddedPlaygroundHost); err != nil {
 			return err
 		}
 	}
@@ -249,7 +255,7 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	// On Linux, host.docker.internal is not available by default — add it.
 	// This allows the container to reach services running on the host,
 	// e.g. when --upload-url points to a local upload server.
-	if uploadURL != "" {
+	if uploadURL != "" || servePlaygroundFlag {
 		runOptions.ExtraHosts = []string{"host.docker.internal:host-gateway"}
 	}
 
@@ -265,12 +271,16 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	var playgroundLn net.Listener
 	if servePlaygroundFlag {
 		playgroundURL, playgroundSrv, playgroundLn, err = startPlayground(ctx, playgroundConfig{
-			host:        playgroundHost,
+			host:        embeddedPlaygroundHost,
 			port:        servePlaygroundPort,
 			target:      playgroundTargetURL(serveHost, port),
 			webhookHost: playgroundWebhookHost,
 		})
 		if err != nil {
+			return err
+		}
+		if err := validateBoundServePorts(serveHost, port, playgroundLn.Addr().(*net.TCPAddr).Port, embeddedPlaygroundHost); err != nil {
+			_ = playgroundLn.Close()
 			return err
 		}
 	}
