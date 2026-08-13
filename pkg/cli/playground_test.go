@@ -72,6 +72,38 @@ func TestPlaygroundServesUI(t *testing.T) {
 	}
 }
 
+func TestStartPlayground(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	uiURL, srv, ln, err := startPlayground(ctx, playgroundConfig{
+		host:        "127.0.0.1",
+		port:        0,
+		target:      "http://localhost:8393",
+		webhookHost: "host.docker.internal",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = srv.Close() })
+
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- servePlayground(ctx, srv, ln, time.Second) }()
+
+	u, err := url.Parse(uiURL)
+	require.NoError(t, err)
+	resp, err := http.Get(uiURL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, string(body), "Cog Playground")
+	assert.Equal(t, "127.0.0.1", u.Hostname())
+	assert.NotEqual(t, "8393", u.Port(), "playground should not bind the default model port")
+
+	cancel()
+	require.NoError(t, <-serveDone)
+}
+
 func TestServePlaygroundWaitsForHandlers(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

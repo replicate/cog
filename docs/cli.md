@@ -334,6 +334,9 @@ cog serve [flags]
   # Start on a custom port
   cog serve -p 5000
 
+  # Start the playground alongside the model
+  cog serve --playground
+
   # Listen on all interfaces (e.g. to expose to the network)
   cog serve --host 0.0.0.0
 
@@ -351,6 +354,8 @@ cog serve [flags]
       --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
   -h, --help                         help for serve
       --host string                  Host IP to publish the container port on. Use 0.0.0.0 to allow connections from other machines. (default "127.0.0.1")
+      --playground                   Start the playground alongside the model
+      --playground-port int          Port for the playground (0 picks a free port) (default 9000)
   -p, --port int                     Port on which to listen (default 8393)
       --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
       --upload-url string            Upload URL for file outputs (e.g. https://example.com/upload/)

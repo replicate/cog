@@ -47,3 +47,54 @@ func TestFormatServeURL(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateServePorts(t *testing.T) {
+	tests := []struct {
+		name           string
+		serveHost      string
+		port           int
+		playgroundPort int
+		playgroundHost string
+		wantErr        bool
+	}{
+		{"distinct ports", command.DefaultHostIP, 8393, 9000, "127.0.0.1", false},
+		{"playground picks free port", command.DefaultHostIP, 8393, 0, "127.0.0.1", false},
+		{"same port and host", command.DefaultHostIP, 8393, 8393, "127.0.0.1", true},
+		{"same port different host", "0.0.0.0", 8393, 8393, "127.0.0.1", true},
+		{"same port serve loopback playground all", command.DefaultHostIP, 9000, 9000, "0.0.0.0", true},
+		{"same port different specific host", "127.0.0.1", 8393, 8393, "192.168.1.1", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateServePorts(tt.serveHost, tt.port, tt.playgroundPort, tt.playgroundHost)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestHostsOverlap(t *testing.T) {
+	tests := []struct {
+		name string
+		a    string
+		b    string
+		want bool
+	}{
+		{"identical specific", "127.0.0.1", "127.0.0.1", true},
+		{"wildcard and specific", "0.0.0.0", "127.0.0.1", true},
+		{"specific and wildcard", "127.0.0.1", "0.0.0.0", true},
+		{"ipv6 wildcard", "::", "192.168.1.1", true},
+		{"two different specific", "127.0.0.1", "192.168.1.1", false},
+		{"wildcard and wildcard", "0.0.0.0", "::", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, hostsOverlap(tt.a, tt.b))
+		})
+	}
+}
