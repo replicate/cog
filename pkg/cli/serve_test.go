@@ -77,6 +77,26 @@ func TestValidateServePorts(t *testing.T) {
 	}
 }
 
+func TestPlaygroundTargetURL(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+		port int
+		want string
+	}{
+		{"default loopback", command.DefaultHostIP, 8393, "http://127.0.0.1:8393"},
+		{"custom IP", "192.168.1.1", 5000, "http://192.168.1.1:5000"},
+		{"wildcard falls back to loopback", "0.0.0.0", 8393, "http://127.0.0.1:8393"},
+		{"ipv6 wildcard falls back to loopback", "::", 8393, "http://127.0.0.1:8393"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, playgroundTargetURL(tt.host, tt.port))
+		})
+	}
+}
+
 func TestHostsOverlap(t *testing.T) {
 	tests := []struct {
 		name string

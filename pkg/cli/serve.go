@@ -144,6 +144,17 @@ func isUnspecifiedHost(host string) bool {
 	return ip != nil && ip.IsUnspecified()
 }
 
+// playgroundTargetURL is the model URL the playground proxies to, built from
+// the model's actual bind host. A wildcard host isn't navigable, so it falls
+// back to loopback.
+func playgroundTargetURL(serveHost string, port int) string {
+	host := serveHost
+	if isUnspecifiedHost(serveHost) {
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("http://%s", net.JoinHostPort(host, strconv.Itoa(port)))
+}
+
 func cmdServe(cmd *cobra.Command, arg []string) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -247,8 +258,8 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	serveURL := formatServeURL(serveHost, port)
 
 	// Start the playground before the container so a bind failure aborts fast,
-	// before the multi-minute image build and run. It targets a navigable
-	// localhost URL for the model so the UI can reach it from the browser.
+	// before the multi-minute image build and run. It targets the model's
+	// actual bind host so the UI reaches the server being served.
 	var playgroundURL string
 	var playgroundSrv *http.Server
 	var playgroundLn net.Listener
@@ -256,7 +267,7 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		playgroundURL, playgroundSrv, playgroundLn, err = startPlayground(ctx, playgroundConfig{
 			host:        playgroundHost,
 			port:        servePlaygroundPort,
-			target:      fmt.Sprintf("http://%s", net.JoinHostPort("localhost", strconv.Itoa(port))),
+			target:      playgroundTargetURL(serveHost, port),
 			webhookHost: playgroundWebhookHost,
 		})
 		if err != nil {
