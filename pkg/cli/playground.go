@@ -103,38 +103,62 @@ func newPlaygroundServer(webhookBase, defaultTarget string) *playgroundServer {
 	}
 }
 
+// playgroundConfig holds the runtime settings for a playground instance.
+type playgroundConfig struct {
+	host        string
+	port        int
+	target      string
+	webhookHost string
+}
+
 func cmdPlayground(cmd *cobra.Command, _ []string) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	uiFS, err := fs.Sub(playgroundUI, "playground")
-	if err != nil {
-		return fmt.Errorf("loading playground assets: %w", err)
+	cfg := playgroundConfig{
+		host:        playgroundHost,
+		port:        playgroundPort,
+		target:      playgroundTarget,
+		webhookHost: playgroundWebhookHost,
 	}
 
-	ln, err := net.Listen("tcp", playgroundAddress(playgroundHost, playgroundPort))
+	uiURL, srv, ln, err := startPlayground(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("starting playground server: %w", err)
+		return err
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
 
-	srvState := newPlaygroundServer(
-		"http://"+playgroundAddress(playgroundWebhookHost, port),
-		playgroundTarget,
-	)
-
-	mux := srvState.routes(uiFS)
-
-	browserHost := playgroundBrowserHost(playgroundHost)
-	uiURL := "http://" + playgroundAddress(browserHost, port) + "/"
 	console.Infof("Cog playground running at %s", uiURL)
 	console.Info("Press Ctrl+C to stop.")
 	if !playgroundNoOpen {
 		maybeOpenBrowser(uiURL)
 	}
 
+	return servePlayground(ctx, srv, ln, 5*time.Second)
+}
+
+// startPlayground binds and configures a playground server, returning its UI
+// URL plus the started server and listener. The caller owns serving via
+// servePlayground; binding happens here so a bind failure surfaces as a return
+// error rather than a background failure.
+func startPlayground(ctx context.Context, cfg playgroundConfig) (string, *http.Server, net.Listener, error) {
+	uiFS, err := fs.Sub(playgroundUI, "playground")
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("loading playground assets: %w", err)
+	}
+
+	ln, err := net.Listen("tcp", playgroundAddress(cfg.host, cfg.port))
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("starting playground server: %w", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	srvState := newPlaygroundServer(
+		"http://"+playgroundAddress(cfg.webhookHost, port),
+		cfg.target,
+	)
+
 	srv := &http.Server{
-		Handler:           mux,
+		Handler:           srvState.routes(uiFS),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       5 * time.Minute,
 		IdleTimeout:       60 * time.Second,
@@ -142,7 +166,9 @@ func cmdPlayground(cmd *cobra.Command, _ []string) error {
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
 
-	return servePlayground(ctx, srv, ln, 5*time.Second)
+	browserHost := playgroundBrowserHost(cfg.host)
+	uiURL := "http://" + playgroundAddress(browserHost, port) + "/"
+	return uiURL, srv, ln, nil
 }
 
 func servePlayground(ctx context.Context, srv *http.Server, ln net.Listener, timeout time.Duration) error {

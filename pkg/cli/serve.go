@@ -1,12 +1,17 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -18,10 +23,14 @@ import (
 	"github.com/replicate/cog/pkg/weights"
 )
 
+const embeddedPlaygroundHost = "0.0.0.0"
+
 var (
-	serveHost = command.DefaultHostIP
-	port      = 8393
-	uploadURL = ""
+	serveHost           = command.DefaultHostIP
+	port                = 8393
+	uploadURL           = ""
+	servePlaygroundFlag = false
+	servePlaygroundPort = 9000
 )
 
 func newServeCommand() *cobra.Command {
@@ -42,6 +51,9 @@ the Docker port mapping is published on.`,
 
   # Start on a custom port
   cog serve -p 5000
+
+  # Start the playground alongside the model
+  cog serve --playground
 
   # Listen on all interfaces (e.g. to expose to the network)
   cog serve --host 0.0.0.0
@@ -65,6 +77,8 @@ the Docker port mapping is published on.`,
 	cmd.Flags().StringVar(&serveHost, "host", serveHost, "Host IP to publish the container port on. Use 0.0.0.0 to allow connections from other machines.")
 	cmd.Flags().IntVarP(&port, "port", "p", port, "Port on which to listen")
 	cmd.Flags().StringVar(&uploadURL, "upload-url", "", "Upload URL for file outputs (e.g. https://example.com/upload/)")
+	cmd.Flags().BoolVar(&servePlaygroundFlag, "playground", servePlaygroundFlag, "Start the playground alongside the model")
+	cmd.Flags().IntVar(&servePlaygroundPort, "playground-port", servePlaygroundPort, "Port for the playground (0 picks a free port)")
 
 	return cmd
 }
@@ -105,8 +119,57 @@ func formatServeURL(host string, port int) string {
 	return url
 }
 
+// validateServePorts errors when the model and playground would bind the same
+// port on overlapping interfaces. A playground port of 0 is checked after the
+// listener chooses a port.
+func validateServePorts(serveHost string, port, playgroundPort int, playgroundHost string) error {
+	if playgroundPort == 0 {
+		return nil
+	}
+	return validateBoundServePorts(serveHost, port, playgroundPort, playgroundHost)
+}
+
+func validateBoundServePorts(serveHost string, port, playgroundPort int, playgroundHost string) error {
+	if playgroundPort == port && hostsOverlap(serveHost, playgroundHost) {
+		return fmt.Errorf("playground port %d must differ from the model port %d", playgroundPort, port)
+	}
+	return nil
+}
+
+// hostsOverlap reports whether two bind hosts share interfaces. An unspecified
+// host (0.0.0.0, ::) binds every interface, so it overlaps any specific host.
+func hostsOverlap(a, b string) bool {
+	if a == b {
+		return true
+	}
+	return isUnspecifiedHost(a) || isUnspecifiedHost(b)
+}
+
+func isUnspecifiedHost(host string) bool {
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsUnspecified()
+}
+
+// playgroundTargetURL is the model URL the playground proxies to, built from
+// the model's actual bind host. A wildcard host isn't navigable, so it falls
+// back to loopback.
+func playgroundTargetURL(serveHost string, port int) string {
+	host := serveHost
+	if isUnspecifiedHost(serveHost) {
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("http://%s", net.JoinHostPort(host, strconv.Itoa(port)))
+}
+
 func cmdServe(cmd *cobra.Command, arg []string) error {
-	ctx := cmd.Context()
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if servePlaygroundFlag {
+		if err := validateServePorts(serveHost, port, servePlaygroundPort, embeddedPlaygroundHost); err != nil {
+			return err
+		}
+	}
 
 	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
@@ -192,13 +255,35 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	// On Linux, host.docker.internal is not available by default — add it.
 	// This allows the container to reach services running on the host,
 	// e.g. when --upload-url points to a local upload server.
-	if uploadURL != "" {
+	if uploadURL != "" || servePlaygroundFlag {
 		runOptions.ExtraHosts = []string{"host.docker.internal:host-gateway"}
 	}
 
 	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000, HostIP: serveHost})
 
 	serveURL := formatServeURL(serveHost, port)
+
+	// Start the playground before the container so a bind failure aborts fast,
+	// before the multi-minute image build and run. It targets the model's
+	// actual bind host so the UI reaches the server being served.
+	var playgroundURL string
+	var playgroundSrv *http.Server
+	var playgroundLn net.Listener
+	if servePlaygroundFlag {
+		playgroundURL, playgroundSrv, playgroundLn, err = startPlayground(ctx, playgroundConfig{
+			host:        embeddedPlaygroundHost,
+			port:        servePlaygroundPort,
+			target:      playgroundTargetURL(serveHost, port),
+			webhookHost: playgroundWebhookHost,
+		})
+		if err != nil {
+			return err
+		}
+		if err := validateBoundServePorts(serveHost, port, playgroundLn.Addr().(*net.TCPAddr).Port, embeddedPlaygroundHost); err != nil {
+			_ = playgroundLn.Close()
+			return err
+		}
+	}
 
 	if isRemote, dockerHost, err := docker.IsRemoteDockerHost(); err == nil && isRemote {
 		console.Warnf("Using Docker daemon at %s; the server will bind to %s on that host, not this machine.", dockerHost, serveHost)
@@ -208,7 +293,18 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	console.Infof("Running %[1]s in Docker with the current directory mounted as a volume...", console.Bold(strings.Join(args, " ")))
 	console.Info("")
 	console.Infof("Serving at %s", console.Bold(serveURL))
+	if servePlaygroundFlag {
+		console.Infof("Playground at %s", console.Bold(playgroundURL))
+	}
 	console.Info("")
+
+	if servePlaygroundFlag {
+		go func() {
+			if err := servePlayground(ctx, playgroundSrv, playgroundLn, 5*time.Second); err != nil {
+				console.Errorf("playground: %v", err)
+			}
+		}()
+	}
 
 	err = docker.Run(ctx, dockerClient, runOptions)
 	// Only retry if we're using a GPU but the user didn't explicitly select a GPU with --gpus
@@ -218,6 +314,12 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 
 		runOptions.GPUs = ""
 		err = docker.Run(ctx, dockerClient, runOptions)
+	}
+
+	// A canceled context means the user signaled us to stop; that's a clean
+	// exit, not a failure.
+	if ctx.Err() == context.Canceled {
+		return nil
 	}
 
 	return err
