@@ -1,0 +1,21 @@
+docs/cli.md
+  s_b4dee137894f44::t_2dcb17d392ae1e 337-339,357-358
+docs/llms.txt
+  s_b4dee137894f44::t_a4b09fdec8f321 658-660,678-679
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "ea2e74f2f9fb20f6efbfafe5e643ad36911cb133",
+  "prompts": {},
+  "sessions": {
+    "s_b4dee137894f44": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0040b9792ffeYeslhsdUyRignf",
+        "model": "@cf/deepseek-ai/deepseek-v4-flash-0731"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
