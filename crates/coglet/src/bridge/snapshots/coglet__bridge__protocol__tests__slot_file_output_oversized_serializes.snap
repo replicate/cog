@@ -1,0 +1,13 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: resp
+---
+{
+  "type": "file_output",
+  "filename": "/tmp/coglet/predictions/pred_123/outputs/spill_abc.json",
+  "kind": {
+    "type": "oversized"
+  },
+  "managed": true,
+  "index": 3
+}

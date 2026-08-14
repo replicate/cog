@@ -47,12 +47,25 @@ impl UnregisteredPredictionSlot {
     pub fn prediction(&self) -> Arc<Mutex<Prediction>> {
         self.prediction_slot.prediction()
     }
+
+    pub fn id(&self) -> &str {
+        self.prediction_slot.id()
+    }
+
+    /// Fail the prediction and hand the slot back to the pool.
+    ///
+    /// For giving up before the request reaches the worker. See
+    /// [`PredictionSlot::release_unused`].
+    pub fn release_unused(self, error: String) {
+        self.prediction_slot.release_unused(error);
+    }
 }
 
 /// Holds a prediction and its permit side-by-side.
 ///
 /// On drop: Permit returns to pool (if idle and not poisoned at pool level).
 pub struct PredictionSlot {
+    id: String,
     prediction: Arc<Mutex<Prediction>>,
     slot_id: SlotId,
     permit: Option<AnyPermit>,
@@ -66,7 +79,9 @@ impl PredictionSlot {
         idle_rx: tokio::sync::oneshot::Receiver<SlotIdleToken>,
     ) -> Self {
         let slot_id = permit.slot_id();
+        let id = prediction.id().to_string();
         Self {
+            id,
             prediction: Arc::new(Mutex::new(prediction)),
             slot_id,
             permit: Some(AnyPermit::InUse(permit)),
@@ -135,15 +150,32 @@ impl PredictionSlot {
         }
     }
 
+    /// Fail the prediction and return the permit to the pool without waiting for
+    /// the worker to confirm the slot is idle.
+    ///
+    /// For failures before the request is sent. The worker never saw the slot as
+    /// busy, so no idle notification is coming and `into_idle` would wait
+    /// forever. Dropping the slot instead would strand the permit and cost a
+    /// slot of capacity for the process's lifetime.
+    pub fn release_unused(mut self, error: String) {
+        if let Ok(mut prediction) = self.prediction.lock()
+            && !prediction.is_terminal()
+        {
+            prediction.set_failed(error);
+        }
+
+        self.idle_rx = None;
+        if let Some(AnyPermit::InUse(permit)) = self.permit.take() {
+            self.permit = Some(AnyPermit::Idle(permit.into_idle()));
+        }
+    }
+
     pub fn is_idle(&self) -> bool {
         self.permit.as_ref().is_some_and(|p| p.is_idle())
     }
 
-    pub fn id(&self) -> String {
-        self.prediction
-            .try_lock()
-            .map(|p| p.id().to_string())
-            .unwrap_or_default()
+    pub fn id(&self) -> &str {
+        &self.id
     }
 }
 
@@ -187,6 +219,24 @@ mod tests {
         let (_idle_tx, idle_rx) = tokio::sync::oneshot::channel();
         let slot = PredictionSlot::new(prediction, permit, idle_rx);
         assert_eq!(slot.slot_id(), slot_id);
+        assert_eq!(slot.id(), "test_123");
+    }
+
+    #[tokio::test]
+    async fn slot_id_does_not_depend_on_prediction_lock() {
+        let pool = PermitPool::new(1);
+        let (a, _b) = UnixStream::pair().unwrap();
+        let (_, write) = a.into_split();
+        pool.add_permit(SlotId::new(), FramedWrite::new(write, JsonCodec::new()));
+
+        let permit = pool.try_acquire().unwrap();
+        let prediction = Prediction::new("locked-prediction".to_string(), None);
+        let (_idle_tx, idle_rx) = tokio::sync::oneshot::channel();
+        let slot = PredictionSlot::new(prediction, permit, idle_rx);
+        let prediction = slot.prediction();
+        let _guard = prediction.lock().unwrap();
+
+        assert_eq!(slot.id(), "locked-prediction");
     }
 
     #[tokio::test]
@@ -209,6 +259,26 @@ mod tests {
                 .unwrap();
             slot.into_idle().await.unwrap();
         }
+
+        assert!(pool.try_acquire().is_some());
+    }
+
+    #[tokio::test]
+    async fn release_unused_returns_permit() {
+        let pool = PermitPool::new(1);
+
+        let (a, _b) = UnixStream::pair().unwrap();
+        let (_, write) = a.into_split();
+        let slot_id = SlotId::new();
+
+        pool.add_permit(slot_id, FramedWrite::new(write, JsonCodec::new()));
+
+        let permit = pool.try_acquire().unwrap();
+        let prediction = Prediction::new("test_123".to_string(), None);
+        let (_idle_tx, idle_rx) = tokio::sync::oneshot::channel();
+        let slot = PredictionSlot::new(prediction, permit, idle_rx);
+
+        slot.release_unused("request was not sent".to_string());
 
         assert!(pool.try_acquire().is_some());
     }

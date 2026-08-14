@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -134,6 +135,7 @@ use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
     ControlRequest, ControlResponse, FileOutputKind, LogSource, MAX_INLINE_IPC_SIZE, MetricMode,
     SLOT_RESPONSE_PROTOCOL_VERSION, SlotId, SlotOutcome, SlotRequest, SlotResponse,
+    StructuredOutput, StructuredOutputFile,
 };
 use crate::bridge::transport::{ChildTransportInfo, connect_transport};
 use crate::orchestrator::HealthcheckResult;
@@ -141,6 +143,14 @@ use crate::worker_tracing_layer::WorkerTracingLayer;
 
 type SlotWriter =
     Arc<tokio::sync::Mutex<FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>>>;
+
+#[derive(Debug, Clone)]
+pub struct StagedFileOutput {
+    pub filename: String,
+    pub upload_filename: String,
+    pub mime_type: Option<String>,
+    pub managed: bool,
+}
 
 /// Handle for sending messages on a slot socket.
 ///
@@ -168,10 +178,30 @@ impl SlotSender {
         self.output_counter.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// Generate a unique filename in the output dir.
+    /// Generate the next candidate filename in the output dir.
     fn next_output_path(&self, extension: &str) -> PathBuf {
         let n = self.file_counter.fetch_add(1, Ordering::Relaxed);
         self.output_dir.join(format!("{n}.{extension}"))
+    }
+
+    /// Create a new file in the output dir, returning it and its path.
+    ///
+    /// Creating exclusively rather than testing with `exists()` skips names that
+    /// are already taken and refuses to write through a pre-existing symlink,
+    /// which `exists()` cannot detect when the link dangles.
+    fn create_output_file(&self, extension: &str) -> io::Result<(std::fs::File, PathBuf)> {
+        loop {
+            let path = self.next_output_path(extension);
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(file) => return Ok((file, path)),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
+        }
     }
 
     pub fn send_log(&self, source: LogSource, data: &str) -> io::Result<()> {
@@ -199,24 +229,148 @@ impl SlotSender {
         extension: &str,
         mime_type: Option<String>,
     ) -> io::Result<()> {
-        let path = self.next_output_path(extension);
-        std::fs::write(&path, data)?;
-        self.send_file_output(path, mime_type)
+        let (mut file, path) = self.create_output_file(extension)?;
+        file.write_all(data)?;
+        self.send_file_output(path, mime_type, true)
     }
 
     /// Send a file-typed output (e.g. Path, File return types).
     ///
     /// The file is already on disk at `path` — we just send the path reference.
     /// `mime_type` is an explicit MIME type; when None the parent guesses from extension.
-    pub fn send_file_output(&self, path: PathBuf, mime_type: Option<String>) -> io::Result<()> {
-        let filename = path
-            .to_str()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))?
+    /// `managed` is true when Coglet owns the file and may delete it after consumption.
+    pub fn send_file_output(
+        &self,
+        path: PathBuf,
+        mime_type: Option<String>,
+        managed: bool,
+    ) -> io::Result<()> {
+        let upload_filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("output")
             .to_string();
-        let msg = SlotResponse::FileOutput {
-            filename,
-            kind: FileOutputKind::FileType,
+        let staged = StagedFileOutput {
+            filename: path_to_string(&path)?,
+            upload_filename,
             mime_type,
+            managed,
+        };
+        self.send_staged_file_output(staged, self.next_output_index())
+    }
+
+    fn send_staged_file_output(&self, file: StagedFileOutput, index: u64) -> io::Result<()> {
+        let msg = SlotResponse::FileOutput {
+            filename: file.filename,
+            kind: FileOutputKind::FileType,
+            mime_type: file.mime_type,
+            managed: file.managed,
+            upload_filename: Some(file.upload_filename),
+            index,
+        };
+        self.tx
+            .send(msg)
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
+    }
+
+    /// Transfer a run-returned file into Coglet's managed output directory.
+    ///
+    /// Returning a path hands the data to Coglet, which deletes the managed copy
+    /// once the parent has read it. The source path is consumed during the transfer
+    /// so it cannot be returned again unless the predictor rewrites it.
+    pub fn send_user_file_output(
+        &self,
+        path: PathBuf,
+        mime_type: Option<String>,
+    ) -> io::Result<()> {
+        let staged = self.stage_user_file_output(path, mime_type)?;
+        self.send_staged_file_output(staged, self.next_output_index())
+    }
+
+    pub fn stage_user_file_output(
+        &self,
+        path: PathBuf,
+        mime_type: Option<String>,
+    ) -> io::Result<StagedFileOutput> {
+        if !path.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!(
+                    "output file {} does not exist. Cog takes ownership of \
+                     returned files, so a path returned more than once must be \
+                     rewritten before each output.",
+                    path.display()
+                ),
+            ));
+        }
+
+        let extension = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("bin")
+            .to_string();
+        let upload_filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("output.bin")
+            .to_string();
+        // Close our handle before transferring: rename replaces the entry and
+        // copy reopens it, so holding it open buys nothing.
+        let (file, dest) = self.create_output_file(&extension)?;
+        drop(file);
+
+        if let Err(e) = move_file(&path, &dest) {
+            let _ = std::fs::remove_file(&dest);
+            return Err(e);
+        }
+
+        Ok(StagedFileOutput {
+            filename: path_to_string(&dest)?,
+            upload_filename,
+            mime_type,
+            managed: true,
+        })
+    }
+
+    pub fn stage_file_output(
+        &self,
+        data: &[u8],
+        upload_filename: Option<String>,
+        mime_type: Option<String>,
+    ) -> io::Result<StagedFileOutput> {
+        let upload_filename = upload_filename
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "output.bin".to_string());
+        let extension = std::path::Path::new(&upload_filename)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or("bin");
+        let (mut file, path) = self.create_output_file(extension)?;
+        file.write_all(data)?;
+        Ok(StagedFileOutput {
+            filename: path_to_string(&path)?,
+            upload_filename,
+            mime_type,
+            managed: true,
+        })
+    }
+
+    pub fn send_structured_output(
+        &self,
+        output: serde_json::Value,
+        files: Vec<StructuredOutputFile>,
+    ) -> io::Result<()> {
+        let payload = serde_json::to_vec(&StructuredOutput { output, files })
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let (mut file, path) = self.create_output_file("json")?;
+        file.write_all(&payload)?;
+        let msg = SlotResponse::FileOutput {
+            filename: path_to_string(&path)?,
+            kind: FileOutputKind::Structured,
+            mime_type: None,
+            managed: true,
+            upload_filename: None,
+            index: self.next_output_index(),
         };
         self.tx
             .send(msg)
@@ -245,6 +399,37 @@ impl SlotSender {
     }
 }
 
+fn path_to_string(path: &std::path::Path) -> io::Result<String> {
+    path.to_str()
+        .map(ToString::to_string)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))
+}
+
+/// Move a file, falling back to copy-then-unlink when the two paths live on
+/// different filesystems and `rename` cannot be used.
+///
+/// The fallback copies first so a failure part-way through leaves the source
+/// intact.
+fn move_file(source: &std::path::Path, dest: &std::path::Path) -> io::Result<()> {
+    // Renaming a relative symlink into another directory changes what its target
+    // means. Copy the target bytes into a regular file, then unlink the source
+    // entry instead.
+    if std::fs::symlink_metadata(source)?.file_type().is_symlink() {
+        return copy_then_unlink(source, dest);
+    }
+
+    match std::fs::rename(source, dest) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::CrossesDevices => copy_then_unlink(source, dest),
+        Err(e) => Err(e),
+    }
+}
+
+fn copy_then_unlink(source: &std::path::Path, dest: &std::path::Path) -> io::Result<()> {
+    std::fs::copy(source, dest)?;
+    std::fs::remove_file(source)
+}
+
 /// Build an output message, spilling to disk if larger than the IPC frame limit.
 fn build_output_message(
     output_dir: &std::path::Path,
@@ -265,6 +450,9 @@ fn build_output_message(
             filename,
             kind: FileOutputKind::Oversized,
             mime_type: None,
+            managed: true,
+            upload_filename: None,
+            index,
         })
     } else {
         Ok(SlotResponse::OutputChunk { output, index })
@@ -972,5 +1160,280 @@ mod tests {
     fn worker_config_default() {
         let config = WorkerConfig::default();
         assert_eq!(config.num_slots, 1);
+    }
+
+    /// Unwrap a managed FileOutput message, checking it points into `output_dir`.
+    fn expect_managed_output(response: SlotResponse, output_dir: &std::path::Path) -> PathBuf {
+        match response {
+            SlotResponse::FileOutput {
+                filename,
+                managed: true,
+                ..
+            } => {
+                let path = PathBuf::from(filename);
+                assert!(
+                    path.starts_with(output_dir),
+                    "managed output should live in the output dir, got {}",
+                    path.display()
+                );
+                path
+            }
+            response => panic!("expected a managed FileOutput, got {response:?}"),
+        }
+    }
+
+    #[test]
+    fn send_user_file_output_moves_a_temp_file() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let scratch = tempfile::NamedTempFile::with_suffix(".txt").unwrap();
+        std::fs::write(scratch.path(), b"hello").unwrap();
+        let scratch_path = scratch.path().to_path_buf();
+
+        sender
+            .send_user_file_output(scratch_path.clone(), None)
+            .unwrap();
+
+        assert!(
+            !scratch_path.exists(),
+            "temp file should be moved, not copied"
+        );
+        let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_eq!(std::fs::read(&managed).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn send_user_file_output_moves_a_file_already_in_the_output_dir() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let inside = output_dir.path().join("inside.txt");
+        std::fs::write(&inside, b"world").unwrap();
+
+        sender.send_user_file_output(inside.clone(), None).unwrap();
+
+        assert!(!inside.exists(), "returned path should be moved");
+        let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_ne!(managed, inside);
+        assert_eq!(std::fs::read(&managed).unwrap(), b"world");
+    }
+
+    #[test]
+    fn send_user_file_output_consumes_a_file_outside_the_output_dir() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let source_dir = tempfile::tempdir_in(std::env::current_dir().unwrap()).unwrap();
+        let source = source_dir.path().join("fixed-output.png");
+        std::fs::write(&source, b"output").unwrap();
+
+        sender.send_user_file_output(source.clone(), None).unwrap();
+
+        assert!(!source.exists(), "returned source path should be consumed");
+        let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_eq!(std::fs::read(&managed).unwrap(), b"output");
+
+        let error = sender
+            .send_user_file_output(source, None)
+            .expect_err("a consumed path cannot return stale output");
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert!(rx.try_recv().is_err(), "stale path must not be sent again");
+    }
+
+    #[test]
+    fn send_user_file_output_preserves_the_logical_filename() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+        let source_dir = tempfile::tempdir().unwrap();
+        let source = source_dir.path().join("result.png");
+        std::fs::write(&source, b"png").unwrap();
+
+        sender.send_user_file_output(source, None).unwrap();
+
+        match rx.try_recv().unwrap() {
+            SlotResponse::FileOutput {
+                upload_filename,
+                index,
+                ..
+            } => {
+                assert_eq!(upload_filename.as_deref(), Some("result.png"));
+                assert_eq!(index, 0);
+            }
+            response => panic!("expected FileOutput, got {response:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn send_user_file_output_copies_a_relative_symlink_before_unlinking_it() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let scratch_dir = tempfile::tempdir().unwrap();
+        let target = scratch_dir.path().join("target.txt");
+        std::fs::write(&target, b"target bytes").unwrap();
+        let link = scratch_dir.path().join("output.txt");
+        std::os::unix::fs::symlink("target.txt", &link).unwrap();
+
+        sender.send_user_file_output(link.clone(), None).unwrap();
+
+        assert!(!link.exists(), "returned symlink should be unlinked");
+        assert!(target.exists(), "the symlink target should survive");
+        let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_eq!(std::fs::read(managed).unwrap(), b"target bytes");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn send_user_file_output_unlinks_a_symlink_without_deleting_its_target() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let scratch_dir = tempfile::tempdir().unwrap();
+        let external_dir = tempfile::tempdir().unwrap();
+        let target = external_dir.path().join("asset.txt");
+        std::fs::write(&target, b"asset bytes").unwrap();
+        let link = scratch_dir.path().join("result.txt");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        sender.send_user_file_output(link.clone(), None).unwrap();
+
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"asset bytes");
+        let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_eq!(std::fs::read(managed).unwrap(), b"asset bytes");
+    }
+
+    #[test]
+    fn send_user_file_output_explains_a_path_that_no_longer_exists() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let scratch = tempfile::NamedTempFile::with_suffix(".txt").unwrap();
+        let scratch_path = scratch.path().to_path_buf();
+        sender
+            .send_user_file_output(scratch_path.clone(), None)
+            .unwrap();
+        rx.try_recv().unwrap();
+
+        let error = sender
+            .send_user_file_output(scratch_path, None)
+            .expect_err("the file was already handed over");
+
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert!(
+            error.to_string().contains("rewritten before each output"),
+            "error should explain the ownership handoff: {error}"
+        );
+        assert!(rx.try_recv().is_err(), "stale path must not be sent again");
+    }
+
+    /// `exists()` reports false for a dangling symlink, so testing with it would
+    /// let `copy` create the link's target somewhere outside the output dir.
+    #[cfg(unix)]
+    #[test]
+    fn create_output_file_refuses_to_write_through_a_dangling_symlink() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let victim_dir = tempfile::tempdir().unwrap();
+        let victim = victim_dir.path().join("victim.txt");
+        std::os::unix::fs::symlink(&victim, output_dir.path().join("0.txt")).unwrap();
+
+        let (_file, created) = sender.create_output_file("txt").unwrap();
+
+        assert_ne!(created, output_dir.path().join("0.txt"));
+        assert!(!victim.exists(), "symlink target must not be created");
+    }
+
+    #[test]
+    fn write_file_output_marks_the_file_as_managed() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        sender.write_file_output(b"bytes", "bin", None).unwrap();
+
+        let managed = expect_managed_output(rx.try_recv().unwrap(), output_dir.path());
+        assert_eq!(std::fs::read(&managed).unwrap(), b"bytes");
+    }
+
+    #[test]
+    fn structured_output_is_spilled_with_its_file_descriptors() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SlotResponse>();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+        let files = vec![StructuredOutputFile {
+            pointer: "/artifact".to_string(),
+            filename: "/tmp/managed.png".to_string(),
+            upload_filename: "result.png".to_string(),
+            mime_type: Some("image/png".to_string()),
+            managed: true,
+        }];
+        let expected = StructuredOutput {
+            output: serde_json::json!({"artifact": null, "label": "result"}),
+            files: files.clone(),
+        };
+
+        sender
+            .send_structured_output(expected.output.clone(), files)
+            .unwrap();
+
+        match rx.try_recv().unwrap() {
+            SlotResponse::FileOutput {
+                filename,
+                kind: FileOutputKind::Structured,
+                managed: true,
+                index: 0,
+                ..
+            } => {
+                let actual =
+                    serde_json::from_slice::<StructuredOutput>(&std::fs::read(filename).unwrap())
+                        .unwrap();
+                assert_eq!(actual, expected);
+            }
+            response => panic!("expected structured FileOutput, got {response:?}"),
+        }
+    }
+
+    /// Spilled outputs are Coglet's own files, so the parent has to delete them.
+    #[test]
+    fn oversized_output_spills_to_a_managed_file() {
+        let output_dir = tempfile::tempdir().unwrap();
+        let oversized = serde_json::json!("x".repeat(MAX_INLINE_IPC_SIZE + 1));
+
+        let msg = build_output_message(output_dir.path(), oversized.clone(), 0).unwrap();
+
+        match msg {
+            SlotResponse::FileOutput {
+                filename,
+                kind: FileOutputKind::Oversized,
+                managed: true,
+                index: 0,
+                ..
+            } => {
+                let spilled: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(filename).unwrap()).unwrap();
+                assert_eq!(spilled, oversized);
+            }
+            msg => panic!("expected an oversized managed FileOutput, got {msg:?}"),
+        }
+    }
+
+    #[test]
+    fn small_output_stays_inline() {
+        let output_dir = tempfile::tempdir().unwrap();
+
+        let msg = build_output_message(output_dir.path(), serde_json::json!("small"), 7).unwrap();
+
+        assert!(matches!(msg, SlotResponse::OutputChunk { index: 7, .. }));
     }
 }

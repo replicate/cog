@@ -5,13 +5,15 @@
 //! - Dataclasses -> dict (via dataclasses.asdict())
 //! - Enums -> .value
 //! - datetime -> .isoformat()
-//! - PathLike -> base64 data URL
-//! - IOBase -> base64 data URL
+//! - PathLike/IOBase -> managed file descriptors
 //! - numpy int/float/ndarray -> Python int/float/list
 //! - dict/list/set/tuple/generator -> recursive descent
 //!
 //! This replaces the Python modules cog.json and cog.files.
 
+use coglet_core::bridge::protocol::StructuredOutputFile;
+use coglet_core::worker::{SlotSender, StagedFileOutput};
+use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFrozenSet, PyList, PySet, PyString, PyTuple};
 
@@ -19,6 +21,7 @@ use pyo3::types::{PyDict, PyFrozenSet, PyList, PySet, PyString, PyTuple};
 ///
 /// Calls make_encodeable() to normalize, then encode_files() to convert any
 /// remaining Path/IOBase objects to base64 data URLs.
+#[cfg(test)]
 pub fn process_output<'py>(
     py: Python<'py>,
     output: &Bound<'py, PyAny>,
@@ -27,19 +30,27 @@ pub fn process_output<'py>(
     encode_files(py, &encodeable)
 }
 
-/// Process a single output item (for generator outputs).
-pub fn process_output_item<'py>(
+/// Normalize an output and transfer nested files into Coglet-managed storage.
+///
+/// File locations are replaced with null placeholders. The returned descriptors
+/// contain RFC 6901 pointers that let the parent restore uploaded URLs or data
+/// URIs without flattening the surrounding output.
+pub fn process_output_for_ipc<'py>(
     py: Python<'py>,
-    item: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyAny>> {
-    process_output(py, item)
+    output: &Bound<'py, PyAny>,
+    slot_sender: &SlotSender,
+) -> PyResult<(Bound<'py, PyAny>, Vec<StructuredOutputFile>)> {
+    let encodeable = make_encodeable(py, output)?;
+    let mut files = Vec::new();
+    let output = stage_files(py, &encodeable, slot_sender, "", &mut files)?;
+    Ok((output, files))
 }
 
 /// Normalize a Python object into a JSON-friendly form.
 ///
 /// Handles Pydantic models, dataclasses, enums, datetime, numpy types,
 /// and collections. PathLike objects are passed through (handled later
-/// by encode_files).
+/// by the managed-file staging pass).
 fn make_encodeable<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     // Pydantic v2: model_dump()
     if let Ok(method) = obj.getattr("model_dump")
@@ -108,7 +119,7 @@ fn make_encodeable<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bo
         return obj.call_method0("isoformat");
     }
 
-    // os.PathLike -> pathlib.Path (will be encoded to base64 later by encode_files)
+    // os.PathLike -> pathlib.Path (handled later by the staging pass)
     let os_mod = py.import("os")?;
     let pathlike_cls = os_mod.getattr("PathLike")?;
     if obj.is_instance(&pathlike_cls)? {
@@ -142,6 +153,7 @@ fn make_encodeable<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bo
 }
 
 /// Recursively walk the output and encode any Path/IOBase objects to base64 data URLs.
+#[cfg(test)]
 fn encode_files<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     // str -- return as-is (don't recurse into characters)
     if obj.is_instance_of::<PyString>() {
@@ -189,10 +201,121 @@ fn encode_files<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound
     Ok(obj.clone())
 }
 
+fn stage_files<'py>(
+    py: Python<'py>,
+    obj: &Bound<'py, PyAny>,
+    slot_sender: &SlotSender,
+    pointer: &str,
+    files: &mut Vec<StructuredOutputFile>,
+) -> PyResult<Bound<'py, PyAny>> {
+    if obj.is_instance_of::<PyString>() {
+        return Ok(obj.clone());
+    }
+
+    if let Ok(dict) = obj.cast_exact::<PyDict>() {
+        let new_dict = PyDict::new(py);
+        for (key, value) in dict.iter() {
+            let key_string = serialized_dict_key(py, &key)?;
+            let child_pointer = json_pointer_child(pointer, &key_string);
+            new_dict.set_item(
+                &key,
+                stage_files(py, &value, slot_sender, &child_pointer, files)?,
+            )?;
+        }
+        return Ok(new_dict.into_any());
+    }
+
+    if let Ok(list) = obj.cast_exact::<PyList>() {
+        let items = list
+            .iter()
+            .enumerate()
+            .map(|(index, item)| {
+                let child_pointer = json_pointer_child(pointer, &index.to_string());
+                stage_files(py, &item, slot_sender, &child_pointer, files)
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        return Ok(PyList::new(py, &items)?.into_any());
+    }
+
+    let os = py.import("os")?;
+    let pathlike = os.getattr("PathLike")?;
+    if obj.is_instance(&pathlike)? {
+        let path: String = obj.call_method0("__fspath__")?.extract()?;
+        let staged = py
+            .detach(|| slot_sender.stage_user_file_output(std::path::PathBuf::from(path), None))
+            .map_err(|error| PyOSError::new_err(error.to_string()))?;
+        files.push(structured_file(pointer, staged));
+        return Ok(py.None().into_bound(py));
+    }
+
+    let io = py.import("io")?;
+    let iobase = io.getattr("IOBase")?;
+    if obj.is_instance(&iobase)? {
+        if obj.call_method0("seekable")?.is_truthy()? {
+            obj.call_method1("seek", (0,))?;
+        }
+        let content = obj.call_method0("read")?;
+        let data = if content.is_instance_of::<PyString>() {
+            content.extract::<String>()?.into_bytes()
+        } else {
+            content.extract::<Vec<u8>>()?
+        };
+        let upload_filename = obj
+            .getattr("name")
+            .and_then(|name| name.extract::<String>())
+            .ok()
+            .and_then(|name| {
+                std::path::Path::new(&name)
+                    .file_name()
+                    .and_then(|filename| filename.to_str())
+                    .map(ToString::to_string)
+            });
+        let staged = py
+            .detach(|| slot_sender.stage_file_output(&data, upload_filename, None))
+            .map_err(|error| PyOSError::new_err(error.to_string()))?;
+        files.push(structured_file(pointer, staged));
+        return Ok(py.None().into_bound(py));
+    }
+
+    Ok(obj.clone())
+}
+
+fn structured_file(pointer: &str, staged: StagedFileOutput) -> StructuredOutputFile {
+    StructuredOutputFile {
+        pointer: pointer.to_string(),
+        filename: staged.filename,
+        upload_filename: staged.upload_filename,
+        mime_type: staged.mime_type,
+        managed: staged.managed,
+    }
+}
+
+fn json_pointer_child(pointer: &str, segment: &str) -> String {
+    let segment = segment.replace('~', "~0").replace('/', "~1");
+    format!("{pointer}/{segment}")
+}
+
+fn serialized_dict_key(py: Python<'_>, key: &Bound<'_, PyAny>) -> PyResult<String> {
+    let holder = PyDict::new(py);
+    holder.set_item(key, py.None())?;
+    let encoded: String = py
+        .import("json")?
+        .call_method1("dumps", (&holder,))?
+        .extract()?;
+    let object = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&encoded)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    object
+        .into_iter()
+        .next()
+        .map(|(key, _)| key)
+        .ok_or_else(|| PyValueError::new_err("output dictionary key was not serialized"))
+}
+
 /// Encode a file handle to a base64 data URL.
 ///
 /// Seeks to start if seekable, reads all bytes, guesses MIME type from
 /// the file name, and returns "data:{mime};base64,{encoded}".
+#[cfg(test)]
 fn file_to_base64<'py>(py: Python<'py>, fh: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     // Seek to start if possible
     if let Ok(seekable) = fh.call_method0("seekable")
@@ -247,6 +370,100 @@ mod tests {
     use super::*;
     use base64::Engine as _;
     use pyo3::types::PyDict;
+
+    #[test]
+    fn nested_path_is_staged_with_an_escaped_json_pointer() {
+        pyo3::Python::initialize();
+        let source_dir = tempfile::tempdir().unwrap();
+        let source = source_dir.path().join("result.txt");
+        std::fs::write(&source, b"nested path").unwrap();
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let (output, files) = Python::attach(|py| {
+            let locals = PyDict::new(py);
+            locals.set_item("source", source.to_str().unwrap()).unwrap();
+            py.run(
+                c"from pathlib import Path\nobj = {'a/b~c': [Path(source)]}",
+                None,
+                Some(&locals),
+            )
+            .unwrap();
+            let obj = locals.get_item("obj").unwrap().unwrap();
+            let (processed, files) = process_output_for_ipc(py, &obj, &sender).unwrap();
+            let output: String = py
+                .import("json")
+                .unwrap()
+                .call_method1("dumps", (&processed,))
+                .unwrap()
+                .extract()
+                .unwrap();
+            (
+                serde_json::from_str::<serde_json::Value>(&output).unwrap(),
+                files,
+            )
+        });
+
+        assert_eq!(output, serde_json::json!({"a/b~c": [null]}));
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].pointer, "/a~1b~0c/0");
+        assert_eq!(files[0].upload_filename, "result.txt");
+        assert_eq!(std::fs::read(&files[0].filename).unwrap(), b"nested path");
+        assert!(!source.exists());
+    }
+
+    #[test]
+    fn nested_path_pointer_uses_json_key_serialization() {
+        pyo3::Python::initialize();
+        let source_dir = tempfile::tempdir().unwrap();
+        let source = source_dir.path().join("boolean-key.txt");
+        std::fs::write(&source, b"boolean key").unwrap();
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let files = Python::attach(|py| {
+            let locals = PyDict::new(py);
+            locals.set_item("source", source.to_str().unwrap()).unwrap();
+            py.run(
+                c"from pathlib import Path\nobj = {True: Path(source)}",
+                None,
+                Some(&locals),
+            )
+            .unwrap();
+            let obj = locals.get_item("obj").unwrap().unwrap();
+            process_output_for_ipc(py, &obj, &sender).unwrap().1
+        });
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].pointer, "/true");
+    }
+
+    #[test]
+    fn nested_text_iobase_is_staged_as_utf8() {
+        pyo3::Python::initialize();
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        let files = Python::attach(|py| {
+            let locals = PyDict::new(py);
+            py.run(
+                c"import io\nobj = {'artifact': io.StringIO('hello')}",
+                None,
+                Some(&locals),
+            )
+            .unwrap();
+            let obj = locals.get_item("obj").unwrap().unwrap();
+            process_output_for_ipc(py, &obj, &sender).unwrap().1
+        });
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].pointer, "/artifact");
+        assert_eq!(files[0].upload_filename, "output.bin");
+        assert_eq!(std::fs::read(&files[0].filename).unwrap(), b"hello");
+    }
 
     /// Helper: evaluate a Python expression and run make_encodeable on it.
     fn encodeable(py_expr: &str) -> String {

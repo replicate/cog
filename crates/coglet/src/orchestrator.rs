@@ -7,7 +7,7 @@
 //! 4. Run event loop routing responses to predictions
 //! 5. On worker crash: fail all predictions, shut down
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -23,13 +23,11 @@ use crate::PredictionOutput;
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
     ControlRequest, ControlResponse, FileOutputKind, HealthcheckStatus, SlotId, SlotRequest,
-    SlotResponse,
+    SlotResponse, StructuredOutput,
 };
 use crate::bridge::transport::create_transport;
 use crate::permit::{InactiveSlotIdleToken, PermitPool, SlotIdleToken};
 use crate::prediction::Prediction;
-
-const MAX_PENDING_CANCELLATIONS: usize = 1000;
 
 /// Upload a file to a signed endpoint, returning the final URL.
 ///
@@ -43,10 +41,18 @@ async fn upload_file(
     data: &[u8],
     content_type: &str,
 ) -> Result<String, String> {
-    let url = format!("{endpoint}{filename}");
+    let mut url = reqwest::Url::parse(endpoint)
+        .map_err(|error| format!("invalid upload endpoint {endpoint}: {error}"))?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| format!("invalid upload endpoint {endpoint}"))?;
+        segments.pop_if_empty();
+        segments.push(filename);
+    }
     let client = reqwest::Client::new();
     let resp = client
-        .put(&url)
+        .put(url)
         .header("Content-Type", content_type)
         .body(data.to_vec())
         .timeout(std::time::Duration::from_secs(25))
@@ -76,12 +82,99 @@ async fn upload_file(
     }
 }
 
-fn ensure_trailing_slash(s: &str) -> String {
-    if s.ends_with('/') {
-        s.to_string()
-    } else {
-        format!("{s}/")
+/// Delete an output file Coglet owns, now that its bytes have been consumed.
+///
+/// Called only once the bytes are safely somewhere else: parsed, encoded into
+/// the response, or accepted by the upload endpoint. Deleting any earlier would
+/// discard the only copy while it could still be needed. Files left behind by a
+/// failure are removed with the prediction directory.
+fn delete_managed_output(filename: &str, managed: bool) {
+    if !managed {
+        return;
     }
+    if let Err(e) = std::fs::remove_file(filename)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(%filename, error = %e, "Failed to delete managed output file");
+    }
+}
+
+struct ResolvedOutput {
+    index: u64,
+    output: serde_json::Value,
+}
+
+type PendingOutput = tokio::task::JoinHandle<Result<(), String>>;
+
+fn collect_output_task_errors(
+    results: Vec<Result<Result<(), String>, tokio::task::JoinError>>,
+) -> Result<(), String> {
+    results
+        .into_iter()
+        .map(|result| match result {
+            Ok(result) => result,
+            Err(error) => Err(format!("output task failed: {error}")),
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(|_| ())
+}
+
+async fn abort_output_tasks(tasks: Vec<PendingOutput>) {
+    for task in &tasks {
+        task.abort();
+    }
+    for task in tasks {
+        let _ = task.await;
+    }
+}
+
+async fn abort_all_output_tasks(pending: &mut HashMap<SlotId, Vec<PendingOutput>>) {
+    for (_, tasks) in std::mem::take(pending) {
+        abort_output_tasks(tasks).await;
+    }
+}
+
+async fn resolve_structured_output(
+    mut structured: StructuredOutput,
+    upload_endpoint: Option<String>,
+    index: u64,
+) -> Result<ResolvedOutput, String> {
+    for file in structured.files {
+        let bytes = std::fs::read(&file.filename)
+            .map_err(|error| format!("failed to read {}: {error}", file.filename))?;
+        let mime = file.mime_type.unwrap_or_else(|| {
+            mime_guess::from_path(&file.upload_filename)
+                .first_or_octet_stream()
+                .to_string()
+        });
+        let output = if let Some(endpoint) = &upload_endpoint {
+            serde_json::Value::String(
+                upload_file(endpoint, &file.upload_filename, &bytes, &mime).await?,
+            )
+        } else {
+            use base64::Engine;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+            serde_json::Value::String(format!("data:{mime};base64,{encoded}"))
+        };
+
+        if file.pointer.is_empty() {
+            structured.output = output;
+        } else {
+            let target = structured
+                .output
+                .pointer_mut(&file.pointer)
+                .ok_or_else(|| {
+                    format!("structured output pointer does not exist: {}", file.pointer)
+                })?;
+            *target = output;
+        }
+        delete_managed_output(&file.filename, file.managed);
+    }
+
+    Ok(ResolvedOutput {
+        index,
+        output: structured.output,
+    })
 }
 
 /// Try to lock a prediction mutex.
@@ -101,6 +194,53 @@ fn try_lock_prediction(
             None
         }
     }
+}
+
+struct OrderedOutputPublisher {
+    prediction: Arc<StdMutex<Prediction>>,
+    next_index: u64,
+    pending: BTreeMap<u64, serde_json::Value>,
+}
+
+impl OrderedOutputPublisher {
+    fn new(prediction: Arc<StdMutex<Prediction>>) -> Self {
+        Self {
+            prediction,
+            next_index: 0,
+            pending: BTreeMap::new(),
+        }
+    }
+
+    fn publish(&mut self, output: serde_json::Value, index: u64) -> Result<(), String> {
+        if index < self.next_index || self.pending.insert(index, output).is_some() {
+            return Err(format!("duplicate output index {index}"));
+        }
+        if !self.pending.contains_key(&self.next_index) {
+            return Ok(());
+        }
+
+        let Some(mut prediction) = try_lock_prediction(&self.prediction) else {
+            return Err("prediction mutex poisoned".to_string());
+        };
+        while let Some(output) = self.pending.remove(&self.next_index) {
+            prediction.append_output_chunk(output, self.next_index);
+            self.next_index += 1;
+        }
+        Ok(())
+    }
+}
+
+type OutputPublisher = Arc<StdMutex<OrderedOutputPublisher>>;
+
+fn publish_output(
+    publisher: &OutputPublisher,
+    output: serde_json::Value,
+    index: u64,
+) -> Result<(), String> {
+    publisher
+        .lock()
+        .map_err(|_| "output publisher mutex poisoned".to_string())?
+        .publish(output, index)
 }
 
 /// Wrap collected output items into the correct `PredictionOutput` variant.
@@ -247,11 +387,14 @@ pub trait Orchestrator: Send + Sync {
         idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
     );
 
-    /// Cancel a prediction by its prediction ID.
+    /// Cancel the exact registered prediction instance.
     ///
-    /// The orchestrator resolves the prediction ID to a slot ID and sends
-    /// a cancel request to the worker over the control socket.
-    async fn cancel_by_prediction_id(&self, prediction_id: &str) -> Result<(), OrchestratorError>;
+    /// Matching by identity prevents a delayed cancellation from affecting a
+    /// later prediction that reused the same public ID.
+    async fn cancel_prediction(
+        &self,
+        prediction: Arc<StdMutex<Prediction>>,
+    ) -> Result<(), OrchestratorError>;
 
     /// Run user-defined healthcheck if available.
     async fn healthcheck(&self) -> Result<HealthcheckResult, OrchestratorError>;
@@ -368,7 +511,7 @@ pub struct OrchestratorHandle {
         Arc<tokio::sync::Mutex<FramedWrite<tokio::process::ChildStdin, JsonCodec<ControlRequest>>>>,
     register_tx: mpsc::Sender<RegisterPredictionMessage>,
     healthcheck_tx: mpsc::Sender<tokio::sync::oneshot::Sender<HealthcheckResult>>,
-    cancel_tx: mpsc::Sender<String>,
+    cancel_tx: mpsc::Sender<Arc<StdMutex<Prediction>>>,
     slot_ids: Vec<SlotId>,
 }
 
@@ -393,9 +536,12 @@ impl Orchestrator for OrchestratorHandle {
         let _ = ack_rx.await;
     }
 
-    async fn cancel_by_prediction_id(&self, prediction_id: &str) -> Result<(), OrchestratorError> {
+    async fn cancel_prediction(
+        &self,
+        prediction: Arc<StdMutex<Prediction>>,
+    ) -> Result<(), OrchestratorError> {
         self.cancel_tx
-            .send(prediction_id.to_string())
+            .send(prediction)
             .await
             .map_err(|_| OrchestratorError::Protocol("cancel channel closed".to_string()))
     }
@@ -700,18 +846,6 @@ pub async fn spawn_worker(
     })
 }
 
-fn record_pending_cancellation(pending_cancellations: &mut HashSet<String>, prediction_id: String) {
-    if pending_cancellations.len() >= MAX_PENDING_CANCELLATIONS {
-        tracing::warn!(
-            prediction_id = %prediction_id,
-            cap = MAX_PENDING_CANCELLATIONS,
-            "Dropping pending cancellation because the pending cancellation buffer is full"
-        );
-        return;
-    }
-    pending_cancellations.insert(prediction_id);
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn run_event_loop(
     mut ctrl_reader: FramedRead<tokio::process::ChildStdout, JsonCodec<ControlResponse>>,
@@ -724,7 +858,7 @@ async fn run_event_loop(
     )>,
     mut register_rx: mpsc::Receiver<RegisterPredictionMessage>,
     mut healthcheck_rx: mpsc::Receiver<tokio::sync::oneshot::Sender<HealthcheckResult>>,
-    mut cancel_rx: mpsc::Receiver<String>,
+    mut cancel_rx: mpsc::Receiver<Arc<StdMutex<Prediction>>>,
     pool: Arc<PermitPool>,
     upload_url: Option<String>,
     // Schema says Output is "type": "array" — always wrap as Stream.
@@ -733,12 +867,15 @@ async fn run_event_loop(
     output_is_array: bool,
 ) {
     let mut predictions: HashMap<SlotId, Arc<StdMutex<Prediction>>> = HashMap::new();
+    let mut output_publishers: HashMap<SlotId, OutputPublisher> = HashMap::new();
     let mut idle_senders: HashMap<SlotId, tokio::sync::oneshot::Sender<SlotIdleToken>> =
         HashMap::new();
     let mut pending_healthchecks: Vec<tokio::sync::oneshot::Sender<HealthcheckResult>> = Vec::new();
     let mut healthcheck_counter: u64 = 0;
-    let mut pending_uploads: HashMap<SlotId, Vec<tokio::task::JoinHandle<()>>> = HashMap::new();
-    let mut pending_cancellations: HashSet<String> = HashSet::new();
+    // Upload tasks report failure so `Done` can fail the prediction instead of
+    // reporting success with a missing output.
+    let mut pending_outputs: HashMap<SlotId, Vec<PendingOutput>> = HashMap::new();
+    let mut pending_output_errors: HashMap<SlotId, String> = HashMap::new();
 
     let (slot_msg_tx, mut slot_msg_rx) =
         mpsc::channel::<(SlotId, Result<SlotResponse, std::io::Error>)>(100);
@@ -795,6 +932,11 @@ async fn run_event_loop(
                     Some(Ok(ControlResponse::Failed { slot, error })) => {
                         tracing::warn!(%slot, %error, "Slot poisoned");
                         pool.poison(slot);
+                        if let Some(tasks) = pending_outputs.remove(&slot) {
+                            abort_output_tasks(tasks).await;
+                        }
+                        pending_output_errors.remove(&slot);
+                        output_publishers.remove(&slot);
                         if let Some(pred) = predictions.remove(&slot)
                             && let Some(mut p) = try_lock_prediction(&pred)
                             && !p.is_terminal()
@@ -804,6 +946,9 @@ async fn run_event_loop(
                     }
                     Some(Ok(ControlResponse::Fatal { reason })) => {
                         tracing::error!(%reason, "Worker fatal");
+                        abort_all_output_tasks(&mut pending_outputs).await;
+                        pending_output_errors.clear();
+                        output_publishers.clear();
                         for (slot, pred) in predictions.drain() {
                             tracing::warn!(%slot, "Failing prediction due to worker fatal error");
                             pool.poison(slot);
@@ -873,6 +1018,9 @@ async fn run_event_loop(
                     }
                     None => {
                         tracing::warn!("Control channel closed (worker crashed?)");
+                        abort_all_output_tasks(&mut pending_outputs).await;
+                        pending_output_errors.clear();
+                        output_publishers.clear();
                         for (slot, pred) in predictions.drain() {
                             tracing::warn!(%slot, "Failing prediction due to worker crash");
                             if let Some(mut p) = try_lock_prediction(&pred) {
@@ -915,13 +1063,13 @@ async fn run_event_loop(
                 }
             }
 
-            Some(prediction_id) = cancel_rx.recv() => {
-                // Resolve prediction_id → slot_id by iterating (fine for small concurrency)
-                let slot = predictions.iter().find_map(|(sid, pred)| {
-                    try_lock_prediction(pred)
-                        .filter(|p| p.id() == prediction_id)
-                        .map(|_| *sid)
-                });
+            Some(prediction) = cancel_rx.recv() => {
+                let prediction_id = try_lock_prediction(&prediction)
+                    .map(|prediction| prediction.id().to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                let slot = predictions
+                    .iter()
+                    .find_map(|(slot, active)| Arc::ptr_eq(active, &prediction).then_some(*slot));
                 match slot {
                     Some(slot_id) => {
                         tracing::info!(
@@ -938,14 +1086,16 @@ async fn run_event_loop(
                                 "Failed to send cancel request to worker"
                             );
                         }
-                        // Also abort any pending upload tasks for this slot
-                        if let Some(handles) = pending_uploads.remove(&slot_id) {
-                            for h in handles { h.abort(); }
+                        // Keep the handles so the terminal response can join them
+                        // before the prediction ID and directory are released.
+                        if let Some(tasks) = pending_outputs.get(&slot_id) {
+                            for task in tasks {
+                                task.abort();
+                            }
                         }
                     }
                     None => {
-                        tracing::debug!(%prediction_id, "Cancel requested for unknown prediction; storing pending cancellation");
-                        record_pending_cancellation(&mut pending_cancellations, prediction_id);
+                        tracing::debug!(%prediction_id, "Cancel requested for inactive prediction");
                     }
                 }
             }
@@ -971,25 +1121,14 @@ async fn run_event_loop(
                     "Starting prediction"
                 );
                 tracing::debug!(%slot_id, %prediction_id, "Registered prediction");
+                output_publishers.insert(
+                    slot_id,
+                    Arc::new(StdMutex::new(OrderedOutputPublisher::new(Arc::clone(
+                        &prediction,
+                    )))),
+                );
                 predictions.insert(slot_id, prediction);
-                let pending_cancel = pending_cancellations.remove(&prediction_id);
                 let _ = registered_ack.send(());
-                if pending_cancel {
-                    tracing::info!(
-                        target: "coglet::prediction",
-                        %prediction_id,
-                        %slot_id,
-                        "Applying pending cancellation"
-                    );
-                    let mut writer = ctrl_writer.lock().await;
-                    if let Err(e) = writer.send(ControlRequest::Cancel { slot: slot_id }).await {
-                        tracing::error!(
-                            %slot_id,
-                            error = %e,
-                            "Failed to send pending cancel request to worker"
-                        );
-                    }
-                }
             }
 
             Some((slot_id, result)) = slot_msg_rx.recv() => {
@@ -1057,27 +1196,36 @@ async fn run_event_loop(
                         }
                     }
                     Ok(SlotResponse::OutputChunk { output, index }) => {
-                        let poisoned = if let Some(pred) = predictions.get(&slot_id) {
-                            if let Some(mut p) = try_lock_prediction(pred) {
-                                p.append_output_chunk(output, index);
-                                false
-                            } else {
-                                true
-                            }
-                        } else {
-                            false
-                        };
-                        // Remove poisoned predictions outside the borrow
-                        if poisoned {
-                            predictions.remove(&slot_id);
+                        if let Some(publisher) = output_publishers.get(&slot_id)
+                            && let Err(error) = publish_output(publisher, output, index)
+                        {
+                            pending_output_errors.entry(slot_id).or_insert(error);
                         }
                     }
-                    Ok(SlotResponse::FileOutput { filename, kind, mime_type }) => {
+                    Ok(SlotResponse::FileOutput {
+                        filename,
+                        kind,
+                        mime_type,
+                        managed,
+                        upload_filename,
+                        index,
+                    }) => {
+                        if !predictions.contains_key(&slot_id) {
+                            tracing::warn!(
+                                %slot_id,
+                                %filename,
+                                "Ignoring FileOutput for an inactive slot"
+                            );
+                            continue;
+                        }
                         tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");
                         let bytes = match std::fs::read(&filename) {
                             Ok(b) => b,
                             Err(e) => {
                                 tracing::error!(%slot_id, %filename, error = %e, "Failed to read FileOutput");
+                                pending_output_errors
+                                    .entry(slot_id)
+                                    .or_insert_with(|| format!("Failed to read output file: {e}"));
                                 continue;
                             }
                         };
@@ -1087,53 +1235,60 @@ async fn run_event_loop(
                                     Ok(val) => val,
                                     Err(e) => {
                                         tracing::error!(%slot_id, %filename, error = %e, "Failed to parse oversized JSON");
+                                        pending_output_errors.entry(slot_id).or_insert_with(|| {
+                                            format!("Failed to parse oversized output: {e}")
+                                        });
                                         continue;
                                     }
                                 };
-                                let poisoned = if let Some(pred) = predictions.get(&slot_id) {
-                                    if let Some(mut p) = try_lock_prediction(pred) {
-                                        p.append_output(output);
-                                        false
-                                    } else {
-                                        true
-                                    }
-                                } else {
-                                    false
-                                };
-                                if poisoned {
-                                    predictions.remove(&slot_id);
+                                delete_managed_output(&filename, managed);
+                                if let Some(publisher) = output_publishers.get(&slot_id)
+                                    && let Err(error) = publish_output(publisher, output, index)
+                                {
+                                    pending_output_errors.entry(slot_id).or_insert(error);
                                 }
                             }
                             FileOutputKind::FileType => {
+                                let upload_filename = upload_filename.unwrap_or_else(|| {
+                                    std::path::Path::new(&filename)
+                                        .file_name()
+                                        .and_then(|name| name.to_str())
+                                        .unwrap_or("output")
+                                        .to_string()
+                                });
                                 let mime = mime_type.unwrap_or_else(|| {
-                                    mime_guess::from_path(&filename)
+                                    mime_guess::from_path(&upload_filename)
                                         .first_or_octet_stream()
                                         .to_string()
                                 });
                                 if let Some(ref url) = upload_url {
                                     // Spawn upload task so we don't block the event loop
-                                    let pred = predictions.get(&slot_id).cloned();
-                                    let endpoint = ensure_trailing_slash(url);
-                                    let basename = std::path::Path::new(&filename)
-                                        .file_name()
-                                        .and_then(|n| n.to_str())
-                                        .unwrap_or("output")
-                                        .to_string();
+                                    let endpoint = url.clone();
+                                    let publisher = Arc::clone(
+                                        output_publishers
+                                            .get(&slot_id)
+                                            .expect("active slot checked above"),
+                                    );
                                     let handle = tokio::spawn(async move {
-                                        match upload_file(&endpoint, &basename, &bytes, &mime).await {
-                                            Ok(url) => {
-                                                if let Some(pred) = pred
-                                                    && let Some(mut p) = try_lock_prediction(&pred)
-                                                {
-                                                    p.append_output(serde_json::Value::String(url));
-                                                }
-                                            }
-                                            Err(e) => {
-                                                tracing::error!(error = %e, "Failed to upload file output");
-                                            }
-                                        }
+                                        let url = upload_file(
+                                            &endpoint,
+                                            &upload_filename,
+                                            &bytes,
+                                            &mime,
+                                        )
+                                        .await
+                                        .inspect_err(|e| {
+                                                tracing::error!(%filename, error = %e, "Failed to upload file output");
+                                        })?;
+                                        // Only safe once the endpoint has the bytes.
+                                        delete_managed_output(&filename, managed);
+                                        publish_output(
+                                            &publisher,
+                                            serde_json::Value::String(url),
+                                            index,
+                                        )
                                     });
-                                    pending_uploads.entry(slot_id).or_default().push(handle);
+                                    pending_outputs.entry(slot_id).or_default().push(handle);
                                 } else {
                                     // No upload URL — base64-encode as data URI
                                     use base64::Engine;
@@ -1142,80 +1297,77 @@ async fn run_event_loop(
                                     let output = serde_json::Value::String(format!(
                                         "data:{mime};base64,{encoded}"
                                     ));
-                                    let poisoned = if let Some(pred) = predictions.get(&slot_id) {
-                                        if let Some(mut p) = try_lock_prediction(pred) {
-                                            p.append_output(output);
-                                            false
-                                        } else {
-                                            true
-                                        }
-                                    } else {
-                                        false
-                                    };
-                                    if poisoned {
-                                        predictions.remove(&slot_id);
+                                    delete_managed_output(&filename, managed);
+                                    if let Some(publisher) = output_publishers.get(&slot_id)
+                                        && let Err(error) = publish_output(publisher, output, index)
+                                    {
+                                        pending_output_errors.entry(slot_id).or_insert(error);
                                     }
                                 }
+                            }
+                            FileOutputKind::Structured => {
+                                let structured: StructuredOutput =
+                                    match serde_json::from_slice(&bytes) {
+                                        Ok(structured) => structured,
+                                        Err(error) => {
+                                            tracing::error!(
+                                                %slot_id,
+                                                %filename,
+                                                %error,
+                                                "Failed to parse structured output"
+                                            );
+                                            pending_output_errors.entry(slot_id).or_insert_with(
+                                                || format!("Failed to parse structured output: {error}"),
+                                            );
+                                            continue;
+                                        }
+                                    };
+                                delete_managed_output(&filename, managed);
+                                let endpoint = upload_url.clone();
+                                let publisher = Arc::clone(
+                                    output_publishers
+                                        .get(&slot_id)
+                                        .expect("active slot checked above"),
+                                );
+                                let handle = tokio::spawn(async move {
+                                    let resolved =
+                                        resolve_structured_output(structured, endpoint, index).await?;
+                                    publish_output(
+                                        &publisher,
+                                        resolved.output,
+                                        resolved.index,
+                                    )
+                                });
+                                pending_outputs.entry(slot_id).or_default().push(handle);
                             }
                         }
                     }
                     Ok(SlotResponse::Done { id, output: _, predict_time, is_stream }) => {
+                        // Not "succeeded" yet: pending uploads can still fail it.
                         tracing::info!(
                             target: "coglet::prediction",
                             prediction_id = %id,
                             predict_time,
                             is_stream,
                             output_is_array,
-                            "Prediction succeeded"
+                            "Run completed"
                         );
-                        let uploads = pending_uploads.remove(&slot_id).unwrap_or_default();
+                        let pending = pending_outputs.remove(&slot_id).unwrap_or_default();
+                        let output_error = pending_output_errors.remove(&slot_id);
+                        output_publishers.remove(&slot_id);
                         if let Some(pred) = predictions.remove(&slot_id) {
-                            if uploads.is_empty() {
+                            if pending.is_empty() {
                                 // No pending uploads — complete synchronously to avoid
                                 // a race between tokio::spawn and Notify::notified() in
                                 // service.rs.  notify_waiters() only wakes already-
                                 // registered waiters; spawning a task can fire the
                                 // notification before the service registers its waiter.
                                 if let Some(mut p) = try_lock_prediction(&pred) {
-                                    let pred_output = wrap_outputs(
-                                        p.take_outputs(),
-                                        output_is_array,
-                                        is_stream,
-                                    );
-                                    p.set_succeeded(pred_output);
-                                }
-                            } else {
-                                // Has pending uploads — must spawn to await them.
-                                // Clone the cancel token so we can abort uploads if
-                                // the prediction is cancelled while uploads are in flight.
-                                let (cancel_token, upload_pred_id) = match try_lock_prediction(&pred) {
-                                    Some(p) => (Some(p.cancel_token()), p.id().to_string()),
-                                    None => (None, id.clone()),
-                                };
-                                tokio::spawn(async move {
-                                    if let Some(token) = cancel_token {
-                                        let upload_fut = futures::future::join_all(uploads);
-                                        tokio::pin!(upload_fut);
-                                        tokio::select! {
-                                            _ = &mut upload_fut => {}
-                                            _ = token.cancelled() => {
-                                                tracing::info!(
-                                                    target: "coglet::prediction",
-                                                    prediction_id = %upload_pred_id,
-                                                    "Aborting in-flight uploads due to cancellation"
-                                                );
-                                                if let Some(mut p) = try_lock_prediction(&pred) {
-                                                    p.set_canceled();
-                                                }
-                                                return;
-                                            }
-                                        }
+                                    if p.cancel_token().is_cancelled() {
+                                        p.set_canceled();
+                                    } else if let Some(error) = output_error {
+                                        p.set_failed(error);
                                     } else {
-                                        for h in uploads {
-                                            let _ = h.await;
-                                        }
-                                    }
-                                    if let Some(mut p) = try_lock_prediction(&pred) {
                                         let pred_output = wrap_outputs(
                                             p.take_outputs(),
                                             output_is_array,
@@ -1223,6 +1375,94 @@ async fn run_event_loop(
                                         );
                                         p.set_succeeded(pred_output);
                                     }
+                                }
+                            } else {
+                                // Pending output tasks must finish or be joined after
+                                // abortion before this prediction becomes terminal.
+                                let (cancel_token, output_pred_id) = match try_lock_prediction(&pred) {
+                                    Some(p) => (Some(p.cancel_token()), p.id().to_string()),
+                                    None => (None, id.clone()),
+                                };
+                                tokio::spawn(async move {
+                                    if let Some(error) = output_error {
+                                        abort_output_tasks(pending).await;
+                                        if let Some(mut p) = try_lock_prediction(&pred) {
+                                            if p.cancel_token().is_cancelled() {
+                                                p.set_canceled();
+                                            } else {
+                                                p.set_failed(error);
+                                            }
+                                        }
+                                        return;
+                                    }
+
+                                    if cancel_token
+                                        .as_ref()
+                                        .is_some_and(|token| token.is_cancelled())
+                                    {
+                                        abort_output_tasks(pending).await;
+                                        if let Some(mut p) = try_lock_prediction(&pred) {
+                                            p.set_canceled();
+                                        }
+                                        return;
+                                    }
+
+                                    let abort_handles = pending
+                                        .iter()
+                                        .map(tokio::task::JoinHandle::abort_handle)
+                                        .collect::<Vec<_>>();
+                                    let output_fut = futures::future::join_all(pending);
+                                    tokio::pin!(output_fut);
+                                    let results = if let Some(token) = cancel_token.as_ref() {
+                                        tokio::select! {
+                                            results = &mut output_fut => Some(results),
+                                            _ = token.cancelled() => {
+                                                tracing::info!(
+                                                    target: "coglet::prediction",
+                                                    prediction_id = %output_pred_id,
+                                                    "Aborting in-flight output tasks due to cancellation"
+                                                );
+                                                for handle in abort_handles {
+                                                    handle.abort();
+                                                }
+                                                let _ = (&mut output_fut).await;
+                                                None
+                                            }
+                                        }
+                                    } else {
+                                        Some((&mut output_fut).await)
+                                    };
+
+                                    let Some(results) = results else {
+                                        if let Some(mut p) = try_lock_prediction(&pred) {
+                                            p.set_canceled();
+                                        }
+                                        return;
+                                    };
+
+                                    let Some(mut p) = try_lock_prediction(&pred) else {
+                                        return;
+                                    };
+                                    if p.cancel_token().is_cancelled() {
+                                        p.set_canceled();
+                                        return;
+                                    }
+                                    if let Err(error) = collect_output_task_errors(results) {
+                                        tracing::error!(
+                                            target: "coglet::prediction",
+                                            prediction_id = %output_pred_id,
+                                            %error,
+                                            "Failing prediction because an output task failed"
+                                        );
+                                        p.set_failed(format!("Failed to process output file: {error}"));
+                                        return;
+                                    }
+                                    let pred_output = wrap_outputs(
+                                        p.take_outputs(),
+                                        output_is_array,
+                                        is_stream,
+                                    );
+                                    p.set_succeeded(pred_output);
                                 });
                             }
                         } else {
@@ -1236,10 +1476,11 @@ async fn run_event_loop(
                             %error,
                             "Prediction failed"
                         );
-                        // Abort any pending uploads — prediction is terminal
-                        if let Some(handles) = pending_uploads.remove(&slot_id) {
-                            for h in handles { h.abort(); }
+                        if let Some(tasks) = pending_outputs.remove(&slot_id) {
+                            abort_output_tasks(tasks).await;
                         }
+                        pending_output_errors.remove(&slot_id);
+                        output_publishers.remove(&slot_id);
                         if let Some(pred) = predictions.remove(&slot_id)
                             && let Some(mut p) = try_lock_prediction(&pred)
                         {
@@ -1252,10 +1493,11 @@ async fn run_event_loop(
                             prediction_id = %id,
                             "Prediction cancelled"
                         );
-                        // Abort any pending uploads — prediction is terminal
-                        if let Some(handles) = pending_uploads.remove(&slot_id) {
-                            for h in handles { h.abort(); }
+                        if let Some(tasks) = pending_outputs.remove(&slot_id) {
+                            abort_output_tasks(tasks).await;
                         }
+                        pending_output_errors.remove(&slot_id);
+                        output_publishers.remove(&slot_id);
                         if let Some(pred) = predictions.remove(&slot_id)
                             && let Some(mut p) = try_lock_prediction(&pred)
                         {
@@ -1264,9 +1506,11 @@ async fn run_event_loop(
                     }
                     Err(e) => {
                         tracing::error!(%slot_id, error = %e, "Slot socket error");
-                        if let Some(handles) = pending_uploads.remove(&slot_id) {
-                            for h in handles { h.abort(); }
+                        if let Some(tasks) = pending_outputs.remove(&slot_id) {
+                            abort_output_tasks(tasks).await;
                         }
+                        pending_output_errors.remove(&slot_id);
+                        output_publishers.remove(&slot_id);
                         if let Some(pred) = predictions.remove(&slot_id)
                             && let Some(mut p) = try_lock_prediction(&pred)
                         {
@@ -1278,6 +1522,7 @@ async fn run_event_loop(
         }
     }
 
+    abort_all_output_tasks(&mut pending_outputs).await;
     tracing::info!("Event loop exiting");
 }
 
@@ -1285,6 +1530,8 @@ async fn run_event_loop(
 mod tests {
     use super::*;
     use serde_json::json;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     // ── wrap_outputs: schema says array (output_is_array = true) ──
 
@@ -1297,16 +1544,151 @@ mod tests {
     }
 
     #[test]
-    fn record_pending_cancellation_caps_stored_ids() {
-        let mut pending = HashSet::new();
-        for index in 0..MAX_PENDING_CANCELLATIONS {
-            record_pending_cancellation(&mut pending, format!("pred-{index}"));
+    fn delete_managed_output_deletes_managed_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("managed.txt");
+        std::fs::write(&path, b"managed").unwrap();
+
+        delete_managed_output(path.to_str().unwrap(), true);
+
+        assert!(!path.exists(), "managed file should be deleted");
+    }
+
+    #[test]
+    fn delete_managed_output_preserves_unmanaged_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unmanaged.txt");
+        std::fs::write(&path, b"unmanaged").unwrap();
+
+        delete_managed_output(path.to_str().unwrap(), false);
+
+        assert!(path.exists(), "unmanaged file must be left alone");
+        assert_eq!(std::fs::read(&path).unwrap(), b"unmanaged");
+    }
+
+    /// Run the upload-then-delete sequence used by the FileOutput handler.
+    async fn upload_then_delete_managed(
+        endpoint: &str,
+        path: &std::path::Path,
+    ) -> Result<(), String> {
+        crate::install_crypto_provider();
+        let filename = path.to_str().unwrap().to_string();
+        let endpoint = endpoint.to_string();
+        let handle: tokio::task::JoinHandle<Result<(), String>> = tokio::spawn(async move {
+            upload_file(&endpoint, "0.txt", b"payload", "text/plain").await?;
+            delete_managed_output(&filename, true);
+            Ok(())
+        });
+        handle
+            .await
+            .map_err(|error| format!("upload task failed: {error}"))?
+    }
+
+    /// Deleting has to wait for the upload: on failure the bytes on disk are the
+    /// only copy left, and the prediction directory cleanup is what reclaims them.
+    #[tokio::test]
+    async fn managed_output_survives_a_failed_upload() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("0.txt");
+        std::fs::write(&path, b"payload").unwrap();
+
+        let error = upload_then_delete_managed(&server.uri(), &path)
+            .await
+            .expect_err("a 500 response should fail the upload");
+
+        assert!(error.contains("status 500"), "error: {error}");
+        assert!(path.exists(), "file must survive for directory cleanup");
+    }
+
+    #[tokio::test]
+    async fn managed_output_is_deleted_after_a_successful_upload() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("0.txt");
+        std::fs::write(&path, b"payload").unwrap();
+
+        upload_then_delete_managed(&server.uri(), &path)
+            .await
+            .unwrap();
+
+        assert!(!path.exists(), "uploaded file should be deleted");
+    }
+
+    #[tokio::test]
+    async fn upload_file_escapes_filename_as_a_path_segment() {
+        crate::install_crypto_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/upload/result%3Fdraft.png"))
+            .and(query_param("sig", "abc"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let endpoint = format!("{}/upload?sig=abc", server.uri());
+        let url = upload_file(&endpoint, "result?draft.png", b"payload", "image/png")
+            .await
+            .unwrap();
+
+        assert!(url.ends_with("/result%3Fdraft.png"), "upload URL: {url}");
+    }
+
+    #[test]
+    fn output_publisher_emits_completed_uploads_in_order() {
+        let prediction = Arc::new(StdMutex::new(Prediction::new(
+            "streaming-output".to_string(),
+            None,
+        )));
+        let mut stream = prediction.lock().unwrap().subscribe_stream();
+        let publisher = Arc::new(StdMutex::new(OrderedOutputPublisher::new(prediction)));
+
+        publish_output(&publisher, serde_json::json!("second"), 1).unwrap();
+        assert!(stream.try_recv().is_err());
+
+        publish_output(&publisher, serde_json::json!("first"), 0).unwrap();
+        let first = stream.try_recv().unwrap();
+        let second = stream.try_recv().unwrap();
+        assert_eq!(
+            first.json_data(),
+            serde_json::json!({"chunk": "first", "index": 0})
+        );
+        assert_eq!(
+            second.json_data(),
+            serde_json::json!({"chunk": "second", "index": 1})
+        );
+    }
+
+    #[tokio::test]
+    async fn abort_output_tasks_joins_aborted_tasks() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        struct DropMarker(Arc<AtomicBool>);
+        impl Drop for DropMarker {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
         }
 
-        record_pending_cancellation(&mut pending, "overflow".to_string());
+        let dropped = Arc::new(AtomicBool::new(false));
+        let marker = DropMarker(Arc::clone(&dropped));
+        let task: PendingOutput = tokio::spawn(async move {
+            let _marker = marker;
+            std::future::pending().await
+        });
 
-        assert_eq!(pending.len(), MAX_PENDING_CANCELLATIONS);
-        assert!(!pending.contains("overflow"));
+        abort_output_tasks(vec![task]).await;
+
+        assert!(dropped.load(Ordering::SeqCst));
     }
 
     #[test]

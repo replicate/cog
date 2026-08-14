@@ -525,6 +525,7 @@ These types can be used directly as input parameter types and output return type
 `cog.Path` is a subclass of Python's [`pathlib.Path`](https://docs.python.org/3/library/pathlib.html#basic-use) and can be used as a drop-in replacement. Any `os.PathLike` subclass is also accepted as an input type and treated as `cog.Path`.
 
 For models that return a `cog.Path` object, the output returned by Cog's built-in HTTP server will be a URL.
+Returning a path transfers ownership of that directory entry to Cog. Cog removes the entry while staging the output and does not restore it if later staging or upload work fails. When the path is a symlink, Cog removes the link but leaves its target intact. Models that return assets or shared cache files must copy them to a separate output path first.
 
 This example takes an input file, resizes it, and returns the resized image:
 
@@ -537,7 +538,7 @@ class Runner(BaseRunner):
         upscaled_image = do_some_processing(image)
 
         # To output cog.Path objects the file needs to exist, so create a temporary file first.
-        # This file will automatically be deleted by Cog after it has been returned.
+        # Cog consumes the returned path, so write it again before returning the same path twice.
         output_path = Path(tempfile.mkdtemp()) / "upscaled.png"
         upscaled_image.save(output_path)
         return Path(output_path)

@@ -1,5 +1,7 @@
 """Tests for coglet Python bindings."""
 
+import base64
+import json
 import queue
 import re
 import socket
@@ -7,7 +9,9 @@ import subprocess
 import sys
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import quote, urlsplit
 
 import coglet
 import pytest
@@ -200,6 +204,51 @@ predict: "predict.py:Predictor"
 
 
 @pytest.fixture
+def blocking_path_generator_predictor(tmp_path: Path) -> Path:
+    """Create a streaming predictor that blocks after yielding a Path."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import tempfile
+import time
+from pathlib import Path
+from typing import Iterator
+
+import cog
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    @cog.streaming
+    def predict(self, release_path: str) -> Iterator[Path]:
+        output = Path(tempfile.mkdtemp()) / "result.txt"
+        output.write_text("streamed file")
+        yield output
+        while not Path(release_path).exists():
+            time.sleep(0.01)
+""")
+    (tmp_path / "cog.yaml").write_text('predict: "predict.py:Predictor"\n')
+    schema_dir = tmp_path / ".cog"
+    schema_dir.mkdir()
+    (schema_dir / "openapi_schema.json").write_text(
+        json.dumps(
+            {
+                "paths": {"/predictions": {"post": {"x-cog-streaming": True}}},
+                "components": {
+                    "schemas": {
+                        "Input": {
+                            "type": "object",
+                            "properties": {"release_path": {"type": "string"}},
+                            "required": ["release_path"],
+                        },
+                        "Output": {"type": "array", "items": {"type": "string"}},
+                    }
+                },
+            }
+        )
+    )
+    return predictor
+
+
+@pytest.fixture
 def async_predictor(tmp_path: Path) -> Path:
     """Create an async predictor."""
     predictor = tmp_path / "predict.py"
@@ -363,12 +412,107 @@ predict: "predict.py:Predictor"
     return predictor
 
 
+@pytest.fixture
+def path_output_predictor(tmp_path: Path) -> Path:
+    """Create a predictor that returns a Path it wrote to its own temp directory.
+
+    This is the shape from issue #1434: the run makes a directory, writes a file
+    into it, hands the path back, and never touches it again. predict() records
+    the path it returned in ``returned_path.txt`` so tests can check afterwards
+    whether the file survived.
+    """
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import tempfile
+from pathlib import Path
+
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+
+    def predict(self, text: str = "hello") -> Path:
+        output = Path(tempfile.mkdtemp()) / "output.txt"
+        output.write_text(text)
+        (Path(__file__).parent / "returned_path.txt").write_text(str(output))
+        return output
+""")
+
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
+@pytest.fixture
+def structured_path_output_predictor(tmp_path: Path) -> Path:
+    """Create a predictor with a Path nested in a structured output."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import tempfile
+from pathlib import Path
+
+from cog import BaseModel, BasePredictor
+
+class Output(BaseModel):
+    artifact: Path
+    metadata: dict[str, str]
+
+class Predictor(BasePredictor):
+    def predict(self, text: str = "nested") -> Output:
+        output = Path(tempfile.mkdtemp()) / "result?draft.txt"
+        output.write_text(text)
+        (Path(__file__).parent / "returned_path.txt").write_text(str(output))
+        return Output(artifact=output, metadata={"label": "kept"})
+""")
+    (tmp_path / "cog.yaml").write_text('predict: "predict.py:Predictor"\n')
+    return predictor
+
+
+@pytest.fixture
+def upload_server():
+    """Run a local PUT endpoint and record uploaded paths and bodies."""
+    uploads = []
+
+    class UploadHandler(BaseHTTPRequestHandler):
+        def do_PUT(self) -> None:
+            length = int(self.headers.get("Content-Length", "0"))
+            uploads.append((self.path, self.rfile.read(length)))
+            self.send_response(200)
+            safe_request_path = self.path.replace("\r", "").replace("\n", "")
+            self.send_header(
+                "Location",
+                f"http://127.0.0.1:{self.server.server_port}{quote(urlsplit(safe_request_path).path, safe='/%')}",
+            )
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), UploadHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/upload/", uploads
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 class CogletServer:
     """Context manager for running coglet server."""
 
-    def __init__(self, predictor_path: Path, port: int = 0):
+    def __init__(
+        self, predictor_path: Path, port: int = 0, upload_url: str | None = None
+    ):
         self.predictor_path = predictor_path
         self.requested_port = port
+        self.upload_url = upload_url
         self.port = None
         self.process = None
         self.stderr_lines = []
@@ -376,10 +520,11 @@ class CogletServer:
         self.stderr_thread = None
 
     def __enter__(self):
+        predictor_ref = f"{self.predictor_path}:Predictor"
         cmd = [
             sys.executable,
             "-c",
-            f"import coglet; coglet.server.serve('{self.predictor_path}:Predictor', port={self.requested_port})",
+            f"import coglet; coglet.server.serve({predictor_ref!r}, port={self.requested_port}, upload_url={self.upload_url!r})",
         ]
         self.process = subprocess.Popen(
             cmd,
@@ -520,6 +665,53 @@ class TestSyncPredictor:
             assert result["metrics"]["predict_time"] >= 0
 
 
+class TestPathOutput:
+    """Tests for handing a returned Path over to Coglet."""
+
+    def test_returned_file_is_encoded_and_then_deleted(
+        self, path_output_predictor: Path
+    ):
+        """Returning a Path transfers ownership: Coglet reads the file, then unlinks it.
+
+        The unit tests cover each half of this on its own. This one is the whole
+        round trip through a real server, so a break in the Python-to-Rust handoff
+        cannot slip through with the Rust side still passing.
+        """
+        with CogletServer(path_output_predictor) as server:
+            result = server.predict({"text": "reclaim me"})
+
+        assert result["status"] == "succeeded"
+        output = result["output"]
+        assert output.startswith("data:"), f"expected a data URL, got {output!r}"
+        payload = base64.b64decode(output.split("base64,", 1)[1])
+        assert payload == b"reclaim me"
+
+        returned = Path(
+            (path_output_predictor.parent / "returned_path.txt").read_text()
+        )
+        assert not returned.exists(), f"{returned} should have been reclaimed"
+
+    def test_structured_path_is_uploaded_with_its_original_name(
+        self,
+        structured_path_output_predictor: Path,
+        upload_server,
+    ):
+        upload_url, uploads = upload_server
+        with CogletServer(
+            structured_path_output_predictor, upload_url=upload_url
+        ) as server:
+            result = server.predict({"text": "structured bytes"})
+
+        assert result["status"] == "succeeded", result
+        assert result["output"]["metadata"] == {"label": "kept"}
+        assert result["output"]["artifact"].endswith("/upload/result%3Fdraft.txt")
+        assert uploads == [("/upload/result%3Fdraft.txt", b"structured bytes")]
+        returned = Path(
+            (structured_path_output_predictor.parent / "returned_path.txt").read_text()
+        )
+        assert not returned.exists(), f"{returned} should have been reclaimed"
+
+
 class TestSecretInput:
     """Tests for cog.Secret input coercion."""
 
@@ -593,6 +785,53 @@ class TestGeneratorPredictor:
         with CogletServer(generator_predictor) as server:
             result = server.predict({"count": 5})
             assert len(result["output"]) == 5
+
+    def test_path_output_streams_before_prediction_completes(
+        self,
+        blocking_path_generator_predictor: Path,
+        upload_server,
+    ):
+        upload_url, _uploads = upload_server
+        release_path = blocking_path_generator_predictor.parent / "release"
+
+        with CogletServer(
+            blocking_path_generator_predictor, upload_url=upload_url
+        ) as server:
+            response = requests.post(
+                f"{server.base_url}/predictions",
+                headers={"Accept": "text/event-stream"},
+                json={"input": {"release_path": str(release_path)}},
+                stream=True,
+                timeout=(3, 5),
+            )
+            response.raise_for_status()
+            events = response.iter_lines(decode_unicode=True)
+            event_name = None
+            output = None
+            try:
+                for line in events:
+                    if line.startswith("event: "):
+                        event_name = line.removeprefix("event: ")
+                    elif line.startswith("data: ") and event_name == "output":
+                        output = json.loads(line.removeprefix("data: "))
+                        break
+
+                assert output is not None, "SSE stream ended before the file output"
+                assert output["index"] == 0
+                assert output["chunk"].endswith("/upload/result.txt")
+                assert not release_path.exists()
+            finally:
+                release_path.touch()
+
+            completed = None
+            for line in events:
+                if line.startswith("event: "):
+                    event_name = line.removeprefix("event: ")
+                elif line.startswith("data: ") and event_name == "completed":
+                    completed = json.loads(line.removeprefix("data: "))
+                    break
+            assert completed is not None
+            assert completed["status"] == "succeeded"
 
 
 class TestAsyncPredictor:

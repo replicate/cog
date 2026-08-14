@@ -164,11 +164,27 @@ fn submit_async_coroutine(
     Ok(future.unbind())
 }
 
+/// Hand a run-returned path to Coglet, which takes ownership of the file.
+fn send_path_output(
+    item: &Bound<'_, PyAny>,
+    slot_sender: &SlotSender,
+) -> Result<(), PredictionError> {
+    let path: String = item
+        .call_method0("__fspath__")
+        .and_then(|path| path.extract())
+        .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
+    // The transfer is blocking file I/O on files that can be very large, so let
+    // other Python threads run while it happens.
+    item.py()
+        .detach(|| slot_sender.send_user_file_output(std::path::PathBuf::from(path), None))
+        .map_err(|e| PredictionError::Failed(format!("Failed to send file output: {}", e)))
+}
+
 /// Send a single output item over IPC, routing file outputs to disk.
 ///
-/// For Path outputs (os.PathLike): sends the existing file path via send_file_output.
+/// For Path outputs (os.PathLike): transfers the file to Coglet-managed storage.
 /// For IOBase outputs: reads bytes, writes to output_dir via write_file_output.
-/// For everything else: processes through make_encodeable + upload_files, then send_output.
+/// For everything else: normalizes the value and stages any nested files.
 fn send_output_item(
     py: Python<'_>,
     item: &Bound<'_, PyAny>,
@@ -189,14 +205,9 @@ fn send_output_item(
         .map_err(|e| PredictionError::Failed(format!("Failed to get io.IOBase: {}", e)))?;
 
     if item.is_instance(&pathlike).unwrap_or(false) {
-        // Path output — file already on disk, send path reference
-        let path_str: String = item
-            .call_method0("__fspath__")
-            .and_then(|p| p.extract())
-            .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
-        slot_sender
-            .send_file_output(std::path::PathBuf::from(path_str), None)
-            .map_err(|e| PredictionError::Failed(format!("Failed to send file output: {}", e)))?;
+        // Returning a Path transfers ownership to Coglet, which moves the data
+        // into managed storage and deletes it after consumption.
+        send_path_output(item, slot_sender)?;
         return Ok(());
     }
 
@@ -234,8 +245,9 @@ fn send_output_item(
         return Ok(());
     }
 
-    // Non-file output - process normally
-    let processed = output::process_output_item(py, item)
+    // Preserve nested file locations so the parent can upload them without
+    // flattening dict or model outputs.
+    let (processed, files) = output::process_output_for_ipc(py, item, slot_sender)
         .map_err(|e| PredictionError::Failed(format!("Failed to process output item: {}", e)))?;
 
     let item_str: String = json_module
@@ -247,9 +259,17 @@ fn send_output_item(
     let item_json: serde_json::Value = serde_json::from_str(&item_str)
         .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
 
-    slot_sender
-        .send_output(item_json)
-        .map_err(|e| PredictionError::Failed(format!("Failed to send output: {}", e)))?;
+    if files.is_empty() {
+        slot_sender
+            .send_output(item_json)
+            .map_err(|e| PredictionError::Failed(format!("Failed to send output: {}", e)))?;
+    } else {
+        slot_sender
+            .send_structured_output(item_json, files)
+            .map_err(|e| {
+                PredictionError::Failed(format!("Failed to send structured output: {}", e))
+            })?;
+    }
 
     Ok(())
 }
@@ -949,15 +969,7 @@ impl PythonPredictor {
             .map_err(|e| PredictionError::Failed(format!("Failed to get io.IOBase: {}", e)))?;
 
         if result.is_instance(&pathlike).unwrap_or(false) {
-            let path_str: String = result
-                .call_method0("__fspath__")
-                .and_then(|p| p.extract())
-                .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
-            slot_sender
-                .send_file_output(std::path::PathBuf::from(path_str), None)
-                .map_err(|e| {
-                    PredictionError::Failed(format!("Failed to send file output: {}", e))
-                })?;
+            send_path_output(result, slot_sender)?;
             return Ok(PredictionOutput::Single(serde_json::Value::Null));
         }
 
@@ -992,9 +1004,7 @@ impl PythonPredictor {
             return Ok(PredictionOutput::Single(serde_json::Value::Null));
         }
 
-        // List/tuple output — iterate items so file outputs (Path, IOBase)
-        // go through the FileOutput IPC path for upload instead of being
-        // base64-encoded inline by process_output.
+        // List/tuple output — send each item with its own output index.
         if let Ok(list) = result.cast::<pyo3::types::PyList>() {
             for item in list.iter() {
                 send_output_item(py, &item, json_module, slot_sender)?;
@@ -1008,22 +1018,8 @@ impl PythonPredictor {
             return Ok(PredictionOutput::Stream(vec![]));
         }
 
-        // Non-file output — process normally
-        let processed = output::process_output(py, result)
-            .map_err(|e| PredictionError::Failed(format!("Failed to process output: {}", e)))?;
-
-        let result_str: String = json_module
-            .call_method1("dumps", (&processed,))
-            .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
-            .extract()
-            .map_err(|e| {
-                PredictionError::Failed(format!("Failed to extract output string: {}", e))
-            })?;
-
-        let output_json: serde_json::Value = serde_json::from_str(&result_str)
-            .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
-
-        Ok(PredictionOutput::Single(output_json))
+        send_output_item(py, result, json_module, slot_sender)?;
+        Ok(PredictionOutput::Single(serde_json::Value::Null))
     }
 
     /// Worker mode async predict - submits to shared event loop.
@@ -1378,6 +1374,7 @@ mod tests {
 
     use std::path::PathBuf;
 
+    use coglet_core::bridge::protocol::SlotResponse;
     use pyo3::types::PyList;
 
     fn add_python_sdk_path(py: Python<'_>) {
@@ -1433,6 +1430,37 @@ sys.modules.setdefault('requests', requests)
                 .extract()
                 .expect("__name__ should be a string")
         })
+    }
+
+    #[test]
+    fn returned_path_transfers_ownership_to_slot_sender() {
+        pyo3::Python::initialize();
+        let source_dir = tempfile::tempdir().unwrap();
+        let source = source_dir.path().join("output.txt");
+        std::fs::write(&source, b"output").unwrap();
+        let output_dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = SlotSender::new(tx, output_dir.path().to_path_buf());
+
+        Python::attach(|py| {
+            let pathlib = py.import("pathlib").unwrap();
+            let path = pathlib
+                .getattr("Path")
+                .unwrap()
+                .call1((source.to_str().unwrap(),))
+                .unwrap();
+            send_path_output(&path, &sender).unwrap();
+        });
+
+        assert!(!source.exists());
+        match rx.try_recv().unwrap() {
+            SlotResponse::FileOutput {
+                filename,
+                managed: true,
+                ..
+            } => assert_eq!(std::fs::read(filename).unwrap(), b"output"),
+            response => panic!("expected managed FileOutput, got {response:?}"),
+        }
     }
 
     #[test]

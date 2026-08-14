@@ -51,9 +51,20 @@ pub enum CreatePredictionError {
     NotReady,
     #[error("At capacity (no slots available)")]
     AtCapacity,
+    #[error("A prediction with this ID already exists")]
+    DuplicateId(ExistingPrediction),
+    #[error("Invalid prediction ID: {0}")]
+    InvalidId(&'static str),
 }
 
 const MAX_STREAM_SUBSCRIBERS: usize = STREAM_CHANNEL_CAPACITY;
+
+/// Per-prediction input and output directories live here, one per prediction ID.
+const PREDICTION_ROOT: &str = "/tmp/coglet/predictions";
+
+/// Prediction directories are moved here before deletion. See
+/// [`detach_prediction_dir`].
+const CLEANUP_ROOT: &str = "/tmp/coglet/cleanup";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SubscribePredictionStreamError {
@@ -97,9 +108,70 @@ struct PredictionEntry {
     cancel_on_stream_drop: bool,
 }
 
+pub struct ExistingPrediction {
+    id: String,
+    prediction: Arc<StdMutex<Prediction>>,
+    input: serde_json::Value,
+    cancel_on_stream_drop: bool,
+}
+
+impl std::fmt::Debug for ExistingPrediction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExistingPrediction")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ExistingPrediction {
+    fn from_entry(id: &str, entry: &PredictionEntry) -> Self {
+        Self {
+            id: id.to_string(),
+            prediction: Arc::clone(&entry.prediction),
+            input: entry.input.clone(),
+            cancel_on_stream_drop: entry.cancel_on_stream_drop,
+        }
+    }
+
+    pub fn response(&self) -> Option<serde_json::Value> {
+        let pred = self.prediction.lock().ok()?;
+        let mut response = pred.build_state_snapshot();
+        response["input"] = self.input.clone();
+        Some(response)
+    }
+
+    pub fn subscribe(
+        &self,
+        service: &Arc<PredictionService>,
+    ) -> Result<PredictionStreamSubscription, SubscribePredictionStreamError> {
+        let stream = {
+            let Some(prediction) = try_lock_prediction(&self.prediction) else {
+                return Err(SubscribePredictionStreamError::Unavailable);
+            };
+            if prediction.stream_receiver_count() >= MAX_STREAM_SUBSCRIBERS {
+                return Err(SubscribePredictionStreamError::TooManySubscribers);
+            }
+            prediction.subscribe_stream_replay()
+        };
+        Ok(PredictionStreamSubscription {
+            id: self.id.clone(),
+            replay: stream.replay,
+            skipped: stream.skipped,
+            receiver: stream.receiver,
+            guard: PredictionStreamGuard {
+                id: self.id.clone(),
+                prediction: Arc::clone(&self.prediction),
+                service: Arc::clone(service),
+                cancel_on_stream_drop: self.cancel_on_stream_drop,
+            },
+        })
+    }
+}
+
 /// Handle to a submitted prediction for cancellation on disconnect.
 pub struct PredictionHandle {
     id: String,
+    prediction: Arc<StdMutex<Prediction>>,
     cancel_token: CancellationToken,
 }
 
@@ -118,7 +190,7 @@ impl PredictionHandle {
     /// `service.cancel(id)` which fires the CancellationToken AND
     /// delegates to the orchestrator to cancel the worker subprocess.
     pub fn sync_guard(&self, service: Arc<PredictionService>) -> SyncPredictionGuard {
-        SyncPredictionGuard::new(self.id.clone(), service)
+        SyncPredictionGuard::new(self.id.clone(), Arc::clone(&self.prediction), service)
     }
 }
 
@@ -151,6 +223,7 @@ impl PredictionStreamSubscription {
 
 pub struct PredictionStreamGuard {
     id: String,
+    prediction: Arc<StdMutex<Prediction>>,
     service: Arc<PredictionService>,
     cancel_on_stream_drop: bool,
 }
@@ -161,14 +234,8 @@ impl Drop for PredictionStreamGuard {
             return;
         }
 
-        // Prediction cleanup may remove the service entry before the SSE response
-        // finishes draining. Missing entries deliberately report zero receivers and
-        // terminal state so this guard cannot cancel an already-cleaned prediction.
-        if self.service.stream_receiver_count(&self.id) == 0
-            && !self.service.prediction_is_terminal(&self.id)
-        {
-            self.service.cancel(&self.id);
-        }
+        self.service
+            .cancel_abandoned_stream(&self.id, &self.prediction);
     }
 }
 
@@ -180,13 +247,19 @@ impl Drop for PredictionStreamGuard {
 /// (Rust-side observers) and the orchestrator (worker subprocess cancel).
 pub struct SyncPredictionGuard {
     prediction_id: Option<String>,
+    prediction: Arc<StdMutex<Prediction>>,
     service: Arc<PredictionService>,
 }
 
 impl SyncPredictionGuard {
-    pub fn new(prediction_id: String, service: Arc<PredictionService>) -> Self {
+    pub fn new(
+        prediction_id: String,
+        prediction: Arc<StdMutex<Prediction>>,
+        service: Arc<PredictionService>,
+    ) -> Self {
         Self {
             prediction_id: Some(prediction_id),
+            prediction,
             service,
         }
     }
@@ -199,7 +272,7 @@ impl SyncPredictionGuard {
 impl Drop for SyncPredictionGuard {
     fn drop(&mut self) {
         if let Some(ref id) = self.prediction_id {
-            self.service.cancel(id);
+            self.service.cancel_if_current(id, &self.prediction);
         }
     }
 }
@@ -244,6 +317,8 @@ pub struct PredictionService {
     input_validator: RwLock<Option<InputValidator>>,
     train_validator: RwLock<Option<InputValidator>>,
     supports_prediction_streaming: RwLock<bool>,
+    #[cfg(test)]
+    idempotent_pre_submit_barrier: RwLock<Option<Arc<tokio::sync::Barrier>>>,
 }
 
 impl PredictionService {
@@ -264,6 +339,8 @@ impl PredictionService {
             input_validator: RwLock::new(None),
             train_validator: RwLock::new(None),
             supports_prediction_streaming: RwLock::new(false),
+            #[cfg(test)]
+            idempotent_pre_submit_barrier: RwLock::new(None),
         }
     }
 
@@ -320,6 +397,19 @@ impl PredictionService {
 
     pub async fn supports_prediction_streaming(&self) -> bool {
         *self.supports_prediction_streaming.read().await
+    }
+
+    #[cfg(test)]
+    pub async fn set_idempotent_pre_submit_barrier(&self, barrier: Arc<tokio::sync::Barrier>) {
+        *self.idempotent_pre_submit_barrier.write().await = Some(barrier);
+    }
+
+    #[cfg(test)]
+    pub async fn wait_idempotent_pre_submit_barrier(&self) {
+        let barrier = self.idempotent_pre_submit_barrier.read().await.clone();
+        if let Some(barrier) = barrier {
+            barrier.wait().await;
+        }
     }
 
     /// Get the permit pool from orchestrator.
@@ -518,6 +608,8 @@ impl PredictionService {
         webhook: Option<WebhookSender>,
         cancel_on_stream_drop: bool,
     ) -> Result<(PredictionHandle, UnregisteredPredictionSlot), CreatePredictionError> {
+        validate_prediction_id(&id).map_err(CreatePredictionError::InvalidId)?;
+
         let health = *self.health.read().await;
         if health != Health::Ready {
             return Err(CreatePredictionError::NotReady);
@@ -526,6 +618,17 @@ impl PredictionService {
         // Pool must exist if health is Ready
         let pool = self.pool().await;
         let pool = pool.as_ref().ok_or(CreatePredictionError::NotReady)?;
+
+        // Reserve the ID before acquiring a permit so a rejected duplicate
+        // cannot consume slot capacity.
+        let prediction_entry = match self.predictions.entry(id.clone()) {
+            dashmap::Entry::Vacant(entry) => entry,
+            dashmap::Entry::Occupied(entry) => {
+                return Err(CreatePredictionError::DuplicateId(
+                    ExistingPrediction::from_entry(&id, entry.get()),
+                ));
+            }
+        };
 
         let permit = pool
             .try_acquire()
@@ -537,18 +640,18 @@ impl PredictionService {
         let slot = PredictionSlot::new(prediction, permit, idle_rx);
         let prediction_arc = slot.prediction();
 
-        // Register in DashMap — this is the single source of truth
-        self.predictions.insert(
-            id.clone(),
-            PredictionEntry {
-                prediction: prediction_arc,
-                cancel_token: cancel_token.clone(),
-                input,
-                cancel_on_stream_drop,
-            },
-        );
+        prediction_entry.insert(PredictionEntry {
+            prediction: Arc::clone(&prediction_arc),
+            cancel_token: cancel_token.clone(),
+            input,
+            cancel_on_stream_drop,
+        });
 
-        let handle = PredictionHandle { id, cancel_token };
+        let handle = PredictionHandle {
+            id,
+            prediction: prediction_arc,
+            cancel_token,
+        };
 
         Ok((handle, UnregisteredPredictionSlot::new(slot, idle_tx)))
     }
@@ -563,65 +666,72 @@ impl PredictionService {
     /// Locks the real Prediction to read current state — no stale copies.
     /// Adds `input` from the PredictionEntry on top of the shared snapshot.
     pub fn get_prediction_response(&self, id: &str) -> Option<serde_json::Value> {
+        self.get_existing_prediction(id)?.response()
+    }
+
+    pub fn get_existing_prediction(&self, id: &str) -> Option<ExistingPrediction> {
         let entry = self.predictions.get(id)?;
-        let pred = entry.prediction.lock().ok()?;
-
-        let mut response = pred.build_state_snapshot();
-        response["input"] = entry.input.clone();
-
-        Some(response)
+        Some(ExistingPrediction::from_entry(id, &entry))
     }
 
     pub fn subscribe_prediction_stream(
         self: &Arc<Self>,
         id: &str,
     ) -> Result<PredictionStreamSubscription, SubscribePredictionStreamError> {
-        let entry = self
-            .predictions
-            .get(id)
-            .ok_or(SubscribePredictionStreamError::NotFound)?;
-        let stream = {
-            let Some(prediction) = try_lock_prediction(&entry.prediction) else {
-                return Err(SubscribePredictionStreamError::Unavailable);
-            };
-            if prediction.stream_receiver_count() >= MAX_STREAM_SUBSCRIBERS {
-                return Err(SubscribePredictionStreamError::TooManySubscribers);
-            }
-            prediction.subscribe_stream_replay()
+        self.get_existing_prediction(id)
+            .ok_or(SubscribePredictionStreamError::NotFound)?
+            .subscribe(self)
+    }
+
+    fn cancel_abandoned_stream(&self, id: &str, expected: &Arc<StdMutex<Prediction>>) {
+        let Some(entry) = self.predictions.get(id) else {
+            return;
         };
-        let cancel_on_stream_drop = entry.cancel_on_stream_drop;
-        let id = id.to_string();
-        Ok(PredictionStreamSubscription {
-            id: id.clone(),
-            replay: stream.replay,
-            skipped: stream.skipped,
-            receiver: stream.receiver,
-            guard: PredictionStreamGuard {
-                id,
-                service: Arc::clone(self),
-                cancel_on_stream_drop,
-            },
-        })
+        if !Arc::ptr_eq(&entry.prediction, expected) {
+            return;
+        }
+        let should_cancel = entry
+            .prediction
+            .lock()
+            .map(|prediction| prediction.stream_receiver_count() == 0 && !prediction.is_terminal())
+            .unwrap_or(false);
+        if !should_cancel {
+            return;
+        }
+
+        entry.cancel_token.cancel();
+        let orchestrator = match self.orchestrator.try_read() {
+            Ok(guard) => guard.as_ref().map(|state| Arc::clone(&state.orchestrator)),
+            Err(_) => {
+                tracing::warn!(prediction_id = %id, "Skipped worker cancel: orchestrator lock unavailable");
+                None
+            }
+        };
+        if let Some(orchestrator) = orchestrator {
+            spawn_orchestrator_cancel(orchestrator, Arc::clone(expected));
+        }
     }
 
-    fn stream_receiver_count(&self, id: &str) -> usize {
-        self.predictions
-            .get(id)
-            .and_then(|entry| {
-                entry
-                    .prediction
-                    .lock()
-                    .ok()
-                    .map(|p| p.stream_receiver_count())
-            })
-            .unwrap_or(0)
-    }
+    fn cancel_if_current(&self, id: &str, expected: &Arc<StdMutex<Prediction>>) -> bool {
+        let Some(entry) = self.predictions.get(id) else {
+            return false;
+        };
+        if !Arc::ptr_eq(&entry.prediction, expected) {
+            return false;
+        }
 
-    fn prediction_is_terminal(&self, id: &str) -> bool {
-        self.predictions
-            .get(id)
-            .and_then(|entry| entry.prediction.lock().ok().map(|p| p.is_terminal()))
-            .unwrap_or(true)
+        entry.cancel_token.cancel();
+        let orchestrator = match self.orchestrator.try_read() {
+            Ok(guard) => guard.as_ref().map(|state| Arc::clone(&state.orchestrator)),
+            Err(_) => {
+                tracing::warn!(prediction_id = %id, "Skipped worker cancel: orchestrator lock unavailable");
+                None
+            }
+        };
+        if let Some(orchestrator) = orchestrator {
+            spawn_orchestrator_cancel(orchestrator, Arc::clone(expected));
+        }
+        true
     }
 
     /// Run a prediction to completion via orchestrator.
@@ -635,8 +745,19 @@ impl PredictionService {
         let state = state
             .ok_or_else(|| PredictionError::Failed("No orchestrator configured".to_string()))?;
 
+        let prediction_id = unregistered_slot.id().to_string();
+
+        // Prepare everything that can fail before the slot is registered, so a
+        // failure here can hand the permit straight back to the pool.
+        let request = match prepare_slot_request(&prediction_id, input, context) {
+            Ok(request) => request,
+            Err(error) => {
+                unregistered_slot.release_unused(error.clone());
+                return Err(PredictionError::Failed(error));
+            }
+        };
+
         let (idle_tx, mut slot) = unregistered_slot.into_parts();
-        let prediction_id = slot.id();
         let slot_id = slot.slot_id();
 
         {
@@ -655,28 +776,6 @@ impl PredictionService {
             .orchestrator
             .register_prediction(slot_id, Arc::clone(&prediction_arc), idle_tx)
             .await;
-
-        // Create per-prediction dirs for file-based inputs/outputs
-        let prediction_dir =
-            std::path::PathBuf::from("/tmp/coglet/predictions").join(&prediction_id);
-        let output_dir = prediction_dir.join("outputs");
-        let input_dir = prediction_dir.join("inputs");
-        std::fs::create_dir_all(&output_dir)
-            .map_err(|e| PredictionError::Failed(format!("Failed to create output dir: {}", e)))?;
-        std::fs::create_dir_all(&input_dir)
-            .map_err(|e| PredictionError::Failed(format!("Failed to create input dir: {}", e)))?;
-
-        let request = build_slot_request(
-            prediction_id.clone(),
-            input,
-            output_dir
-                .to_str()
-                .expect("output dir path is valid UTF-8")
-                .to_string(),
-            &input_dir,
-            context,
-        )
-        .map_err(|e| PredictionError::Failed(format!("Failed to build slot request: {}", e)))?;
 
         // permit_mut returns None if permit isn't InUse (shouldn't happen here)
         let permit = slot
@@ -702,7 +801,7 @@ impl PredictionService {
         if was_cancelled_before_send
             && let Err(e) = state
                 .orchestrator
-                .cancel_by_prediction_id(&prediction_id)
+                .cancel_prediction(Arc::clone(&prediction_arc))
                 .await
         {
             tracing::error!(
@@ -780,7 +879,7 @@ impl PredictionService {
 
             // Delegate to orchestrator to actually cancel the worker-side prediction.
             // This must be non-blocking since cancel() is sync, so we spawn a task.
-            let id_owned = id.to_string();
+            let prediction = Arc::clone(&entry.prediction);
             let orchestrator = match self.orchestrator.try_read() {
                 Ok(guard) => guard.as_ref().map(|s| Arc::clone(&s.orchestrator)),
                 Err(_) => {
@@ -789,7 +888,7 @@ impl PredictionService {
                 }
             };
             if let Some(orch) = orchestrator {
-                spawn_orchestrator_cancel(orch, id_owned);
+                spawn_orchestrator_cancel(orch, prediction);
             }
             true
         } else {
@@ -797,9 +896,50 @@ impl PredictionService {
         }
     }
 
-    /// Remove a prediction from the DashMap after completion.
+    /// Release a completed prediction's ID and delete its on-disk directory.
+    ///
+    /// The directory is a backstop for output files that were not deleted
+    /// individually, such as those from aborted uploads or cancelled predictions.
     pub fn remove_prediction(&self, id: &str) {
-        self.predictions.remove(id);
+        // The HTTP layer validates too, but this decides a path to delete, so it
+        // does not take the caller's word for it.
+        if let Err(e) = validate_prediction_id(id) {
+            tracing::warn!(prediction_id = %id, error = e, "Refusing to remove prediction dir: invalid ID");
+            return;
+        }
+
+        self.remove_prediction_with(id, || detach_prediction_dir(id));
+    }
+
+    fn remove_prediction_with(
+        &self,
+        id: &str,
+        detach: impl FnOnce() -> std::io::Result<Option<std::path::PathBuf>>,
+    ) {
+        // Detaching while the ID is still reserved is what stops this cleanup
+        // from deleting the files of a later prediction that reuses the ID.
+        // Renaming is a single cheap operation, so the map shard stays locked
+        // only briefly; the recursive delete happens afterwards.
+        let detached = {
+            let entry = self.predictions.entry(id.to_string());
+            let detached = match detach() {
+                Ok(detached) => detached,
+                Err(e) => {
+                    // Releasing the ID here would let a later prediction reuse
+                    // the stale directory that failed to detach.
+                    tracing::warn!(prediction_id = %id, error = %e, "Failed to detach prediction dir for cleanup");
+                    return;
+                }
+            };
+            if let dashmap::Entry::Occupied(occupied) = entry {
+                occupied.remove();
+            }
+            detached
+        };
+
+        if let Some(dir) = detached {
+            delete_detached_dir(&dir);
+        }
     }
 
     pub fn trigger_shutdown(&self) {
@@ -811,13 +951,137 @@ impl PredictionService {
     }
 }
 
-fn spawn_orchestrator_cancel(orch: Arc<dyn Orchestrator>, id: String) {
+/// Longest accepted prediction ID.
+///
+/// An ID becomes a directory name, and filesystems generally cap a single name at
+/// 255 bytes. 128 stays well inside that while leaving room for the UUIDs and
+/// slugs callers actually send, and rejecting the rest up front turns a
+/// mid-prediction `ENAMETOOLONG` into a 422 the client can act on.
+///
+/// Keep the error message in `validate_prediction_id` in sync with this.
+const MAX_PREDICTION_ID_LEN: usize = 128;
+
+/// Validate a client-supplied prediction ID.
+///
+/// An ID is used verbatim as a directory name under the prediction root, so it
+/// has to be a single, ordinary path component. The allowlist covers the IDs Cog
+/// generates and the usual UUID and slug shapes, and rules out separators,
+/// traversal, control characters, and names that differ only by Unicode
+/// normalization (which some filesystems fold together, letting two IDs collide
+/// on one directory).
+pub(crate) fn validate_prediction_id(id: &str) -> Result<(), &'static str> {
+    if id.is_empty() {
+        return Err("prediction ID must not be empty");
+    }
+    if id == "." || id == ".." {
+        return Err("prediction ID must not be . or ..");
+    }
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    {
+        return Err(
+            "prediction ID must contain only letters, numbers, hyphens, underscores, and dots",
+        );
+    }
+    // Checked after the charset, where one character is one byte, so the limit
+    // the client is told about is the one being applied.
+    if id.len() > MAX_PREDICTION_ID_LEN {
+        return Err("prediction ID must be at most 128 characters");
+    }
+    Ok(())
+}
+
+fn prediction_dir_for(id: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(PREDICTION_ROOT).join(id)
+}
+
+/// Move a prediction directory out of the prediction root, returning its new path.
+///
+/// Renaming detaches the directory in one step, so the ID is free to be reused
+/// immediately and the slower recursive delete cannot touch whatever the next
+/// prediction puts there. Rename acts on the final path component itself, so a
+/// symlinked prediction directory is moved as a link rather than followed.
+///
+/// Returns `Ok(None)` when there is nothing to clean up.
+fn detach_prediction_dir(id: &str) -> std::io::Result<Option<std::path::PathBuf>> {
+    let dir = prediction_dir_for(id);
+    if let Err(e) = std::fs::symlink_metadata(&dir) {
+        return if e.kind() == std::io::ErrorKind::NotFound {
+            Ok(None)
+        } else {
+            Err(e)
+        };
+    }
+
+    std::fs::create_dir_all(CLEANUP_ROOT)?;
+    let detached = std::path::PathBuf::from(CLEANUP_ROOT).join(uuid::Uuid::new_v4().to_string());
+    std::fs::rename(&dir, &detached)?;
+    Ok(Some(detached))
+}
+
+/// Delete a path already detached by [`detach_prediction_dir`].
+///
+/// A symlink is unlinked rather than followed, so a run that replaced its own
+/// prediction directory with a link cannot get the target deleted.
+fn delete_detached_dir(dir: &std::path::Path) {
+    let removed = match std::fs::symlink_metadata(dir) {
+        Ok(metadata) if metadata.is_dir() => std::fs::remove_dir_all(dir),
+        Ok(_) => std::fs::remove_file(dir),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+        Err(e) => {
+            tracing::warn!(dir = %dir.display(), error = %e, "Failed to inspect detached prediction dir");
+            return;
+        }
+    };
+    if let Err(e) = removed
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(dir = %dir.display(), error = %e, "Failed to delete detached prediction dir");
+    }
+}
+
+/// Create a prediction's input and output directories and build its slot request.
+///
+/// Kept separate from `predict` so every failure that can happen before the
+/// worker is involved is handled in one place, where the permit can still be
+/// returned to the pool.
+fn prepare_slot_request(
+    prediction_id: &str,
+    input: serde_json::Value,
+    context: std::collections::HashMap<String, String>,
+) -> Result<SlotRequest, String> {
+    let prediction_dir = prediction_dir_for(prediction_id);
+    let output_dir = prediction_dir.join("outputs");
+    let input_dir = prediction_dir.join("inputs");
+    std::fs::create_dir_all(&output_dir)
+        .map_err(|e| format!("Failed to create output dir: {e}"))?;
+    std::fs::create_dir_all(&input_dir).map_err(|e| format!("Failed to create input dir: {e}"))?;
+
+    let output_dir = output_dir
+        .to_str()
+        .ok_or_else(|| "Output dir path is not valid UTF-8".to_string())?;
+
+    build_slot_request(
+        prediction_id.to_string(),
+        input,
+        output_dir.to_string(),
+        &input_dir,
+        context,
+    )
+    .map_err(|e| format!("Failed to build slot request: {e}"))
+}
+
+fn spawn_orchestrator_cancel(orch: Arc<dyn Orchestrator>, prediction: Arc<StdMutex<Prediction>>) {
+    let id = try_lock_prediction(&prediction)
+        .map(|prediction| prediction.id().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
     let Ok(handle) = tokio::runtime::Handle::try_current() else {
         tracing::warn!(prediction_id = %id, "No tokio runtime available to cancel prediction");
         return;
     };
     handle.spawn(async move {
-        if let Err(e) = orch.cancel_by_prediction_id(&id).await {
+        if let Err(e) = orch.cancel_prediction(prediction).await {
             tracing::error!(
                 prediction_id = %id,
                 error = %e,
@@ -923,9 +1187,9 @@ mod tests {
             }
         }
 
-        async fn cancel_by_prediction_id(
+        async fn cancel_prediction(
             &self,
-            _prediction_id: &str,
+            _prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
         ) -> Result<(), crate::orchestrator::OrchestratorError> {
             Ok(())
         }
@@ -967,9 +1231,9 @@ mod tests {
         ) {
         }
 
-        async fn cancel_by_prediction_id(
+        async fn cancel_prediction(
             &self,
-            _prediction_id: &str,
+            _prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
         ) -> Result<(), crate::orchestrator::OrchestratorError> {
             self.cancel_count.fetch_add(1, Ordering::SeqCst);
             Ok(())
@@ -988,14 +1252,12 @@ mod tests {
 
     struct CancelRecordingOrchestrator {
         cancel_count: AtomicUsize,
-        prediction: std::sync::Mutex<Option<Arc<std::sync::Mutex<crate::prediction::Prediction>>>>,
     }
 
     impl CancelRecordingOrchestrator {
         fn new() -> Self {
             Self {
                 cancel_count: AtomicUsize::new(0),
-                prediction: std::sync::Mutex::new(None),
             }
         }
 
@@ -1009,21 +1271,18 @@ mod tests {
         async fn register_prediction(
             &self,
             slot_id: SlotId,
-            prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
+            _prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
             idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
         ) {
-            *self.prediction.lock().unwrap() = Some(prediction);
             let _ = idle_sender.send(InactiveSlotIdleToken::new(slot_id).activate());
         }
 
-        async fn cancel_by_prediction_id(
+        async fn cancel_prediction(
             &self,
-            _prediction_id: &str,
+            prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
         ) -> Result<(), crate::orchestrator::OrchestratorError> {
             self.cancel_count.fetch_add(1, Ordering::SeqCst);
-            if let Some(prediction) = self.prediction.lock().unwrap().as_ref() {
-                prediction.lock().unwrap().set_canceled();
-            }
+            prediction.lock().unwrap().set_canceled();
             Ok(())
         }
 
@@ -1389,6 +1648,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dropping_stale_stream_subscription_does_not_cancel_reused_id() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(2).await;
+        let orchestrator = Arc::new(CountingCancelOrchestrator::new());
+        let orchestrator_ref = Arc::clone(&orchestrator);
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (_old_handle, _old_slot) = svc
+            .submit_prediction(
+                "reused-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let old_subscription = svc.subscribe_prediction_stream("reused-stream").unwrap();
+        svc.remove_prediction("reused-stream");
+
+        let (new_handle, _new_slot) = svc
+            .submit_prediction(
+                "reused-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        drop(old_subscription);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+
+        assert!(!new_handle.cancel_token().is_cancelled());
+        assert_eq!(orchestrator_ref.cancel_count(), 0);
+    }
+
+    #[tokio::test]
     async fn submit_returns_at_capacity_when_no_slots() {
         let svc = PredictionService::new_no_pool();
         let pool = create_test_pool(1).await;
@@ -1671,6 +1968,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stale_sync_guard_does_not_cancel_reused_id() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(2).await;
+        let orchestrator = Arc::new(CountingCancelOrchestrator::new());
+        let orchestrator_ref = Arc::clone(&orchestrator);
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (old_handle, _old_slot) = svc
+            .submit_prediction(
+                "reused-sync".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        let old_guard = old_handle.sync_guard(Arc::clone(&svc));
+        svc.remove_prediction("reused-sync");
+
+        let (new_handle, _new_slot) = svc
+            .submit_prediction(
+                "reused-sync".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        drop(old_guard);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+
+        assert!(!new_handle.cancel_token().is_cancelled());
+        assert_eq!(orchestrator_ref.cancel_count(), 0);
+    }
+
+    #[tokio::test]
     async fn sync_guard_disarm_prevents_cancel() {
         let svc = Arc::new(PredictionService::new_no_pool());
         let pool = create_test_pool(1).await;
@@ -1721,6 +2056,351 @@ mod tests {
         assert!(svc.prediction_exists("test-remove"));
         svc.remove_prediction("test-remove");
         assert!(!svc.prediction_exists("test-remove"));
+    }
+
+    /// Unique per test so concurrent runs of the suite cannot delete each other's
+    /// fixtures. The prediction root is a fixed global path, so a shared name is
+    /// a real collision rather than a theoretical one.
+    fn unique_test_id(prefix: &str) -> String {
+        format!("{prefix}-{}", uuid::Uuid::new_v4())
+    }
+
+    #[test]
+    fn remove_prediction_deletes_prediction_dir() {
+        let svc = PredictionService::new_no_pool();
+        let id = unique_test_id("dir-cleanup");
+        let dir = prediction_dir_for(&id);
+        std::fs::create_dir_all(dir.join("outputs")).unwrap();
+        std::fs::create_dir_all(dir.join("inputs")).unwrap();
+        std::fs::write(dir.join("outputs").join("0.png"), b"fake").unwrap();
+
+        svc.remove_prediction(&id);
+
+        assert!(!dir.exists(), "prediction dir should be removed");
+    }
+
+    #[test]
+    fn remove_prediction_missing_dir_is_ok() {
+        let svc = PredictionService::new_no_pool();
+        // Should not panic or error when the prediction dir doesn't exist
+        svc.remove_prediction(&unique_test_id("nonexistent"));
+    }
+
+    #[test]
+    fn remove_prediction_rejects_ids_that_are_not_plain_path_components() {
+        let svc = PredictionService::new_no_pool();
+        let victim = tempfile::tempdir().unwrap();
+        std::fs::write(victim.path().join("keep.txt"), b"keep").unwrap();
+        let victim_path = victim.path().to_str().unwrap();
+
+        // An absolute ID and a traversal ID both name a real directory outside the
+        // prediction root. Validation has to reject them before any deletion.
+        svc.remove_prediction(victim_path);
+        svc.remove_prediction(&format!("..{victim_path}"));
+
+        assert!(
+            victim.path().join("keep.txt").exists(),
+            "cleanup must not touch anything outside the prediction root"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_prediction_unlinks_directory_symlink_without_following_it() {
+        let svc = PredictionService::new_no_pool();
+        let id = unique_test_id("symlink");
+        let dir = prediction_dir_for(&id);
+        std::fs::create_dir_all(PREDICTION_ROOT).unwrap();
+        let victim = tempfile::tempdir().unwrap();
+        std::fs::write(victim.path().join("keep.txt"), b"keep").unwrap();
+        std::os::unix::fs::symlink(victim.path(), &dir).unwrap();
+
+        svc.remove_prediction(&id);
+
+        assert!(
+            std::fs::symlink_metadata(&dir).is_err(),
+            "prediction symlink should be removed"
+        );
+        assert!(
+            victim.path().join("keep.txt").exists(),
+            "symlink target must survive"
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_prediction_deletes_a_regular_file_and_releases_its_id() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+        let id = unique_test_id("regular-file-cleanup");
+        let (_handle, slot) = svc
+            .submit_prediction(id.clone(), serde_json::json!({}), None, false)
+            .await
+            .unwrap();
+        // Cleanup still has to be safe if a run replaces its directory with a
+        // regular file.
+        let dir = prediction_dir_for(&id);
+        std::fs::create_dir_all(PREDICTION_ROOT).unwrap();
+        std::fs::write(&dir, b"not a directory").unwrap();
+
+        svc.remove_prediction(&id);
+
+        assert!(
+            !svc.prediction_exists(&id),
+            "ID should be reusable after cleanup"
+        );
+        assert!(!dir.exists(), "regular file should be removed");
+        slot.release_unused("test complete".to_string());
+    }
+
+    #[tokio::test]
+    async fn remove_prediction_retains_id_when_detach_fails() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+        let id = unique_test_id("detach-failure");
+        let (_handle, slot) = svc
+            .submit_prediction(id.clone(), serde_json::json!({}), None, false)
+            .await
+            .unwrap();
+
+        svc.remove_prediction_with(&id, || {
+            Err(std::io::Error::other("injected detach failure"))
+        });
+
+        assert!(
+            svc.prediction_exists(&id),
+            "a stale directory must not be exposed to a reused ID"
+        );
+
+        slot.release_unused("test complete".to_string());
+        svc.predictions.remove(&id);
+    }
+
+    /// Detaching the directory before releasing the ID is what keeps a late
+    /// cleanup from deleting the files of a prediction that reused the ID.
+    #[test]
+    fn detach_prediction_dir_moves_the_directory_out_of_the_prediction_root() {
+        let id = unique_test_id("detach");
+        let dir = prediction_dir_for(&id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("output.txt"), b"payload").unwrap();
+
+        let detached = detach_prediction_dir(&id).unwrap().expect("dir existed");
+
+        assert!(!dir.exists(), "original path should be free for reuse");
+        assert!(detached.starts_with(CLEANUP_ROOT));
+        assert_eq!(
+            std::fs::read(detached.join("output.txt")).unwrap(),
+            b"payload"
+        );
+
+        delete_detached_dir(&detached);
+        assert!(!detached.exists());
+    }
+
+    #[test]
+    fn detach_prediction_dir_reports_nothing_to_clean() {
+        assert!(
+            detach_prediction_dir(&unique_test_id("absent"))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_prediction_rejects_duplicate_id() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(2).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(Arc::clone(&pool), orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (_handle, _slot) = svc
+            .submit_prediction(
+                "duplicate-id".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        let result = svc
+            .submit_prediction(
+                "duplicate-id".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
+            .await;
+
+        assert!(matches!(result, Err(CreatePredictionError::DuplicateId(_))));
+        assert_eq!(pool.available(), 1, "duplicate must not consume a permit");
+
+        let unrelated = svc
+            .submit_prediction(
+                "unrelated-id".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
+            .await;
+        assert!(unrelated.is_ok(), "remaining permit should still be usable");
+    }
+
+    /// The ID is reserved and the permit acquired under one map entry guard, so
+    /// concurrent submits of the same ID cannot both get through. A sequential
+    /// test passes even with a check-then-act implementation.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn submit_prediction_admits_one_of_many_concurrent_duplicates() {
+        const ATTEMPTS: usize = 16;
+
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(ATTEMPTS).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+        svc.set_orchestrator(Arc::clone(&pool), orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let mut submits = tokio::task::JoinSet::new();
+        for _ in 0..ATTEMPTS {
+            let svc = Arc::clone(&svc);
+            submits.spawn(async move {
+                svc.submit_prediction("racing-id".to_string(), serde_json::json!({}), None, false)
+                    .await
+                    .map(drop)
+            });
+        }
+
+        let mut admitted = 0;
+        let mut duplicates = 0;
+        while let Some(result) = submits.join_next().await {
+            match result.unwrap() {
+                Ok(()) => admitted += 1,
+                Err(CreatePredictionError::DuplicateId(_)) => duplicates += 1,
+                Err(e) => panic!("unexpected submit error: {e}"),
+            }
+        }
+
+        assert_eq!(admitted, 1, "exactly one submit may win the ID");
+        assert_eq!(duplicates, ATTEMPTS - 1);
+    }
+
+    /// A prediction that fails before its request reaches the worker has to give
+    /// the permit back. The worker never saw the slot, so no idle notification is
+    /// coming and a dropped permit would cost a slot permanently.
+    #[tokio::test]
+    async fn predict_returns_permit_when_request_preparation_fails() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+        svc.set_orchestrator(Arc::clone(&pool), orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        // A regular file where the prediction dir belongs makes create_dir_all fail.
+        let id = unique_test_id("prep-failure");
+        std::fs::create_dir_all(PREDICTION_ROOT).unwrap();
+        std::fs::write(prediction_dir_for(&id), b"not a directory").unwrap();
+
+        let (_handle, slot) = svc
+            .submit_prediction(id.clone(), serde_json::json!({}), None, false)
+            .await
+            .unwrap();
+        assert_eq!(pool.available(), 0, "submit takes the only permit");
+        let prediction = slot.prediction();
+
+        let result = svc
+            .predict(slot, serde_json::json!({}), Default::default())
+            .await;
+
+        assert!(matches!(result, Err(PredictionError::Failed(_))));
+        assert_eq!(pool.available(), 1, "permit must return to the pool");
+        let prediction = prediction.lock().unwrap();
+        assert_eq!(prediction.status(), PredictionStatus::Failed);
+        assert!(
+            prediction.error().unwrap().contains("Failed to create"),
+            "error should name the failure: {:?}",
+            prediction.error()
+        );
+
+        let _ = std::fs::remove_file(prediction_dir_for(&id));
+    }
+
+    #[tokio::test]
+    async fn submit_prediction_rejects_invalid_id() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let long_id = "a".repeat(MAX_PREDICTION_ID_LEN + 1);
+        let invalid_ids = [
+            "",
+            ".",
+            "..",
+            "foo/bar",
+            "foo\\bar",
+            "../escape",
+            &long_id,
+            "nul\0byte",
+        ];
+
+        for id in invalid_ids {
+            let result = svc
+                .submit_prediction(id.to_string(), serde_json::json!({}), None, false)
+                .await;
+            assert!(
+                matches!(result, Err(CreatePredictionError::InvalidId(_))),
+                "expected invalid ID error for {id:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_prediction_id_accepts_safe_ids() {
+        assert!(validate_prediction_id("pred_123").is_ok());
+        assert!(validate_prediction_id("uuid-style-id").is_ok());
+        assert!(validate_prediction_id("with.dots").is_ok());
+        assert!(validate_prediction_id(".hidden").is_ok());
+        assert!(validate_prediction_id(&"a".repeat(MAX_PREDICTION_ID_LEN)).is_ok());
+    }
+
+    #[test]
+    fn validate_prediction_id_rejects_dangerous_ids() {
+        assert!(validate_prediction_id("").is_err());
+        assert!(validate_prediction_id("foo/bar").is_err());
+        assert!(validate_prediction_id("foo\\bar").is_err());
+        assert!(validate_prediction_id("../up").is_err());
+        assert!(validate_prediction_id(".").is_err());
+        assert!(validate_prediction_id("..").is_err());
+    }
+
+    /// An over-long ID used to pass validation and then fail `mkdir` with
+    /// ENAMETOOLONG mid-prediction, stranding both the permit and the ID.
+    #[test]
+    fn validate_prediction_id_rejects_ids_too_long_for_a_filename() {
+        let too_long = "a".repeat(MAX_PREDICTION_ID_LEN + 1);
+        assert!(validate_prediction_id(&too_long).is_err());
+        assert!(validate_prediction_id(&"a".repeat(300)).is_err());
+    }
+
+    /// Control characters and non-ASCII cannot be trusted as a filename: a NUL
+    /// makes path syscalls fail outright, and some filesystems fold Unicode
+    /// spellings together so two distinct IDs would share one directory.
+    #[test]
+    fn validate_prediction_id_rejects_characters_unsafe_in_a_filename() {
+        assert!(validate_prediction_id("nul\0byte").is_err());
+        assert!(validate_prediction_id("new\nline").is_err());
+        assert!(validate_prediction_id("with space").is_err());
+        assert!(validate_prediction_id("héllo").is_err());
+        assert!(validate_prediction_id("colon:id").is_err());
     }
 
     #[test]

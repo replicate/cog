@@ -1,0 +1,14 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: resp
+---
+{
+  "type": "file_output",
+  "filename": "/tmp/coglet/predictions/pred_123/outputs/0.png",
+  "kind": {
+    "type": "file_type"
+  },
+  "mime_type": "image/png",
+  "managed": true,
+  "upload_filename": "image.png"
+}
