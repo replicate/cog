@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/containerd/errdefs"
+	"github.com/docker/cli/cli/connhelper"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -56,10 +58,32 @@ func NewClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 	// ditto for fetching registry credentials.
 
 	dockerClientOpts := []client.Opt{
-		client.WithTLSClientConfigFromEnv(),
 		client.WithVersionFromEnv(),
 		client.WithAPIVersionNegotiation(),
-		client.WithHost(clientOptions.host),
+	}
+
+	helper, err := connhelper.GetConnectionHelper(clientOptions.host)
+	if err != nil {
+		return nil, fmt.Errorf("invalid docker host %q: %w", clientOptions.host, err)
+	}
+
+	if helper != nil {
+		// Remote daemon reached over a non-HTTP transport (e.g. ssh://).
+		// Configure the client entirely from the helper:
+		//   - use helper.Host as the HTTP origin (the SDK will not actually
+		//     dial it; requests go through helper.Dialer).
+		//   - replace the transport with a non-TLS, proxy-disabled one so
+		//     DOCKER_CERT_PATH / HTTP_PROXY do not leak into the SSH path.
+		dockerClientOpts = append(dockerClientOpts,
+			client.WithHTTPClient(&http.Client{Transport: &http.Transport{Proxy: nil}}),
+			client.WithHost(helper.Host),
+			client.WithDialContext(helper.Dialer),
+		)
+	} else {
+		dockerClientOpts = append(dockerClientOpts,
+			client.WithTLSClientConfigFromEnv(),
+			client.WithHost(clientOptions.host),
+		)
 	}
 
 	client, err := client.NewClientWithOpts(dockerClientOpts...)
