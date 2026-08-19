@@ -17,6 +17,8 @@ TEST_DEPS = [
     "pytest-timeout",
     "pytest-xdist",
     "pytest-cov",
+    "opentelemetry-exporter-otlp-proto-http==1.44.0",
+    "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
 ]
 
 

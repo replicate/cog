@@ -16,12 +16,6 @@ from opentelemetry.context import (
 from opentelemetry.context import (
     detach as detach_context,
 )
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-    OTLPSpanExporter as GrpcOTLPSpanExporter,
-)
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-    OTLPSpanExporter as HttpOTLPSpanExporter,
-)
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -125,8 +119,16 @@ def _create_default_provider() -> TracerProvider | None:
         os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"),
     )
     if protocol in {"http", "http/protobuf"}:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+            OTLPSpanExporter as HttpOTLPSpanExporter,
+        )
+
         exporter = HttpOTLPSpanExporter(endpoint=f"{endpoint}/v1/traces")
     elif protocol == "grpc":
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+            OTLPSpanExporter as GrpcOTLPSpanExporter,
+        )
+
         exporter = GrpcOTLPSpanExporter(endpoint=endpoint)
     else:
         raise RuntimeError(f"Unsupported OTLP protocol: {protocol}")

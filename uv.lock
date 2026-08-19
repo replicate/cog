@@ -127,13 +127,17 @@ source = { editable = "." }
 dependencies = [
     { name = "coglet" },
     { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc" },
-    { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
     { name = "pyyaml" },
     { name = "requests" },
     { name = "structlog" },
     { name = "typing-extensions" },
+]
+
+[package.optional-dependencies]
+tracing = [
+    { name = "opentelemetry-exporter-otlp-proto-grpc" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
 ]
 
 [package.dev-dependencies]
@@ -143,6 +147,8 @@ dev = [
     { name = "setuptools-scm" },
 ]
 test = [
+    { name = "opentelemetry-exporter-otlp-proto-grpc" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
@@ -153,14 +159,15 @@ test = [
 requires-dist = [
     { name = "coglet", specifier = ">=0.1.0,<1.0" },
     { name = "opentelemetry-api", specifier = "==1.44.0" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = "==1.44.0" },
-    { name = "opentelemetry-exporter-otlp-proto-http", specifier = "==1.44.0" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "extra == 'tracing'", specifier = "==1.44.0" },
+    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'tracing'", specifier = "==1.44.0" },
     { name = "opentelemetry-sdk", specifier = "==1.44.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.25.0" },
     { name = "structlog", specifier = ">=21.0.0" },
     { name = "typing-extensions", specifier = ">=4.0" },
 ]
+provides-extras = ["tracing"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -169,6 +176,8 @@ dev = [
     { name = "setuptools-scm", specifier = ">=8.2.0" },
 ]
 test = [
+    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = "==1.44.0" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = "==1.44.0" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-timeout" },

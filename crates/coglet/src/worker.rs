@@ -506,6 +506,7 @@ pub async fn run_worker<H: PredictHandler>(
     )?;
     #[cfg(not(feature = "tracing"))]
     init_worker_tracing(setup_log_tx.clone())?;
+    tracing::info!("File descriptor redirection complete");
 
     // Connect to slot sockets (transport info from Init message)
     tracing::trace!(?transport_info, "Connecting to slot transport");

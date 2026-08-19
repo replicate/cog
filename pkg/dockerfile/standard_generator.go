@@ -30,6 +30,7 @@ const uvCacheMount = "--mount=type=cache,target=/root/.cache/uv"
 const uvPip = "uv pip"
 const observabilityConfigBuildPath = "telemetry.py"
 const observabilityConfigRuntimePath = "/.cog/telemetry.py"
+const PythonTracingRequirements = "opentelemetry-exporter-otlp-proto-http==1.44.0 opentelemetry-exporter-otlp-proto-grpc==1.44.0"
 const uvBreakSystemPackages = "--break-system-packages"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
@@ -739,8 +740,22 @@ func (g *StandardGenerator) installCog() (string, error) {
 		}
 		installLines += cogInstall
 	}
+	if tracingInstall := g.installPythonTracingDependencies(); tracingInstall != "" {
+		installLines += "\n" + tracingInstall
+	}
 
 	return installLines, nil
+}
+
+func (g *StandardGenerator) installPythonTracingDependencies() string {
+	if g.Config.Observability == nil || g.Config.Observability.Traces == nil || !g.Config.Observability.Traces.Enabled {
+		return ""
+	}
+	install := "RUN " + uvCacheMount + " " + uvPip + " install " + g.uvPipInstallFlags("--no-cache") + " " + PythonTracingRequirements
+	if g.strip {
+		install += " && " + StripDebugSymbolsCommand
+	}
+	return install
 }
 
 // installCogFromPyPI installs the cog SDK from PyPI.

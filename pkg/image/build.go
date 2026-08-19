@@ -531,8 +531,16 @@ func addTracingToCustomDockerfileImage(ctx context.Context, dockerCommand comman
 	if observability == nil || observability.Traces == nil || !observability.Traces.Enabled {
 		return nil
 	}
+	imageInfo, err := dockerCommand.Inspect(ctx, imageName)
+	if err != nil {
+		return fmt.Errorf("Failed to inspect Docker image before adding tracing configuration: %w", err)
+	}
+	imageUser := ""
+	if imageInfo.Config != nil {
+		imageUser = imageInfo.Config.User
+	}
 	buildOpts := command.ImageBuildOptions{
-		DockerfileContents: tracingDockerfile(imageName, observability),
+		DockerfileContents: tracingDockerfile(imageName, observability, imageUser),
 		ImageName:          imageName,
 		ProgressOutput:     progressOutput,
 		BuildCacheDir:      buildCacheDir,
@@ -647,10 +655,18 @@ func concurrencyDockerfile(baseImage string, maxConcurrency int) string {
 	return fmt.Sprintf("FROM %s\nENV COG_MAX_CONCURRENCY=%d\n", baseImage, maxConcurrency)
 }
 
-func tracingDockerfile(baseImage string, observability *config.Observability) string {
+func tracingDockerfile(baseImage string, observability *config.Observability, imageUser string) string {
 	var b strings.Builder
 	traces := observability.Traces
-	fmt.Fprintf(&b, "FROM %s\nENV COG_TRACE_CONFIGURED=true\nENV COG_TRACE_ENABLED=true\nENV COG_TRACE_SAMPLER=\"%s\"\n", baseImage, traces.Sampler)
+	fmt.Fprintf(&b, "FROM %s\n", baseImage)
+	if imageUser != "" {
+		fmt.Fprintln(&b, "USER root")
+	}
+	fmt.Fprintf(&b, "RUN python -m pip install --no-cache-dir %s\n", dockerfile.PythonTracingRequirements)
+	if imageUser != "" {
+		fmt.Fprintf(&b, "USER %s\n", strconv.Quote(imageUser))
+	}
+	fmt.Fprintf(&b, "ENV COG_TRACE_CONFIGURED=true\nENV COG_TRACE_ENABLED=true\nENV COG_TRACE_SAMPLER=\"%s\"\n", traces.Sampler)
 	if traces.SamplerArg != "" {
 		fmt.Fprintf(&b, "ENV COG_TRACE_SAMPLER_ARG=\"%s\"\n", traces.SamplerArg)
 	}

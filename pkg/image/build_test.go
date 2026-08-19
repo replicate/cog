@@ -10,12 +10,14 @@ import (
 	"testing"
 	"time"
 
+	dockerimage "github.com/docker/docker/api/types/image"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/docker/dockertest"
+	dockerfilepkg "github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/dotcog"
 	"github.com/replicate/cog/pkg/schema"
 	"github.com/replicate/cog/pkg/weights/lockfile"
@@ -120,12 +122,21 @@ func TestConcurrencyDockerfileSetsEnv(t *testing.T) {
 
 type recordingCommand struct {
 	*dockertest.MockCommand
-	builds []command.ImageBuildOptions
+	builds    []command.ImageBuildOptions
+	imageUser string
 }
 
 func (c *recordingCommand) ImageBuild(ctx context.Context, options command.ImageBuildOptions) (string, error) {
 	c.builds = append(c.builds, options)
 	return "sha256:test", nil
+}
+
+func (c *recordingCommand) Inspect(ctx context.Context, ref string) (*dockerimage.InspectResponse, error) {
+	response, err := c.MockCommand.Inspect(ctx, ref)
+	if err == nil && response.Config != nil {
+		response.Config.User = c.imageUser
+	}
+	return response, err
 }
 
 func TestAddConcurrencyToCustomDockerfileImageBuildsWrapperLayer(t *testing.T) {
@@ -143,7 +154,7 @@ func TestAddConcurrencyToCustomDockerfileImageBuildsWrapperLayer(t *testing.T) {
 }
 
 func TestAddTracingToCustomDockerfileImageUsesStagedConfig(t *testing.T) {
-	dockerCommand := &recordingCommand{MockCommand: dockertest.NewMockCommand()}
+	dockerCommand := &recordingCommand{MockCommand: dockertest.NewMockCommand(), imageUser: "1000:1000"}
 	observability := &config.Observability{
 		Config: "config/telemetry.py",
 		Traces: &config.Tracing{Enabled: true, Sampler: "parentbased_always_off"},
@@ -155,6 +166,8 @@ func TestAddTracingToCustomDockerfileImageUsesStagedConfig(t *testing.T) {
 	require.Len(t, dockerCommand.builds, 1)
 	build := dockerCommand.builds[0]
 	require.Contains(t, build.DockerfileContents, "COPY --from=cog_build telemetry.py /.cog/telemetry.py")
+	require.Contains(t, build.DockerfileContents, "USER root")
+	require.Contains(t, build.DockerfileContents, "USER \"1000:1000\"")
 	require.Equal(t, map[string]string{cogBuildContextName: "/tmp/build-cache"}, build.BuildContexts)
 }
 
@@ -421,9 +434,10 @@ func TestTracingDockerfileUsesStagedObservabilityConfig(t *testing.T) {
 	dockerfile := tracingDockerfile("model:latest", &config.Observability{
 		Config: "config/telemetry.py",
 		Traces: &config.Tracing{Enabled: true, Sampler: "parentbased_always_off"},
-	})
+	}, "")
 
 	assert.Contains(t, dockerfile, "COPY --from=cog_build telemetry.py /.cog/telemetry.py")
+	assert.Contains(t, dockerfile, "python -m pip install --no-cache-dir "+dockerfilepkg.PythonTracingRequirements)
 	assert.Contains(t, dockerfile, `ENV COG_OBSERVABILITY_CONFIG="/.cog/telemetry.py"`)
 	assert.NotContains(t, dockerfile, "config/telemetry.py")
 }
