@@ -2394,7 +2394,7 @@ POST /predictions
 
 File outputs may add `cog.prediction.upload_output`. Setup uses a separate `cog.setup` and `cog.setup.predictor` trace when the sampler records root spans.
 
-Cog does not automatically trace every Python function call. Function-level call stacks belong in a profiler. Add model spans around meaningful internal operations when more detail is needed.
+Models can add spans around any Python function, including every function call if needed. Cog does not enable function-level tracing automatically because it adds overhead and can produce very large traces. For routine use, add spans around meaningful internal operations; use a profiler when a complete function-level call stack is required.
 
 ## Model-authored spans
 
@@ -2423,7 +2423,7 @@ Asyncio tasks inherit the active Python context. Raw threads and child processes
 
 Normal JSON and Server-Sent Events requests share the same prediction, worker, and model spans. The HTTP span may end after the SSE response starts, while `cog.prediction`, `cog.prediction.invoke`, and model spans continue until generation finishes or the request is canceled.
 
-Cog does not create one span per output chunk. Per-chunk spans produce large, noisy traces for token streams. The automatic invocation span covers the full generator lifetime, and terminal prediction attributes report the final outcome.
+Models can add a span or span event for each output chunk. Cog does not do this automatically because long token streams can produce large, noisy traces. The automatic invocation span covers the full generator lifetime, and terminal prediction attributes report the final outcome. Add per-chunk instrumentation only when that detail justifies the added telemetry volume.
 
 ## Caller-supplied trace tags
 
