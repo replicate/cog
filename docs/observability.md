@@ -51,23 +51,15 @@ POST /predictions
         └── cog.prediction.invoke  # complete run() duration
 ```
 
-For a standalone model without an upstream traced service, use a sampler that starts root traces:
+Add this to `cog.yaml` to enable tracing:
 
 ```yaml
 observability:
   traces:
     enabled: true
-    sampler: parentbased_always_on
 ```
 
-When Cog runs behind a gateway or service that sends sampled W3C `traceparent` headers, use the production-safe default:
-
-```yaml
-observability:
-  traces:
-    enabled: true
-    sampler: parentbased_always_off
-```
+For information about continuing upstream traces or starting standalone traces, see [Sampling](#sampling).
 
 Custom model spans are optional. Add them only when the automatic `cog.prediction.invoke` duration needs to be split into model-specific phases.
 
