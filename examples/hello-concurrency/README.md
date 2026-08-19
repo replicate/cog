@@ -17,16 +17,24 @@ This combined with the async setup and run methods in `run.py` allows Cog to run
 4 concurrent predictions. If Cog reaches the max concurrency threshold it will reject subsequent
 predictions with a `409 Conflict` response.
 
-### Tracing
+### Tracing with Honeycomb
 
-Cog configures OpenTelemetry before importing the model. The example only creates model spans with the standard `opentelemetry.trace` API.
+Cog configures OpenTelemetry before importing the model. The example adds model spans with the standard `opentelemetry.trace` API and exports the complete trace to Honeycomb.
 
-Configure the collector at runtime:
+Set a Honeycomb API key in your shell, then pass the OTLP configuration at runtime:
 
 ```shell
-OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example.com:4318
-OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-OTEL_SERVICE_NAME=hello-concurrency
+export HONEYCOMB_API_KEY=your-api-key
+
+cog run \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io \
+  -e OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+  -e OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=${HONEYCOMB_API_KEY}" \
+  -e OTEL_SERVICE_NAME=hello-concurrency \
+  -i total=5 \
+  -i interval=1
 ```
 
-With the default `parentbased_always_off` sampler, Cog exports spans only when the caller supplies a sampled parent trace.
+The `parentbased_always_on` sampler preserves an upstream trace's sampling decision and samples predictions that start a new trace locally.
+
+See [Honeycomb's OpenTelemetry endpoint documentation](https://docs.honeycomb.io/send-data/opentelemetry/#using-the-honeycomb-opentelemetry-endpoint) for regional endpoints and Honeycomb Classic dataset headers.

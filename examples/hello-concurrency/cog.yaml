@@ -7,4 +7,4 @@ run: "run.py:Runner"
 observability:
   traces:
     enabled: true
-    sampler: parentbased_always_off
+    sampler: parentbased_always_on

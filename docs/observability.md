@@ -101,7 +101,7 @@ class Runner(BaseRunner):
             return self.model(inputs)
 ```
 
-These spans become children of `cog.prediction.invoke`. Do not construct another `TracerProvider` or exporter in model code.
+These spans become children of `cog.prediction.invoke`. Cog owns the tracer providers for its parent process, worker process, and Python model spans. A provider created in model code would configure only the Python spans, so use the standard `OTEL_*` environment variables instead of constructing another `TracerProvider` or exporter.
 
 Asyncio tasks inherit the active Python context. Raw threads and child processes require explicit context propagation. A background task that outlives the prediction may produce an uncorrelated span.
 
@@ -178,14 +178,14 @@ This contract is not specific to any hosting provider.
 
 The default sampler is `parentbased_always_off`. It continues sampled parent traces but does not start new traces.
 
-| Sampler | Sampled parent | Unsampled parent | No parent |
-| --- | --- | --- | --- |
-| `parentbased_always_off` | keep | drop | drop |
-| `parentbased_always_on` | keep | drop | keep |
-| `parentbased_traceidratio` | keep | drop | ratio |
-| `always_on` | keep | keep | keep |
-| `always_off` | drop | drop | drop |
-| `traceidratio` | ratio | ratio | ratio |
+| Sampler                    | Sampled parent | Unsampled parent | No parent |
+| -------------------------- | -------------- | ---------------- | --------- |
+| `parentbased_always_off`   | keep           | drop             | drop      |
+| `parentbased_always_on`    | keep           | drop             | keep      |
+| `parentbased_traceidratio` | keep           | drop             | ratio     |
+| `always_on`                | keep           | keep             | keep      |
+| `always_off`               | drop           | drop             | drop      |
+| `traceidratio`             | ratio          | ratio            | ratio     |
 
 Ratio samplers require `sampler_arg` as a string between `"0"` and `"1"`.
 See OpenTelemetry's [sampler configuration](https://opentelemetry.io/docs/languages/sdk-configuration/general/#otel_traces_sampler) for the standard sampler behavior.
