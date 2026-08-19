@@ -6,7 +6,6 @@ import sys
 def test_trace_provider_installs_before_model_import() -> None:
     script = """
 import os
-import importlib.util
 os.environ.update({
     "COG_TRACE_CONFIGURED": "true",
     "COG_TRACE_ENABLED": "true",
@@ -14,10 +13,7 @@ os.environ.update({
     "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
 })
-spec = importlib.util.spec_from_file_location("cog_trace", "python/cog/_trace.py")
-assert spec and spec.loader
-_trace = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(_trace)
+from cog import _trace
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 _trace.install_provider()
@@ -37,7 +33,6 @@ assert isinstance(trace.get_tracer_provider(), TracerProvider)
 def test_trace_provider_rejects_collision() -> None:
     script = """
 import os
-import importlib.util
 os.environ.update({
     "COG_TRACE_CONFIGURED": "true",
     "COG_TRACE_ENABLED": "true",
@@ -46,10 +41,7 @@ os.environ.update({
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 trace.set_tracer_provider(TracerProvider())
-spec = importlib.util.spec_from_file_location("cog_trace", "python/cog/_trace.py")
-assert spec and spec.loader
-_trace = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(_trace)
+from cog import _trace
 try:
     _trace.install_provider()
 except RuntimeError:
