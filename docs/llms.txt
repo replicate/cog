@@ -2377,6 +2377,50 @@ Cog supports OTLP gRPC and HTTP/protobuf. Collector endpoints, authentication he
 
 Tracing starts only when the image opts in and a collector endpoint is present. `COG_TRACE_ENABLED=false`, `OTEL_SDK_DISABLED=true`, or `OTEL_TRACES_EXPORTER=none` disables it at runtime.
 
+## Getting started with tracing
+
+A model can have a plain `run()` method and still get tracing. Model code does not need to import OpenTelemetry or create spans:
+
+```python
+from cog import BaseRunner
+
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> str:
+        return expensive_model_call(prompt)
+```
+
+Cog automatically produces:
+
+```text
+POST /predictions
+└── cog.prediction
+    ├── cog.prediction.validate
+    └── cog.prediction.execute
+        ├── cog.prediction.prepare_input
+        └── cog.prediction.invoke  # complete run() duration
+```
+
+For a standalone model without an upstream traced service, use a sampler that starts root traces:
+
+```yaml
+observability:
+  traces:
+    enabled: true
+    sampler: parentbased_always_on
+```
+
+When Cog runs behind a gateway or service that sends sampled W3C `traceparent` headers, use the production-safe default:
+
+```yaml
+observability:
+  traces:
+    enabled: true
+    sampler: parentbased_always_off
+```
+
+Custom model spans are optional. Add them only when the automatic `cog.prediction.invoke` duration needs to be split into model-specific phases.
+
 ## Automatic spans
 
 Cog creates framework spans without requiring tracing code in the model:
