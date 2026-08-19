@@ -66,6 +66,7 @@ type concurrencyFile struct {
 }
 
 type observabilityFile struct {
+	Config *string      `json:"config,omitempty" yaml:"config,omitempty"`
 	Traces *tracingFile `json:"traces,omitempty" yaml:"traces,omitempty"`
 }
 

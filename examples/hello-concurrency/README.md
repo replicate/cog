@@ -19,7 +19,7 @@ predictions with a `409 Conflict` response.
 
 ### Tracing with Honeycomb
 
-Cog configures OpenTelemetry before importing the model. The example adds model spans with the standard `opentelemetry.trace` API and exports the complete trace to Honeycomb.
+Cog loads `telemetry.py` before importing the model. Its `create_tracer_provider()` function configures resource attributes, sampling, span limits, and exporters for Python spans. The model adds spans with the standard `opentelemetry.trace` API.
 
 Set a Honeycomb API key in your shell, then pass the OTLP configuration at runtime:
 
@@ -36,5 +36,11 @@ cog run \
 ```
 
 The `parentbased_always_on` sampler preserves an upstream trace's sampling decision and samples predictions that start a new trace locally.
+
+To print Python spans locally without an OTLP endpoint, run:
+
+```shell
+cog run -e OTEL_DEBUG_TRACES=true -i total=5 -i interval=1
+```
 
 See [Honeycomb's OpenTelemetry endpoint documentation](https://docs.honeycomb.io/send-data/opentelemetry/#using-the-honeycomb-opentelemetry-endpoint) for regional endpoints and Honeycomb Classic dataset headers.

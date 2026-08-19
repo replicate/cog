@@ -41,17 +41,42 @@ impl PythonTraceGuard {
 
 impl Drop for PythonTraceGuard {
     fn drop(&mut self) {
-        let token = self.token.take();
+        let Some(token) = self.token.take() else {
+            return;
+        };
         Python::attach(|py| {
             if let Ok(trace_module) = py.import("cog._trace") {
-                if let Some(token) = token.as_ref() {
-                    let _ = trace_module.call_method1("detach", (token.bind(py),));
-                } else {
-                    let _ = trace_module.call_method1("detach", (py.None(),));
-                }
+                let _ = trace_module.call_method1("detach", (token.bind(py),));
             }
         });
     }
+}
+
+fn env_true(name: &str, default: bool) -> bool {
+    std::env::var(name).map_or(default, |value| {
+        matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes")
+    })
+}
+
+fn python_tracing_enabled() -> bool {
+    if !env_true("COG_TRACE_CONFIGURED", false)
+        || !env_true("COG_TRACE_ENABLED", true)
+        || env_true("OTEL_SDK_DISABLED", false)
+    {
+        return false;
+    }
+    if std::env::var_os("COG_OBSERVABILITY_CONFIG").is_some() {
+        return true;
+    }
+    if std::env::var("OTEL_TRACES_EXPORTER").as_deref() == Ok("none") {
+        return false;
+    }
+    [
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+    ]
+    .iter()
+    .any(|name| std::env::var(name).is_ok_and(|value| !value.trim().is_empty()))
 }
 
 fn current_trace_carrier() -> Option<HashMap<String, String>> {
@@ -340,13 +365,13 @@ impl PredictHandler for PythonPredictHandler {
     async fn setup(&self) -> Result<(), SetupError> {
         Python::attach(|py| {
             let carrier = current_trace_carrier();
-            if carrier.is_some() {
+            if python_tracing_enabled() {
                 let trace_module = py
                     .import("cog._trace")
-                    .map_err(|error| SetupError::internal(error.to_string()))?;
+                    .map_err(|error| SetupError::setup(error.to_string()))?;
                 trace_module
                     .call_method0("install_provider")
-                    .map_err(|error| SetupError::internal(error.to_string()))?;
+                    .map_err(|error| SetupError::setup(error.to_string()))?;
             }
             let _trace_guard = PythonTraceGuard::enter(py, carrier.as_ref())
                 .map_err(|error| SetupError::internal(error.to_string()))?;
@@ -761,6 +786,9 @@ impl PredictHandler for PythonPredictHandler {
     }
 
     async fn shutdown(&self) {
+        if !python_tracing_enabled() {
+            return;
+        }
         Python::attach(|py| {
             if let Ok(trace_module) = py.import("cog._trace") {
                 let _ = trace_module.call_method0("shutdown");

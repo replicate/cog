@@ -23,6 +23,7 @@ var environmentVariableDenyList = []string{
 	"R8_*",
 	"REPLICATE_*",
 	// Observability
+	"COG_OBSERVABILITY_*",
 	"COG_TRACE_*",
 	"OTEL_*",
 	// Nvidia

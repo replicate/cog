@@ -142,6 +142,22 @@ func TestAddConcurrencyToCustomDockerfileImageBuildsWrapperLayer(t *testing.T) {
 	require.Equal(t, "/tmp/build-cache", dockerCommand.builds[0].BuildCacheDir)
 }
 
+func TestAddTracingToCustomDockerfileImageUsesStagedConfig(t *testing.T) {
+	dockerCommand := &recordingCommand{MockCommand: dockertest.NewMockCommand()}
+	observability := &config.Observability{
+		Config: "config/telemetry.py",
+		Traces: &config.Tracing{Enabled: true, Sampler: "parentbased_always_off"},
+	}
+
+	err := addTracingToCustomDockerfileImage(t.Context(), dockerCommand, "my-image", observability, "plain", "/tmp/build-cache")
+
+	require.NoError(t, err)
+	require.Len(t, dockerCommand.builds, 1)
+	build := dockerCommand.builds[0]
+	require.Contains(t, build.DockerfileContents, "COPY --from=cog_build telemetry.py /.cog/telemetry.py")
+	require.Equal(t, map[string]string{cogBuildContextName: "/tmp/build-cache"}, build.BuildContexts)
+}
+
 func TestGeneratePredictorMetadataDoesNotRequireValidOutputSchema(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "predict.py"), []byte(`
@@ -369,4 +385,45 @@ func TestBundleDockerfile(t *testing.T) {
 	assert.Contains(t, df, "FROM myimage:latest")
 	assert.Contains(t, df, "COPY --from=cog_build openapi_schema.json "+dotcog.Name+"/")
 	assert.Contains(t, df, "COPY --from=cog_build weights.json "+dotcog.Name+"/")
+}
+
+func TestStageObservabilityConfig(t *testing.T) {
+	projectDir := t.TempDir()
+	buildDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, "config"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "telemetry.py"), []byte("provider = True\n"), 0o644))
+	observability := &config.Observability{
+		Config: "config/telemetry.py",
+		Traces: &config.Tracing{Enabled: true},
+	}
+
+	require.NoError(t, stageObservabilityConfig(projectDir, observability, buildDir))
+	contents, err := os.ReadFile(filepath.Join(buildDir, "telemetry.py"))
+	require.NoError(t, err)
+	assert.Equal(t, "provider = True\n", string(contents))
+}
+
+func TestStageObservabilityConfigRejectsSymlinkEscape(t *testing.T) {
+	projectDir := t.TempDir()
+	buildDir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "telemetry.py")
+	require.NoError(t, os.WriteFile(outside, []byte("provider = True\n"), 0o644))
+	require.NoError(t, os.Symlink(outside, filepath.Join(projectDir, "telemetry.py")))
+	observability := &config.Observability{
+		Config: "telemetry.py",
+		Traces: &config.Tracing{Enabled: true},
+	}
+
+	require.Error(t, stageObservabilityConfig(projectDir, observability, buildDir))
+}
+
+func TestTracingDockerfileUsesStagedObservabilityConfig(t *testing.T) {
+	dockerfile := tracingDockerfile("model:latest", &config.Observability{
+		Config: "config/telemetry.py",
+		Traces: &config.Tracing{Enabled: true, Sampler: "parentbased_always_off"},
+	})
+
+	assert.Contains(t, dockerfile, "COPY --from=cog_build telemetry.py /.cog/telemetry.py")
+	assert.Contains(t, dockerfile, `ENV COG_OBSERVABILITY_CONFIG="/.cog/telemetry.py"`)
+	assert.NotContains(t, dockerfile, "config/telemetry.py")
 }

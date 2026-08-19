@@ -28,6 +28,8 @@ const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const UVVersion = "0.9.26"
 const uvCacheMount = "--mount=type=cache,target=/root/.cache/uv"
 const uvPip = "uv pip"
+const observabilityConfigBuildPath = "telemetry.py"
+const observabilityConfigRuntimePath = "/.cog/telemetry.py"
 const uvBreakSystemPackages = "--break-system-packages"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
@@ -294,6 +296,9 @@ func (g *StandardGenerator) GenerateModelBase(ctx context.Context) (string, erro
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
 	}
+	if step := g.observabilityConfigCopy(); step != "" {
+		steps = append(steps, step)
+	}
 	steps = append(steps, g.cogEnvVars()...)
 	steps = append(steps, `CMD ["python", "-m", "cog.server.http"]`)
 	return strings.Join(steps, "\n"), nil
@@ -349,6 +354,9 @@ func (g *StandardGenerator) GenerateModelBaseWithSeparateWeights(ctx context.Con
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
 	)
+	if step := g.observabilityConfigCopy(); step != "" {
+		base = append(base, step)
+	}
 	base = append(base, g.cogEnvVars()...)
 	base = append(base,
 		`CMD ["python", "-m", "cog.server.http"]`,
@@ -395,8 +403,18 @@ func (g *StandardGenerator) cogEnvVars() []string {
 				fmt.Sprintf(`ENV COG_TRACE_HEADER_FORMAT="%s"`, traces.TraceHeaderFormat),
 			)
 		}
+		if g.Config.Observability.Config != "" {
+			envs = append(envs, `ENV COG_OBSERVABILITY_CONFIG="`+observabilityConfigRuntimePath+`"`)
+		}
 	}
 	return envs
+}
+
+func (g *StandardGenerator) observabilityConfigCopy() string {
+	if g.Config.Observability == nil || g.Config.Observability.Traces == nil || !g.Config.Observability.Traces.Enabled || g.Config.Observability.Config == "" {
+		return ""
+	}
+	return "COPY --from=cog_build " + observabilityConfigBuildPath + " " + observabilityConfigRuntimePath
 }
 
 func (g *StandardGenerator) cpCogYaml() string {

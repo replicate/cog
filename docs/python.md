@@ -475,7 +475,9 @@ class Runner(BaseRunner):
             return self.model(prompt)
 ```
 
-Do not call `set_tracer_provider()` or construct an exporter in model code. Cog owns provider configuration and shutdown. Asyncio tasks inherit the active Python context. Raw threads and child processes need explicit context propagation, and background tasks that outlive a prediction may emit uncorrelated spans.
+Do not call `set_tracer_provider()` in model code. To customize the Python provider, set `observability.config` to a Python file that defines `create_tracer_provider()`. Cog installs and shuts down the returned provider. See [Custom Python tracing](observability.md#custom-python-tracing).
+
+Asyncio tasks inherit the active Python context. Raw threads and child processes need explicit context propagation, and background tasks that outlive a prediction may emit uncorrelated spans.
 
 Model-authored attributes and exception details are the model owner's responsibility. Do not record prompts, outputs, credentials, or other sensitive values unless the collector is intended to receive them.
 

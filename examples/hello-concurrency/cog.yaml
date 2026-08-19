@@ -5,6 +5,7 @@ build:
   python_version: "3.12"
 run: "run.py:Runner"
 observability:
+  config: telemetry.py
   traces:
     enabled: true
     sampler: parentbased_always_on

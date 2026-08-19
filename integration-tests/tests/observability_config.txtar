@@ -1,0 +1,47 @@
+# A custom Python provider loads without an OTLP endpoint and before model import.
+cog run -e OTEL_TRACES_EXPORTER=none -i value=hello
+stdout 'hello from CustomProvider'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+run: "predict.py:Runner"
+observability:
+  config: telemetry.py
+  traces:
+    enabled: true
+
+-- telemetry.py --
+import os
+
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+
+
+class CustomProvider(TracerProvider):
+    pass
+
+
+def create_tracer_provider() -> TracerProvider:
+    return CustomProvider(shutdown_on_exit=False)
+
+
+def configure_instrumentation() -> None:
+    assert isinstance(trace.get_tracer_provider(), CustomProvider)
+    os.environ["TELEMETRY_CONFIGURED"] = "true"
+
+-- predict.py --
+import os
+
+from opentelemetry import trace
+
+from cog import BaseRunner
+
+assert os.environ["TELEMETRY_CONFIGURED"] == "true"
+
+
+class Runner(BaseRunner):
+    def run(self, value: str) -> str:
+        provider_name = type(trace.get_tracer_provider()).__name__
+        with trace.get_tracer(__name__).start_as_current_span("model.run"):
+            return f"{value} from {provider_name}"

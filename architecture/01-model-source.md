@@ -10,6 +10,7 @@ A Cog model consists of:
 my-model/
 ├── cog.yaml          # Environment configuration
 ├── run.py            # Runner class
+├── telemetry.py      # Optional Python observability configuration
 └── weights/          # Model weights (optional, can be downloaded)
 ```
 
@@ -44,6 +45,7 @@ concurrency:
 | `build.run`             | Arbitrary shell commands during build       |
 | `run`                   | Path to runner class (`module:ClassName`)   |
 | `concurrency.max`       | Max concurrent predictions (requires async) |
+| `observability.config`  | Optional Python tracer-provider factory     |
 
 The [Build System](./05-build-system.md) uses this configuration to produce an image containing all necessary dependencies, libraries, and the correct Python/CUDA versions.
 

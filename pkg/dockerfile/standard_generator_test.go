@@ -1482,3 +1482,13 @@ predict: predict.py:Predictor
 	// Must NOT contain a version pin
 	require.NotContains(t, dockerfile, "cog==")
 }
+
+func TestObservabilityConfigUsesStagedPath(t *testing.T) {
+	gen := &StandardGenerator{Config: &config.Config{Observability: &config.Observability{
+		Config: "nested/telemetry.py",
+		Traces: &config.Tracing{Enabled: true, Sampler: "parentbased_always_off"},
+	}}}
+
+	require.Equal(t, "COPY --from=cog_build telemetry.py /.cog/telemetry.py", gen.observabilityConfigCopy())
+	require.Contains(t, gen.cogEnvVars(), `ENV COG_OBSERVABILITY_CONFIG="/.cog/telemetry.py"`)
+}

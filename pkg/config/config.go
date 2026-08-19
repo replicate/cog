@@ -76,6 +76,7 @@ type Concurrency struct {
 }
 
 type Observability struct {
+	Config string   `json:"config,omitempty" yaml:"config,omitempty"`
 	Traces *Tracing `json:"traces,omitempty" yaml:"traces,omitempty"`
 }
 

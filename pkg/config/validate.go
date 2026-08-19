@@ -61,7 +61,7 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 	validateBuild(cfg, options, result)
 	validateEnvironment(cfg, result)
 	validateConcurrency(cfg, result)
-	validateObservability(cfg, result)
+	validateObservability(cfg, options, result)
 	validateModel(cfg, result)
 	validateWeights(cfg, result)
 
@@ -79,8 +79,17 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 	return result
 }
 
-func validateObservability(cfg *configFile, result *ValidationResult) {
-	if cfg.Observability == nil || cfg.Observability.Traces == nil {
+func validateObservability(cfg *configFile, opts *validateOptions, result *ValidationResult) {
+	if cfg.Observability == nil {
+		return
+	}
+	if cfg.Observability.Config != nil {
+		validateObservabilityConfig(*cfg.Observability.Config, opts, result)
+		if cfg.Observability.Traces == nil || cfg.Observability.Traces.Enabled == nil || !*cfg.Observability.Traces.Enabled {
+			result.AddError(&ValidationError{Field: "observability.config", Value: *cfg.Observability.Config, Message: "requires observability.traces.enabled to be true"})
+		}
+	}
+	if cfg.Observability.Traces == nil {
 		return
 	}
 
@@ -137,6 +146,53 @@ func validateObservability(cfg *configFile, result *ValidationResult) {
 		if format != "w3c" && format != "jaeger" {
 			result.AddError(&ValidationError{Field: "observability.traces.trace_header_format", Value: format, Message: "must be w3c or jaeger"})
 		}
+	}
+}
+
+func validateObservabilityConfig(configPath string, opts *validateOptions, result *ValidationResult) {
+	validationError := &ValidationError{Field: "observability.config", Value: configPath}
+	cleanPath := filepath.Clean(configPath)
+	pathComponents := strings.Split(filepath.ToSlash(configPath), "/")
+	if configPath == "" || filepath.IsAbs(configPath) || cleanPath == "." || slices.Contains(pathComponents, ".") || slices.Contains(pathComponents, "..") {
+		validationError.Message = "must be a project-relative Python file"
+		result.AddError(validationError)
+		return
+	}
+	if filepath.Ext(cleanPath) != ".py" {
+		validationError.Message = "must be a Python file ending in .py"
+		result.AddError(validationError)
+		return
+	}
+	if opts.projectDir == "" {
+		return
+	}
+
+	projectRoot, err := filepath.EvalSymlinks(opts.projectDir)
+	if err != nil {
+		validationError.Message = "project directory cannot be resolved"
+		result.AddError(validationError)
+		return
+	}
+	resolvedPath, err := filepath.EvalSymlinks(filepath.Join(projectRoot, cleanPath))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			validationError.Message = "file does not exist"
+		} else {
+			validationError.Message = "file cannot be resolved"
+		}
+		result.AddError(validationError)
+		return
+	}
+	relativePath, err := filepath.Rel(projectRoot, resolvedPath)
+	if err != nil || relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
+		validationError.Message = "must resolve inside the project directory"
+		result.AddError(validationError)
+		return
+	}
+	info, err := os.Stat(resolvedPath)
+	if err != nil || !info.Mode().IsRegular() {
+		validationError.Message = "must be a regular file"
+		result.AddError(validationError)
 	}
 }
 

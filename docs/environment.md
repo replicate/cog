@@ -218,16 +218,16 @@ Tracing must first be enabled under `observability.traces` in `cog.yaml`. Runtim
 | ----------------------------- | ---------------------------------------------- |
 | `COG_TRACE_ENABLED`           | Set to `false` to disable tracing at runtime.  |
 | `OTEL_SDK_DISABLED`           | Hard-disable OpenTelemetry SDK initialization. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Required collector endpoint.                   |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Collector endpoint for framework tracing.      |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` or `grpc`.                     |
 | `OTEL_EXPORTER_OTLP_HEADERS`  | Collector authentication headers.              |
 | `OTEL_SERVICE_NAME`           | Service name, default `cog`.                   |
 | `OTEL_TRACES_SAMPLER`         | Runtime sampler override.                      |
 | `OTEL_TRACES_SAMPLER_ARG`     | Ratio for ratio samplers.                      |
 
-When tracing is enabled without an endpoint, Cog logs one warning and continues without a provider or exporter. Collector failures never change prediction results.
+When tracing is enabled without an endpoint, Cog logs one warning and continues without framework tracing. A custom Python provider configured by `observability.config` still runs and may use another exporter or no exporter. Delivery failures from Cog's built-in exporters never change prediction results; custom processors and exporters are model-owned code.
 
-`COG_TRACE_*` and `OTEL_*` are reserved from the general `cog.yaml` `environment` list. Supply them to the running container instead.
+`COG_OBSERVABILITY_*`, `COG_TRACE_*`, and `OTEL_*` are reserved from the general `cog.yaml` `environment` list. `COG_OBSERVABILITY_CONFIG` is internal and points to the validated file staged in the image. Supply supported `COG_TRACE_*` and `OTEL_*` settings to the running container instead.
 
 ### `COG_THROTTLE_RESPONSE_INTERVAL`
 

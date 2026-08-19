@@ -209,6 +209,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "config": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\.py$"
+        },
         "traces": {
           "$id": "#/properties/observability/properties/traces",
           "type": "object",

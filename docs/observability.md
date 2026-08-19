@@ -25,7 +25,7 @@ OTEL_SERVICE_NAME=cog
 
 Cog supports OTLP gRPC and HTTP/protobuf. Collector endpoints, authentication headers, certificates, and other `OTEL_*` values are runtime configuration and cannot be set through the general `cog.yaml` `environment` list.
 
-Tracing starts only when the image opts in and a collector endpoint is present. `COG_TRACE_ENABLED=false`, `OTEL_SDK_DISABLED=true`, or `OTEL_TRACES_EXPORTER=none` disables it at runtime.
+Framework tracing starts only when the image opts in and a collector endpoint is present. `COG_TRACE_ENABLED=false` or `OTEL_SDK_DISABLED=true` disables all tracing at runtime. `OTEL_TRACES_EXPORTER=none` disables framework tracing and Cog's built-in Python exporter but does not suppress an explicitly configured custom Python provider.
 
 ## Getting started with tracing
 
@@ -101,9 +101,60 @@ class Runner(BaseRunner):
             return self.model(inputs)
 ```
 
-These spans become children of `cog.prediction.invoke`. Cog owns the tracer providers for its parent process, worker process, and Python model spans. A provider created in model code would configure only the Python spans, so use the standard `OTEL_*` environment variables instead of constructing another `TracerProvider` or exporter.
+These spans become children of `cog.prediction.invoke`. Cog owns the tracer providers for its parent process, worker process, and Python model spans. Do not replace the global provider in model code. Use `observability.config` when the Python provider needs custom configuration.
 
 Asyncio tasks inherit the active Python context. Raw threads and child processes require explicit context propagation. A background task that outlives the prediction may produce an uncorrelated span.
+
+## Custom Python tracing
+
+Set `observability.config` to a project-relative Python file:
+
+```yaml
+observability:
+  config: telemetry.py
+  traces:
+    enabled: true
+```
+
+Cog validates the file during configuration, copies it to a fixed path in the image, and loads it before importing the model. The file must define `create_tracer_provider()` and may define `configure_instrumentation()`:
+
+```python
+import os
+
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import SpanLimits, TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
+
+
+def create_tracer_provider() -> TracerProvider:
+    provider = TracerProvider(
+        resource=Resource.create(
+            {
+                "service.name": os.getenv("OTEL_SERVICE_NAME", "my-model"),
+                "model.name": "acme/example",
+            }
+        ),
+        sampler=ParentBased(TraceIdRatioBased(0.1)),
+        span_limits=SpanLimits(max_span_attributes=64),
+        shutdown_on_exit=False,
+    )
+    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+    return provider
+
+
+def configure_instrumentation() -> None:
+    from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
+    RequestsInstrumentor().instrument()
+```
+
+Add instrumentation packages such as `opentelemetry-instrumentation-requests` to the model's requirements. Cog installs the provider globally before calling `configure_instrumentation()`, then imports the model. Cog force-flushes and shuts down the provider with the worker, so custom providers should set `shutdown_on_exit=False`.
+
+The custom provider controls Python spans only. The Rust parent and worker providers continue to use `observability.traces` and standard `OTEL_*` variables. Without an OTLP endpoint, the custom provider can still emit Python spans to a console or another exporter, but there is no `cog.prediction.invoke` parent or other framework spans.
+
+Import errors, a missing factory, the wrong return type, or instrumentation errors fail model setup. Auto-instrumentation can capture model inputs, HTTP headers, or other sensitive data; review each instrumentation package before enabling it.
 
 ## Streaming predictions
 
@@ -217,13 +268,13 @@ Request-specific values belong on `cog.prediction` through caller tags rather th
 
 ## Failure behavior
 
-- Missing collector endpoint: warn and serve without tracing.
-- Unreachable collector: predictions continue; exporters retry or drop according to SDK behavior.
+- Missing collector endpoint: warn and serve without framework tracing; a custom Python provider may still run.
+- Unreachable collector: Cog's built-in exporters retry or drop without failing predictions.
 - Malformed parent context: ignore it and continue.
-- Worker shutdown: flush parent, worker, and Python providers on a bounded best-effort basis.
+- Worker shutdown: flush and shut down parent and worker providers with bounded best effort; call custom Python provider cleanup synchronously.
 - Forced termination, crashes, and OOM: final spans may be lost.
 
-Tracing must never determine whether a prediction succeeds.
+Delivery from Cog's built-in exporters never determines whether a prediction succeeds. Custom processors and exporters run model-owned code and may raise or block. Invalid explicit tracing configuration fails model setup.
 
 ## What's next
 

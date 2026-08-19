@@ -136,6 +136,9 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 	}
 	if cfg.Observability != nil {
 		config.Observability = &Observability{}
+		if cfg.Observability.Config != nil {
+			config.Observability.Config = *cfg.Observability.Config
+		}
 		if cfg.Observability.Traces != nil {
 			traces := cfg.Observability.Traces
 			config.Observability.Traces = &Tracing{Sampler: "parentbased_always_off", TraceHeaderFormat: "w3c"}
