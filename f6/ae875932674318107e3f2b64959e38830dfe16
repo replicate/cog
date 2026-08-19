@@ -1,0 +1,21 @@
+docs/llms.txt
+  s_a3826e8403b131::t_5dfcf70f26b995 2454,2531-2538
+docs/observability.md
+  s_a3826e8403b131::t_c392169223d769 104,181-188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "f6ae875932674318107e3f2b64959e38830dfe16",
+  "prompts": {},
+  "sessions": {
+    "s_a3826e8403b131": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fea3b7845ffexxhze2fFo574e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
