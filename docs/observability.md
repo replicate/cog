@@ -188,6 +188,7 @@ The default sampler is `parentbased_always_off`. It continues sampled parent tra
 | `traceidratio` | ratio | ratio | ratio |
 
 Ratio samplers require `sampler_arg` as a string between `"0"` and `"1"`.
+See OpenTelemetry's [sampler configuration](https://opentelemetry.io/docs/languages/sdk-configuration/general/#otel_traces_sampler) for the standard sampler behavior.
 
 ## Custom trace headers
 
