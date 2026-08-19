@@ -11,13 +11,11 @@ MODEL_NAME = "HuggingFaceTB/SmolLM2-135M-Instruct"
 
 class Runner(BaseRunner):
     def setup(self) -> None:
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        dtype = torch.float16 if self.device == "cuda" else torch.float32
-
+        self.device = "cpu"
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
         self.model = AutoModelForCausalLM.from_pretrained(
             MODEL_NAME,
-            torch_dtype=dtype,
+            dtype=torch.float32,
         ).to(self.device)
         self.model.eval()
 

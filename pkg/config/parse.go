@@ -134,6 +134,28 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 			config.Concurrency.Max = *cfg.Concurrency.Max
 		}
 	}
+	if cfg.Observability != nil {
+		config.Observability = &Observability{}
+		if cfg.Observability.Traces != nil {
+			traces := cfg.Observability.Traces
+			config.Observability.Traces = &Tracing{Sampler: "parentbased_always_off", TraceHeaderFormat: "w3c"}
+			if traces.Enabled != nil {
+				config.Observability.Traces.Enabled = *traces.Enabled
+			}
+			if traces.Sampler != nil {
+				config.Observability.Traces.Sampler = *traces.Sampler
+			}
+			if traces.SamplerArg != nil {
+				config.Observability.Traces.SamplerArg = *traces.SamplerArg
+			}
+			if traces.TraceHeader != nil {
+				config.Observability.Traces.TraceHeader = *traces.TraceHeader
+			}
+			if traces.TraceHeaderFormat != nil {
+				config.Observability.Traces.TraceHeaderFormat = *traces.TraceHeaderFormat
+			}
+		}
+	}
 	config.Environment = cfg.Environment
 
 	// Convert weights

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -60,6 +61,7 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 	validateBuild(cfg, options, result)
 	validateEnvironment(cfg, result)
 	validateConcurrency(cfg, result)
+	validateObservability(cfg, result)
 	validateModel(cfg, result)
 	validateWeights(cfg, result)
 
@@ -75,6 +77,67 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 	}
 
 	return result
+}
+
+func validateObservability(cfg *configFile, result *ValidationResult) {
+	if cfg.Observability == nil || cfg.Observability.Traces == nil {
+		return
+	}
+
+	traces := cfg.Observability.Traces
+	if traces.Enabled == nil {
+		result.AddError(&ValidationError{Field: "observability.traces.enabled", Message: "is required"})
+	}
+
+	const defaultSampler = "parentbased_always_off"
+	samplers := map[string]bool{
+		"always_on":                true,
+		"always_off":               true,
+		"traceidratio":             true,
+		"parentbased_always_on":    true,
+		"parentbased_always_off":   true,
+		"parentbased_traceidratio": true,
+	}
+	samplersWithRatio := map[string]bool{
+		"traceidratio":             true,
+		"parentbased_traceidratio": true,
+	}
+
+	sampler := defaultSampler
+	if traces.Sampler != nil {
+		sampler = *traces.Sampler
+		if !samplers[sampler] {
+			result.AddError(&ValidationError{Field: "observability.traces.sampler", Value: sampler, Message: "must be a supported OpenTelemetry sampler"})
+		}
+	}
+
+	if traces.SamplerArg != nil {
+		value := *traces.SamplerArg
+		if !samplersWithRatio[sampler] {
+			result.AddError(&ValidationError{Field: "observability.traces.sampler_arg", Value: value, Message: "is only valid for ratio samplers"})
+		} else if ratio, err := strconv.ParseFloat(value, 64); err != nil || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < 0 || ratio > 1 {
+			result.AddError(&ValidationError{Field: "observability.traces.sampler_arg", Value: value, Message: "must be a number between 0 and 1"})
+		}
+	}
+	if samplersWithRatio[sampler] && traces.SamplerArg == nil {
+		result.AddError(&ValidationError{Field: "observability.traces.sampler_arg", Message: "is required for ratio samplers"})
+	}
+
+	if traces.TraceHeader != nil {
+		header := *traces.TraceHeader
+		validHeader := regexp.MustCompile(`^[!#$%&'*+.^_\x60|~0-9A-Za-z-]+$`)
+		reserved := map[string]bool{"authorization": true, "cookie": true, "host": true, "traceparent": true, "tracestate": true}
+		if !validHeader.MatchString(header) || reserved[strings.ToLower(header)] {
+			result.AddError(&ValidationError{Field: "observability.traces.trace_header", Value: header, Message: "must be a valid, non-reserved HTTP header name"})
+		}
+	}
+
+	if traces.TraceHeaderFormat != nil {
+		format := *traces.TraceHeaderFormat
+		if format != "w3c" && format != "jaeger" {
+			result.AddError(&ValidationError{Field: "observability.traces.trace_header_format", Value: format, Message: "must be w3c or jaeger"})
+		}
+	}
 }
 
 // validateSchema validates the config against the JSON schema.

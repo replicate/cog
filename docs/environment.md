@@ -210,6 +210,25 @@ Supported values are `debug`, `info`, `warn`, `warning`, and `error`. The defaul
 $ COG_LOG_LEVEL=debug docker run -p 5000:5000 my-model
 ```
 
+### OpenTelemetry tracing
+
+Tracing must first be enabled under `observability.traces` in `cog.yaml`. Runtime settings may disable an enabled image but cannot enable an image that did not opt in.
+
+| Variable                      | Purpose                                        |
+| ----------------------------- | ---------------------------------------------- |
+| `COG_TRACE_ENABLED`           | Set to `false` to disable tracing at runtime.  |
+| `OTEL_SDK_DISABLED`           | Hard-disable OpenTelemetry SDK initialization. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Required collector endpoint.                   |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` or `grpc`.                     |
+| `OTEL_EXPORTER_OTLP_HEADERS`  | Collector authentication headers.              |
+| `OTEL_SERVICE_NAME`           | Service name, default `cog`.                   |
+| `OTEL_TRACES_SAMPLER`         | Runtime sampler override.                      |
+| `OTEL_TRACES_SAMPLER_ARG`     | Ratio for ratio samplers.                      |
+
+When tracing is enabled without an endpoint, Cog logs one warning and continues without a provider or exporter. Collector failures never change prediction results.
+
+`COG_TRACE_*` and `OTEL_*` are reserved from the general `cog.yaml` `environment` list. Supply them to the running container instead.
+
 ### `COG_THROTTLE_RESPONSE_INTERVAL`
 
 Controls how often asynchronous webhook `output` and `logs` events are sent, in seconds.

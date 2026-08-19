@@ -210,6 +210,9 @@ func Build(
 		if err := addConcurrencyToCustomDockerfileImage(ctx, dockerCommand, tmpImageId, dockerfileCfg.Concurrency, progressOutput, bp.buildDir); err != nil {
 			return "", err
 		}
+		if err := addTracingToCustomDockerfileImage(ctx, dockerCommand, tmpImageId, dockerfileCfg.Observability, progressOutput, bp.buildDir); err != nil {
+			return "", err
+		}
 	} else {
 		generator, err := dockerfile.NewStandardGenerator(dockerfileCfg, dir, bp.buildDir, configFilename, dockerCommand, client, true)
 		if err != nil {
@@ -520,6 +523,22 @@ func addConcurrencyToCustomDockerfileImage(ctx context.Context, dockerCommand co
 	return nil
 }
 
+func addTracingToCustomDockerfileImage(ctx context.Context, dockerCommand command.Command, imageName string, observability *config.Observability, progressOutput string, buildCacheDir string) error {
+	if observability == nil || observability.Traces == nil || !observability.Traces.Enabled {
+		return nil
+	}
+	buildOpts := command.ImageBuildOptions{
+		DockerfileContents: tracingDockerfile(imageName, observability.Traces),
+		ImageName:          imageName,
+		ProgressOutput:     progressOutput,
+		BuildCacheDir:      buildCacheDir,
+	}
+	if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
+		return fmt.Errorf("Failed to add tracing configuration to Docker image: %w", err)
+	}
+	return nil
+}
+
 func validateEffectiveConcurrency(cfg *config.Config, info *schema.PredictorInfo) error {
 	if cfg.Concurrency == nil || cfg.Concurrency.Max <= 1 {
 		return nil
@@ -621,6 +640,18 @@ func bundleDockerfile(baseImage string, files []string) string {
 
 func concurrencyDockerfile(baseImage string, maxConcurrency int) string {
 	return fmt.Sprintf("FROM %s\nENV COG_MAX_CONCURRENCY=%d\n", baseImage, maxConcurrency)
+}
+
+func tracingDockerfile(baseImage string, traces *config.Tracing) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "FROM %s\nENV COG_TRACE_CONFIGURED=true\nENV COG_TRACE_ENABLED=true\nENV COG_TRACE_SAMPLER=\"%s\"\n", baseImage, traces.Sampler)
+	if traces.SamplerArg != "" {
+		fmt.Fprintf(&b, "ENV COG_TRACE_SAMPLER_ARG=\"%s\"\n", traces.SamplerArg)
+	}
+	if traces.TraceHeader != "" {
+		fmt.Fprintf(&b, "ENV COG_TRACE_HEADER=\"%s\"\nENV COG_TRACE_HEADER_FORMAT=\"%s\"\n", traces.TraceHeader, traces.TraceHeaderFormat)
+	}
+	return b.String()
 }
 
 func isGitWorkTree(ctx context.Context, dir string) bool {

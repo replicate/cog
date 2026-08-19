@@ -194,6 +194,32 @@ func TestValidateConfigFileConcurrencyDeprecationWithoutBuild(t *testing.T) {
 	require.Equal(t, "concurrency.max", result.Warnings[0].Field)
 }
 
+func TestValidateObservabilityTracing(t *testing.T) {
+	tests := []struct {
+		name       string
+		traces     *tracingFile
+		wantErrors bool
+	}{
+		{name: "disabled", traces: &tracingFile{Enabled: new(false)}},
+		{name: "default sampler", traces: &tracingFile{Enabled: new(true)}},
+		{name: "ratio sampler", traces: &tracingFile{Enabled: new(true), Sampler: new("parentbased_traceidratio"), SamplerArg: new("0.25")}},
+		{name: "custom header default format", traces: &tracingFile{Enabled: new(true), TraceHeader: new("x-trace")}},
+		{name: "missing enabled", traces: &tracingFile{}, wantErrors: true},
+		{name: "unsupported sampler", traces: &tracingFile{Enabled: new(true), Sampler: new("random")}, wantErrors: true},
+		{name: "ratio on non-ratio sampler", traces: &tracingFile{Enabled: new(true), Sampler: new("always_on"), SamplerArg: new("0.5")}, wantErrors: true},
+		{name: "invalid ratio", traces: &tracingFile{Enabled: new(true), Sampler: new("traceidratio"), SamplerArg: new("2")}, wantErrors: true},
+		{name: "invalid header format", traces: &tracingFile{Enabled: new(true), TraceHeaderFormat: new("b3")}, wantErrors: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := &configFile{Observability: &observabilityFile{Traces: test.traces}}
+			result := ValidateConfigFile(cfg)
+			require.Equal(t, test.wantErrors, result.HasErrors(), "errors: %v", result.Errors)
+		})
+	}
+}
+
 func TestValidateConfigFileDeprecatedPythonPackages(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{

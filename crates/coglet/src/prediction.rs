@@ -153,6 +153,7 @@ pub struct Prediction {
     stream_history_skipped: u64,
     /// User-emitted metrics. Merged with system metrics (predict_time) in terminal response.
     metrics: HashMap<String, serde_json::Value>,
+    trace_span: Option<tracing::Span>,
 }
 
 impl Prediction {
@@ -176,6 +177,7 @@ impl Prediction {
             stream_history_capacity,
             stream_history_skipped: 0,
             metrics: HashMap::new(),
+            trace_span: None,
         }
     }
 
@@ -268,12 +270,35 @@ impl Prediction {
         self.fire_webhook(WebhookEventType::Start);
     }
 
+    pub fn set_trace_span(&mut self, span: tracing::Span) {
+        self.trace_span = Some(span);
+    }
+
+    pub fn record_trace_slot(&self, slot: impl std::fmt::Display) {
+        if let Some(span) = self.trace_span.as_ref() {
+            span.record("cog.slot.id", tracing::field::display(slot));
+        }
+    }
+
+    #[cfg(feature = "tracing")]
+    pub fn trace_carrier(&self) -> Option<crate::bridge::protocol::TraceCarrier> {
+        self.trace_span
+            .as_ref()
+            .and_then(crate::trace::carrier_from_span)
+    }
+
+    #[cfg(not(feature = "tracing"))]
+    pub fn trace_carrier(&self) -> Option<crate::bridge::protocol::TraceCarrier> {
+        None
+    }
+
     pub fn set_succeeded(&mut self, output: PredictionOutput) {
         if self.status.is_terminal() {
             return;
         }
         self.status = PredictionStatus::Succeeded;
         self.output = Some(output);
+        self.finish_trace("succeeded", None);
         self.emit_stream_event(PredictionStreamEvent::Completed {
             payload: self.build_state_snapshot(),
         });
@@ -293,6 +318,7 @@ impl Prediction {
         }
         self.status = PredictionStatus::Failed;
         self.error = Some(error);
+        self.finish_trace("failed", Some("prediction_failed"));
         self.emit_stream_event(PredictionStreamEvent::Completed {
             payload: self.build_state_snapshot(),
         });
@@ -305,11 +331,23 @@ impl Prediction {
             return;
         }
         self.status = PredictionStatus::Canceled;
+        self.finish_trace("canceled", Some("canceled"));
         self.emit_stream_event(PredictionStreamEvent::Completed {
             payload: self.build_state_snapshot(),
         });
         self.fire_terminal_webhook();
         self.completion.notify_one();
+    }
+
+    fn finish_trace(&mut self, status: &str, error_type: Option<&str>) {
+        let Some(span) = self.trace_span.take() else {
+            return;
+        };
+        span.record("cog.prediction.status", status);
+        if let Some(error_type) = error_type {
+            span.record("error.type", error_type);
+            span.record("otel.status_code", "ERROR");
+        }
     }
 
     pub fn elapsed(&self) -> std::time::Duration {

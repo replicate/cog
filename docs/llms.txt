@@ -1151,6 +1151,25 @@ Supported values are `debug`, `info`, `warn`, `warning`, and `error`. The defaul
 $ COG_LOG_LEVEL=debug docker run -p 5000:5000 my-model
 ```
 
+### OpenTelemetry tracing
+
+Tracing must first be enabled under `observability.traces` in `cog.yaml`. Runtime settings may disable an enabled image but cannot enable an image that did not opt in.
+
+| Variable                      | Purpose                                        |
+| ----------------------------- | ---------------------------------------------- |
+| `COG_TRACE_ENABLED`           | Set to `false` to disable tracing at runtime.  |
+| `OTEL_SDK_DISABLED`           | Hard-disable OpenTelemetry SDK initialization. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Required collector endpoint.                   |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` or `grpc`.                     |
+| `OTEL_EXPORTER_OTLP_HEADERS`  | Collector authentication headers.              |
+| `OTEL_SERVICE_NAME`           | Service name, default `cog`.                   |
+| `OTEL_TRACES_SAMPLER`         | Runtime sampler override.                      |
+| `OTEL_TRACES_SAMPLER_ARG`     | Ratio for ratio samplers.                      |
+
+When tracing is enabled without an endpoint, Cog logs one warning and continues without a provider or exporter. Collector failures never change prediction results.
+
+`COG_TRACE_*` and `OTEL_*` are reserved from the general `cog.yaml` `environment` list. Supply them to the running container instead.
+
 ### `COG_THROTTLE_RESPONSE_INTERVAL`
 
 Controls how often asynchronous webhook `output` and `logs` events are sent, in seconds.
@@ -2836,6 +2855,26 @@ self.record_metric("count", "now a string")
 
 Outside an active run, `self.record_metric()` and `self.scope` are silent no-ops — no need for `None` checks.
 
+## OpenTelemetry spans
+
+When `observability.traces` is enabled, Cog installs an OpenTelemetry tracer provider before importing the model. Model spans use the standard API and automatically join the active prediction trace:
+
+```python
+from opentelemetry import trace
+
+tracer = trace.get_tracer(__name__)
+
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> str:
+        with tracer.start_as_current_span("model.inference"):
+            return self.model(prompt)
+```
+
+Do not call `set_tracer_provider()` or construct an exporter in model code. Cog owns provider configuration and shutdown. Asyncio tasks inherit the active Python context. Raw threads and child processes need explicit context propagation, and background tasks that outlive a prediction may emit uncorrelated spans.
+
+Model-authored attributes and exception details are the model owner's responsibility. Do not record prompts, outputs, credentials, or other sensitive values unless the collector is intended to receive them.
+
 ## Cancellation
 
 When a run is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `run()` function. The exception raised depends on whether the runner is sync or async:
@@ -3773,6 +3812,31 @@ For example:
 concurrency:
   max: 10
 ```
+
+## `observability`
+
+OpenTelemetry tracing is disabled by default. Enable it for an image with:
+
+```yaml
+observability:
+  traces:
+    enabled: true
+    sampler: parentbased_always_off
+```
+
+The default sampler continues sampled caller traces but does not start new traces. Supported sampler names are `always_on`, `always_off`, `traceidratio`, `parentbased_always_on`, `parentbased_always_off`, and `parentbased_traceidratio`. Ratio samplers require `sampler_arg` as a string between `"0"` and `"1"`.
+
+An operator may configure one additional inbound trace header:
+
+```yaml
+observability:
+  traces:
+    enabled: true
+    trace_header: x-company-trace
+    trace_header_format: w3c # or jaeger
+```
+
+Collector endpoints, protocols, authentication headers, and certificates are runtime configuration and cannot be set through `cog.yaml`.
 
 ## `image`
 

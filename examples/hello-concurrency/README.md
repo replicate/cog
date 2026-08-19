@@ -17,13 +17,16 @@ This combined with the async setup and run methods in `run.py` allows Cog to run
 4 concurrent predictions. If Cog reaches the max concurrency threshold it will reject subsequent
 predictions with a `409 Conflict` response.
 
-### Telemetry
+### Tracing
 
-It also uses the open-telemetry package to demonstrate how to collect telemetry for your model.
+Cog configures OpenTelemetry before importing the model. The example only creates model spans with the standard `opentelemetry.trace` API.
 
-This requires a file named `honeycomb_token.key` to be included in the image build.
+Configure the collector at runtime:
 
-It will then start sending events to the `cog-model` data source. You can configure this by
-editing the `OTEL_SERVICE_NAME`. If you use a custom endpoint this can be configured via `OTEL_EXPORTER_OTLP_ENDPOINT`.
+```shell
+OTEL_EXPORTER_OTLP_ENDPOINT=https://collector.example.com:4318
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_SERVICE_NAME=hello-concurrency
+```
 
-Lastly, there is a section in `run.py` that can be uncommented to run telemetry locally and print events to the console for debugging.
+With the default `parentbased_always_off` sampler, Cog exports spans only when the caller supplies a sampled parent trace.

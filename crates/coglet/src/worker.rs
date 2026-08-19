@@ -20,6 +20,7 @@ use futures::{SinkExt, StreamExt};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
+use tracing::Instrument as _;
 
 use crate::bridge::protocol::truncate_worker_log;
 
@@ -100,11 +101,14 @@ fn install_panic_hook() {
 // Tracing initialization
 // ============================================================================
 
-fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
+fn init_worker_tracing(
+    tx: mpsc::Sender<ControlResponse>,
+    #[cfg(feature = "tracing")] tracer: Option<crate::trace::SdkTracer>,
+) -> io::Result<()> {
     use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
     let filter = if std::env::var("RUST_LOG").is_ok() {
-        EnvFilter::from_default_env()
+        EnvFilter::from_default_env().add_directive("coglet::trace=trace".parse().unwrap())
     } else {
         let base_level = match std::env::var("COG_LOG_LEVEL").as_deref() {
             Ok("debug") => "debug",
@@ -114,7 +118,7 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
         };
 
         let filter_str = format!(
-            "coglet={level},coglet::setup=info,coglet::user=info,coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
+            "coglet={level},coglet::trace=trace,coglet::setup=info,coglet::user=info,coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
             level = base_level
         );
 
@@ -123,11 +127,19 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
 
     let worker_layer = WorkerTracingLayer::new(tx);
 
+    #[cfg(feature = "tracing")]
+    let otel_layer = tracer.map(|tracer| tracing_opentelemetry::layer().with_tracer(tracer));
+    #[cfg(not(feature = "tracing"))]
+    let otel_layer = tracing_subscriber::layer::Identity::new();
+
     let subscriber = tracing_subscriber::registry()
         .with(filter)
+        .with(otel_layer)
         .with(worker_layer);
 
-    let _ = subscriber.try_init();
+    subscriber
+        .try_init()
+        .map_err(|error| io::Error::other(error.to_string()))
 }
 
 use crate::bridge::codec::JsonCodec;
@@ -333,6 +345,9 @@ pub trait PredictHandler: Send + Sync + 'static {
     async fn healthcheck(&self) -> HealthcheckResult {
         HealthcheckResult::healthy()
     }
+
+    /// Flush and shut down handler-owned resources.
+    async fn shutdown(&self) {}
 }
 
 /// Path to the pre-built OpenAPI schema file inside the container.
@@ -431,6 +446,7 @@ pub struct WorkerConfig {
     pub num_slots: usize,
     /// Hook for setup log routing. Called before setup() to register a log sender.
     pub setup_log_hook: Option<SetupLogHook>,
+    pub trace: Option<crate::bridge::protocol::TraceCarrier>,
 }
 
 impl Default for WorkerConfig {
@@ -438,6 +454,7 @@ impl Default for WorkerConfig {
         Self {
             num_slots: 1,
             setup_log_hook: None,
+            trace: None,
         }
     }
 }
@@ -473,12 +490,22 @@ pub async fn run_worker<H: PredictHandler>(
 
     let (setup_log_tx, mut setup_log_rx) = mpsc::channel::<ControlResponse>(5000);
 
-    init_worker_tracing(setup_log_tx.clone());
-
     // CRITICAL: Redirect fds BEFORE any FFI initialization to prevent subprocesses
     // from polluting the control channel
     let control_fds =
         crate::fd_redirect::redirect_fds_for_subprocess_isolation(setup_log_tx.clone())?;
+
+    crate::install_crypto_provider();
+    #[cfg(feature = "tracing")]
+    let trace_runtime = crate::trace::TracingRuntime::from_env(crate::trace::ProcessRole::Worker)
+        .map_err(io::Error::other)?;
+    #[cfg(feature = "tracing")]
+    init_worker_tracing(
+        setup_log_tx.clone(),
+        trace_runtime.as_ref().map(|runtime| runtime.tracer()),
+    )?;
+    #[cfg(not(feature = "tracing"))]
+    init_worker_tracing(setup_log_tx.clone())?;
 
     // Connect to slot sockets (transport info from Init message)
     tracing::trace!(?transport_info, "Connecting to slot transport");
@@ -553,7 +580,12 @@ pub async fn run_worker<H: PredictHandler>(
     // Run setup
     tracing::info!("Worker starting setup");
     let setup_start = std::time::Instant::now();
-    let setup_result = handler.setup().await;
+    let setup_span = crate::cog_span!(info_span, "cog.setup.predictor");
+    #[cfg(feature = "tracing")]
+    if let Some(trace) = config.trace.as_ref() {
+        crate::trace::set_parent_from_carrier(&setup_span, trace);
+    }
+    let setup_result = handler.setup().instrument(setup_span).await;
     let setup_elapsed = setup_start.elapsed();
     tracing::debug!(
         elapsed_ms = setup_elapsed.as_millis() as u64,
@@ -585,6 +617,11 @@ pub async fn run_worker<H: PredictHandler>(
                 error: format!("Setup failed: {}", e),
             })
             .await;
+        handler.shutdown().await;
+        #[cfg(feature = "tracing")]
+        if let Some(runtime) = trace_runtime.as_ref() {
+            runtime.shutdown();
+        }
         return Ok(());
     }
 
@@ -672,6 +709,8 @@ pub async fn run_worker<H: PredictHandler>(
         }
     }
 
+    let mut shutdown_requested = false;
+
     // Main event loop
     loop {
         tokio::select! {
@@ -688,8 +727,7 @@ pub async fn run_worker<H: PredictHandler>(
                     }
                     Some(Ok(ControlRequest::Shutdown)) => {
                         tracing::info!("Shutdown requested");
-                        let mut w = ctrl_writer.lock().await;
-                        let _ = w.send(ControlResponse::ShuttingDown).await;
+                        shutdown_requested = true;
                         break;
                     }
                     Some(Ok(ControlRequest::Healthcheck { id })) => {
@@ -752,7 +790,14 @@ pub async fn run_worker<H: PredictHandler>(
                 let prediction_id = request.prediction_id().to_string();
 
                 match request.rehydrate_input() {
-                    Ok((id, input, output_dir, context)) => {
+                    Ok(parts) => {
+                        let crate::bridge::protocol::RehydratedRequest {
+                            id,
+                            input,
+                            output_dir,
+                            context,
+                            trace,
+                        } = parts;
                         tracing::trace!(%slot_id, %id, "Prediction request received");
                         slot_busy.insert(slot_id, true);
 
@@ -775,6 +820,7 @@ pub async fn run_worker<H: PredictHandler>(
                                 handler,
                                 writer,
                                 context,
+                                trace,
                             ).await;
                             let _ = completion_tx.send(completion).await;
                         });
@@ -799,6 +845,15 @@ pub async fn run_worker<H: PredictHandler>(
         }
     }
 
+    handler.shutdown().await;
+    #[cfg(feature = "tracing")]
+    if let Some(runtime) = trace_runtime.as_ref() {
+        runtime.shutdown();
+    }
+    if shutdown_requested {
+        let mut writer = ctrl_writer.lock().await;
+        let _ = writer.send(ControlResponse::ShuttingDown).await;
+    }
     tracing::info!("Worker exiting");
     Ok(())
 }
@@ -827,6 +882,7 @@ async fn slot_reader_task(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_prediction<H: PredictHandler>(
     slot_id: SlotId,
     prediction_id: String,
@@ -835,6 +891,7 @@ async fn run_prediction<H: PredictHandler>(
     handler: Arc<H>,
     writer: SlotWriter,
     context: std::collections::HashMap<String, String>,
+    _trace: Option<crate::bridge::protocol::TraceCarrier>,
 ) -> SlotCompletion {
     tracing::trace!(%slot_id, %prediction_id, "run_prediction starting");
 
@@ -863,7 +920,18 @@ async fn run_prediction<H: PredictHandler>(
     // threads. Without this, the log forwarder can be work-stolen onto the
     // same thread as the prediction and starved until predict returns, causing
     // all logs to arrive in a single batch at prediction end.
+    let execute_span = crate::cog_span!(
+        info_span,
+        "cog.prediction.execute",
+        "cog.prediction.id" = %prediction_id,
+        "cog.slot.id" = %slot_id
+    );
+    #[cfg(feature = "tracing")]
+    if let Some(trace) = _trace.as_ref() {
+        crate::trace::set_parent_from_carrier(&execute_span, trace);
+    }
     let result = tokio::task::block_in_place(|| {
+        let _entered = execute_span.enter();
         Handle::current().block_on(handler.predict(
             slot_id,
             prediction_id.clone(),

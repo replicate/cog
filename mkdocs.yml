@@ -14,6 +14,7 @@ nav:
   - CLI: cli.md
   - Base images: base-images.md
   - Environment variables: environment.md
+  - Observability: observability.md
   - Private registry: private-package-registry.md
   - Notebooks: notebooks.md
   - Windows: wsl2/wsl2.md

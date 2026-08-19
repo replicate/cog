@@ -379,6 +379,23 @@ func (g *StandardGenerator) cogEnvVars() []string {
 	if g.Config.Concurrency != nil && g.Config.Concurrency.Max > 0 {
 		envs = append(envs, fmt.Sprintf(`ENV COG_MAX_CONCURRENCY=%d`, g.Config.Concurrency.Max))
 	}
+	if g.Config.Observability != nil && g.Config.Observability.Traces != nil && g.Config.Observability.Traces.Enabled {
+		traces := g.Config.Observability.Traces
+		envs = append(envs,
+			`ENV COG_TRACE_CONFIGURED=true`,
+			`ENV COG_TRACE_ENABLED=true`,
+			fmt.Sprintf(`ENV COG_TRACE_SAMPLER="%s"`, traces.Sampler),
+		)
+		if traces.SamplerArg != "" {
+			envs = append(envs, fmt.Sprintf(`ENV COG_TRACE_SAMPLER_ARG="%s"`, traces.SamplerArg))
+		}
+		if traces.TraceHeader != "" {
+			envs = append(envs,
+				fmt.Sprintf(`ENV COG_TRACE_HEADER="%s"`, traces.TraceHeader),
+				fmt.Sprintf(`ENV COG_TRACE_HEADER_FORMAT="%s"`, traces.TraceHeaderFormat),
+			)
+		}
+	}
 	return envs
 }
 

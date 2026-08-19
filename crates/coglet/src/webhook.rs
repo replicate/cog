@@ -84,6 +84,7 @@ impl Default for WebhookConfig {
 pub struct TraceContext {
     pub traceparent: Option<String>,
     pub tracestate: Option<String>,
+    pub custom_header: Option<(String, String)>,
 }
 
 pub struct WebhookSender {
@@ -173,6 +174,9 @@ impl WebhookSender {
         }
         if let Some(ref tracestate) = self.trace_context.tracestate {
             request = request.header("tracestate", tracestate);
+        }
+        if let Some((ref name, ref value)) = self.trace_context.custom_header {
+            request = request.header(name, value);
         }
 
         request
@@ -306,6 +310,9 @@ impl WebhookSender {
             }
             if let Some(ref tracestate) = self.trace_context.tracestate {
                 request = request.header("tracestate", tracestate);
+            }
+            if let Some((ref name, ref value)) = self.trace_context.custom_header {
+                request = request.header(name, value);
             }
 
             let result = request.send_json(payload);

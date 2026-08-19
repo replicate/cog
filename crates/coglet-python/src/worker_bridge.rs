@@ -5,11 +5,70 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 use coglet_core::bridge::protocol::SlotId;
 use coglet_core::worker::{PredictHandler, PredictResult, SetupError, SlotSender};
 
 use crate::predictor::PythonPredictor;
+
+struct PythonTraceGuard {
+    token: Option<Py<PyAny>>,
+}
+
+impl PythonTraceGuard {
+    fn enter(py: Python<'_>, carrier: Option<&HashMap<String, String>>) -> PyResult<Self> {
+        if carrier.is_none() {
+            return Ok(Self { token: None });
+        }
+        let trace_module = py.import("cog._trace")?;
+        let dict = PyDict::new(py);
+        if let Some(carrier) = carrier {
+            for (key, value) in carrier {
+                dict.set_item(key, value)?;
+            }
+        }
+        let token = trace_module.call_method1("attach", (dict,))?;
+        Ok(Self {
+            token: if token.is_none() {
+                None
+            } else {
+                Some(token.unbind())
+            },
+        })
+    }
+}
+
+impl Drop for PythonTraceGuard {
+    fn drop(&mut self) {
+        let token = self.token.take();
+        Python::attach(|py| {
+            if let Ok(trace_module) = py.import("cog._trace") {
+                if let Some(token) = token.as_ref() {
+                    let _ = trace_module.call_method1("detach", (token.bind(py),));
+                } else {
+                    let _ = trace_module.call_method1("detach", (py.None(),));
+                }
+            }
+        });
+    }
+}
+
+fn current_trace_carrier() -> Option<HashMap<String, String>> {
+    #[cfg(feature = "tracing")]
+    {
+        let carrier = coglet_core::trace::carrier_from_span(&tracing::Span::current())?;
+        let mut values = HashMap::from([("traceparent".to_string(), carrier.traceparent)]);
+        if let Some(tracestate) = carrier.tracestate {
+            values.insert("tracestate".to_string(), tracestate);
+        }
+        Some(values)
+    }
+    #[cfg(not(feature = "tracing"))]
+    {
+        None
+    }
+}
 
 /// What operation the handler performs
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -280,6 +339,17 @@ impl PythonPredictHandler {
 impl PredictHandler for PythonPredictHandler {
     async fn setup(&self) -> Result<(), SetupError> {
         Python::attach(|py| {
+            let carrier = current_trace_carrier();
+            if carrier.is_some() {
+                let trace_module = py
+                    .import("cog._trace")
+                    .map_err(|error| SetupError::internal(error.to_string()))?;
+                trace_module
+                    .call_method0("install_provider")
+                    .map_err(|error| SetupError::internal(error.to_string()))?;
+            }
+            let _trace_guard = PythonTraceGuard::enter(py, carrier.as_ref())
+                .map_err(|error| SetupError::internal(error.to_string()))?;
             tracing::info!(predictor_ref = %self.predictor_ref, "Loading predictor");
 
             let pred = PythonPredictor::load(py, &self.predictor_ref)
@@ -340,6 +410,30 @@ impl PredictHandler for PythonPredictHandler {
         };
         let is_async = pred.is_async();
         tracing::trace!(%slot, %id, is_async, "Got predictor");
+        let _invoke_span = coglet_core::cog_span!(
+            info_span,
+            "cog.prediction.invoke",
+            "cog.prediction.id" = %id,
+            "cog.slot.id" = %slot
+        );
+        let trace_carrier = {
+            #[cfg(feature = "tracing")]
+            {
+                coglet_core::trace::carrier_from_span(&_invoke_span).map(|carrier| {
+                    let mut values =
+                        HashMap::from([("traceparent".to_string(), carrier.traceparent)]);
+                    if let Some(tracestate) = carrier.tracestate {
+                        values.insert("tracestate".to_string(), tracestate);
+                    }
+                    values
+                })
+            }
+            #[cfg(not(feature = "tracing"))]
+            {
+                None
+            }
+        };
+        let _invoke_entered = _invoke_span.enter();
 
         // Track that we're starting a prediction on this slot.
         // Capture the Python thread ID for this thread (used by
@@ -494,9 +588,13 @@ impl PredictHandler for PythonPredictHandler {
 
                     // Submit coroutine and get future + prepared input for cleanup
                     let scope_ref = scope_guard.as_ref().map(|g| g.scope());
-                    let (future, is_async_gen, prepared) = match pred
-                        .predict_async_worker(input, &loop_obj, &id, scope_ref)
-                    {
+                    let (future, is_async_gen, prepared) = match pred.predict_async_worker(
+                        input,
+                        &loop_obj,
+                        &id,
+                        scope_ref,
+                        trace_carrier.as_ref(),
+                    ) {
                         Ok(f) => f,
                         Err(e) => {
                             self.finish_prediction(slot);
@@ -544,7 +642,7 @@ impl PredictHandler for PythonPredictHandler {
                     // Sync predict - set sync prediction ID for log routing
                     crate::log_writer::set_sync_prediction_id(Some(&id));
                     tracing::trace!(%slot, %id, "Calling predict_worker");
-                    let r = pred.predict_worker(input, slot_sender.clone());
+                    let r = pred.predict_worker(input, slot_sender.clone(), trace_carrier.as_ref());
                     tracing::trace!(%slot, %id, "predict_worker returned");
                     crate::log_writer::set_sync_prediction_id(None);
 
@@ -660,6 +758,14 @@ impl PredictHandler for PythonPredictHandler {
             // Sync healthcheck - run in thread pool with timeout
             Python::attach(|py| pred.healthcheck_sync(py))
         }
+    }
+
+    async fn shutdown(&self) {
+        Python::attach(|py| {
+            if let Ok(trace_module) = py.import("cog._trace") {
+                let _ = trace_module.call_method0("shutdown");
+            }
+        });
     }
 }
 

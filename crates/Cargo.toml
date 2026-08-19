@@ -24,7 +24,7 @@ axum = "0.8"
 # HTTP client
 # Use rustls-no-provider to avoid pulling in aws-lc-sys (which needs cmake).
 # The ring crypto provider is supplied via the explicit rustls dependency below.
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 # Serialization

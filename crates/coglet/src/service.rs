@@ -630,6 +630,7 @@ impl PredictionService {
         unregistered_slot: UnregisteredPredictionSlot,
         input: serde_json::Value,
         context: std::collections::HashMap<String, String>,
+        trace: Option<crate::bridge::protocol::TraceCarrier>,
     ) -> Result<PredictionResult, PredictionError> {
         let state = self.orchestrator.read().await.clone();
         let state = state
@@ -647,6 +648,7 @@ impl PredictionService {
                 ));
             };
             pred.set_processing();
+            pred.record_trace_slot(slot_id);
         }
 
         // Register for response routing in event loop
@@ -675,6 +677,7 @@ impl PredictionService {
                 .to_string(),
             &input_dir,
             context,
+            trace,
         )
         .map_err(|e| PredictionError::Failed(format!("Failed to build slot request: {}", e)))?;
 
@@ -840,6 +843,7 @@ fn build_slot_request(
     output_dir: String,
     input_dir: &std::path::Path,
     context: std::collections::HashMap<String, String>,
+    trace: Option<crate::bridge::protocol::TraceCarrier>,
 ) -> std::io::Result<SlotRequest> {
     let serialized = serde_json::to_vec(&input)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -857,6 +861,7 @@ fn build_slot_request(
             input_file: Some(input_file),
             output_dir,
             context,
+            trace,
         })
     } else {
         Ok(SlotRequest::Predict {
@@ -865,6 +870,7 @@ fn build_slot_request(
             input_file: None,
             output_dir,
             context,
+            trace,
         })
     }
 }
@@ -1435,6 +1441,7 @@ mod tests {
                 slot,
                 serde_json::json!({"prompt": "hello"}),
                 Default::default(),
+                None,
             )
             .await;
 
@@ -1470,6 +1477,7 @@ mod tests {
                 slot,
                 serde_json::json!({}),
                 std::collections::HashMap::new(),
+                None,
             ),
         )
         .await
@@ -1528,6 +1536,7 @@ mod tests {
                 slot,
                 serde_json::json!({"prompt": "hello"}),
                 Default::default(),
+                None,
             )
             .await;
         assert!(result.is_ok(), "predict failed: {:?}", result.err());
@@ -1568,6 +1577,7 @@ mod tests {
                 slot,
                 serde_json::json!({"prompt": "hello"}),
                 Default::default(),
+                None,
             )
             .await;
         assert!(result.is_ok(), "predict failed: {:?}", result.err());
@@ -1608,6 +1618,7 @@ mod tests {
                 slot,
                 serde_json::json!({"prompt": "hello"}),
                 Default::default(),
+                None,
             )
             .await;
         assert!(matches!(result, Err(PredictionError::Failed(_))));
@@ -1733,6 +1744,7 @@ mod tests {
             "/tmp/out".into(),
             dir.path(),
             Default::default(),
+            None,
         )
         .unwrap();
 
@@ -1764,6 +1776,7 @@ mod tests {
             "/tmp/out".into(),
             dir.path(),
             Default::default(),
+            None,
         )
         .unwrap();
 
@@ -1799,14 +1812,15 @@ mod tests {
             "/tmp/out".into(),
             dir.path(),
             Default::default(),
+            None,
         )
         .unwrap();
 
         // Rehydrate and verify we get back the same value
-        let (id, rehydrated, output_dir, _context) = req.rehydrate_input().unwrap();
-        assert_eq!(id, "p3");
-        assert_eq!(rehydrated, input);
-        assert_eq!(output_dir, "/tmp/out");
+        let parts = req.rehydrate_input().unwrap();
+        assert_eq!(parts.id, "p3");
+        assert_eq!(parts.input, input);
+        assert_eq!(parts.output_dir, "/tmp/out");
     }
 
     /// OpenAPI doc with an optional-with-no-default field under the given

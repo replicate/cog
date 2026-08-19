@@ -347,6 +347,10 @@ run = "gotestsum -- -short -timeout 1200s -parallel 5 ./..."
 description = "Run Rust workspace tests"
 run = "cargo nextest run --manifest-path crates/Cargo.toml --workspace --exclude coglet-python --no-tests=pass"
 
+[tasks."bench:tracing"]
+description = "Benchmark tracing overhead"
+run = "cargo bench --manifest-path crates/Cargo.toml -p coglet --bench tracing_overhead"
+
 [tasks."test:python"]
 description = "Run Python SDK tests (latest supported Python)"
 depends = ["build:coglet:wheel"]
@@ -607,7 +611,10 @@ run = [{ tasks = ["typecheck:rust", "typecheck:python"] }]
 
 [tasks."typecheck:rust"]
 description = "Type check Rust code (cargo check)"
-run = "cargo check --manifest-path crates/Cargo.toml --workspace"
+run = [
+  "cargo check --manifest-path crates/Cargo.toml --workspace",
+  "cargo check --manifest-path crates/Cargo.toml --workspace --no-default-features",
+]
 
 [tasks."typecheck:python"]
 description = "Type check Python code"

@@ -12,10 +12,30 @@ pub mod orchestrator;
 pub mod permit;
 pub mod service;
 mod setup_log_accumulator;
+#[cfg(feature = "tracing")]
+pub mod trace;
 pub mod transport;
 pub mod webhook;
 pub mod worker;
 mod worker_tracing_layer;
+
+#[cfg(feature = "tracing")]
+#[macro_export]
+macro_rules! cog_span {
+    ($level:ident, $($span:tt)*) => {{
+        if $crate::trace::is_active() {
+            tracing::$level!(target: "coglet::trace", $($span)*)
+        } else {
+            tracing::Span::none()
+        }
+    }};
+}
+
+#[cfg(not(feature = "tracing"))]
+#[macro_export]
+macro_rules! cog_span {
+    ($level:ident, $($span:tt)*) => {{ tracing::Span::none() }};
+}
 
 pub use orchestrator::Orchestrator;
 

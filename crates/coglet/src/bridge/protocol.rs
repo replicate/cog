@@ -65,6 +65,13 @@ pub fn truncate_worker_log(mut log_message: String) -> String {
     log_message
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TraceCarrier {
+    pub traceparent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tracestate: Option<String>,
+}
+
 /// Control messages from parent to worker.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -76,6 +83,8 @@ pub enum ControlRequest {
         transport_info: ChildTransportInfo,
         is_train: bool,
         is_async: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trace: Option<TraceCarrier>,
     },
 
     Cancel {
@@ -222,7 +231,18 @@ pub enum SlotRequest {
         /// Made available to predictors via `current_scope().context`.
         #[serde(default)]
         context: HashMap<String, String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trace: Option<TraceCarrier>,
     },
+}
+
+#[derive(Debug)]
+pub struct RehydratedRequest {
+    pub id: String,
+    pub input: serde_json::Value,
+    pub output_dir: String,
+    pub context: HashMap<String, String>,
+    pub trace: Option<TraceCarrier>,
 }
 
 impl SlotRequest {
@@ -235,25 +255,31 @@ impl SlotRequest {
 
     /// Rehydrate the input from either inline value or spill file.
     ///
-    /// Returns `(id, input, output_dir, context)`. If the input was spilled to disk,
+    /// Returns the rehydrated request. If the input was spilled to disk,
     /// reads the file, deserializes, and deletes it.
-    pub fn rehydrate_input(
-        self,
-    ) -> std::io::Result<(String, serde_json::Value, String, HashMap<String, String>)> {
+    pub fn rehydrate_input(self) -> std::io::Result<RehydratedRequest> {
         match self {
             SlotRequest::Predict {
                 id,
                 input: Some(value),
                 output_dir,
                 context,
+                trace,
                 ..
-            } => Ok((id, value, output_dir, context)),
+            } => Ok(RehydratedRequest {
+                id,
+                input: value,
+                output_dir,
+                context,
+                trace,
+            }),
             SlotRequest::Predict {
                 id,
                 input: None,
                 input_file: Some(path),
                 output_dir,
                 context,
+                trace,
             } => {
                 let bytes = std::fs::read(&path)?;
                 // Clean up spill file immediately — bytes are already in memory.
@@ -263,7 +289,13 @@ impl SlotRequest {
                 }
                 let value: serde_json::Value = serde_json::from_slice(&bytes)
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                Ok((id, value, output_dir, context))
+                Ok(RehydratedRequest {
+                    id,
+                    input: value,
+                    output_dir,
+                    context,
+                    trace,
+                })
             }
             SlotRequest::Predict { .. } => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -399,6 +431,7 @@ mod tests {
             },
             is_train: false,
             is_async: true,
+            trace: None,
         };
         insta::assert_json_snapshot!(req);
     }
@@ -499,6 +532,7 @@ mod tests {
             input_file: None,
             output_dir: "/tmp/coglet/predictions/pred_123/outputs".to_string(),
             context: Default::default(),
+            trace: None,
         };
         insta::assert_json_snapshot!(req);
     }
@@ -511,6 +545,7 @@ mod tests {
             input_file: Some("/tmp/coglet/predictions/pred_456/inputs/spill_abc.json".to_string()),
             output_dir: "/tmp/coglet/predictions/pred_456/outputs".to_string(),
             context: Default::default(),
+            trace: None,
         };
         insta::assert_json_snapshot!(req);
     }
@@ -650,11 +685,12 @@ mod tests {
             input_file: None,
             output_dir: "/tmp/out".to_string(),
             context: Default::default(),
+            trace: None,
         };
-        let (id, input, output_dir, _context) = req.rehydrate_input().unwrap();
-        assert_eq!(id, "p1");
-        assert_eq!(input, json!({"text": "hello"}));
-        assert_eq!(output_dir, "/tmp/out");
+        let parts = req.rehydrate_input().unwrap();
+        assert_eq!(parts.id, "p1");
+        assert_eq!(parts.input, json!({"text": "hello"}));
+        assert_eq!(parts.output_dir, "/tmp/out");
     }
 
     #[test]
@@ -669,11 +705,12 @@ mod tests {
             input_file: Some(spill_path.to_str().unwrap().to_string()),
             output_dir: "/tmp/out".to_string(),
             context: Default::default(),
+            trace: None,
         };
-        let (id, input, output_dir, _context) = req.rehydrate_input().unwrap();
-        assert_eq!(id, "p2");
-        assert_eq!(input, json!({"key": "value"}));
-        assert_eq!(output_dir, "/tmp/out");
+        let parts = req.rehydrate_input().unwrap();
+        assert_eq!(parts.id, "p2");
+        assert_eq!(parts.input, json!({"key": "value"}));
+        assert_eq!(parts.output_dir, "/tmp/out");
         // Spill file should be deleted
         assert!(!spill_path.exists());
     }
@@ -686,6 +723,7 @@ mod tests {
             input_file: None,
             output_dir: "/tmp/out".to_string(),
             context: Default::default(),
+            trace: None,
         };
         let err = req.rehydrate_input().unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
@@ -703,6 +741,7 @@ mod tests {
             input_file: Some(spill_path.to_str().unwrap().to_string()),
             output_dir: "/tmp/out".to_string(),
             context: Default::default(),
+            trace: None,
         };
         let err = req.rehydrate_input().unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);

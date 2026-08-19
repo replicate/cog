@@ -220,6 +220,31 @@ concurrency:
   max: 10
 ```
 
+## `observability`
+
+OpenTelemetry tracing is disabled by default. Enable it for an image with:
+
+```yaml
+observability:
+  traces:
+    enabled: true
+    sampler: parentbased_always_off
+```
+
+The default sampler continues sampled caller traces but does not start new traces. Supported sampler names are `always_on`, `always_off`, `traceidratio`, `parentbased_always_on`, `parentbased_always_off`, and `parentbased_traceidratio`. Ratio samplers require `sampler_arg` as a string between `"0"` and `"1"`.
+
+An operator may configure one additional inbound trace header:
+
+```yaml
+observability:
+  traces:
+    enabled: true
+    trace_header: x-company-trace
+    trace_header_format: w3c # or jaeger
+```
+
+Collector endpoints, protocols, authentication headers, and certificates are runtime configuration and cannot be set through `cog.yaml`.
+
 ## `image`
 
 The name given to built Docker images. If you want to push to a registry, this should also include the registry name.

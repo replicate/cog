@@ -22,6 +22,9 @@ var environmentVariableDenyList = []string{
 	// Replicate
 	"R8_*",
 	"REPLICATE_*",
+	// Observability
+	"COG_TRACE_*",
+	"OTEL_*",
 	// Nvidia
 	"LIBRARY_PATH",
 	"CUDA_*",
