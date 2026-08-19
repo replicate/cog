@@ -223,3 +223,7 @@ Request-specific values belong on `cog.prediction` through caller tags rather th
 - Forced termination, crashes, and OOM: final spans may be lost.
 
 Tracing must never determine whether a prediction succeeds.
+
+## What's next
+
+Metrics and OpenTelemetry log export are planned next. They will use the same opt-in approach as tracing.
