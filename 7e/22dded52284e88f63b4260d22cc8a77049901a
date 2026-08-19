@@ -1,0 +1,45 @@
+architecture/04-container-runtime.md
+  s_a3826e8403b131::t_9a545e09ebc91d 388-397,412
+crates/Cargo.lock
+  s_a3826e8403b131::t_dfc8f040651fb9 52-63,230-235,278-329,339,347-350,361,386,456-507,635,844,846,861-871,1006-1018,1254-1262,1829-1834,1841-1924,2023-2042,2055-2082,2141-2172,2373-2392,2589,2646,3082,3184-3193,3232-3242,3295-3344,3353,3355,3358,3438-3451,3852-3861,3886
+crates/coglet-python/src/predictor.rs
+  s_a3826e8403b131::t_79fed3a8b09f45 63-76,108-133,152,176-183,195,805,808-817,819-820,822-826,828-831,833-842,844-857,859,861-862,864-868,870-871,873-878,916-921,1103,1124-1129,1167-1168,1250-1255,1267
+crates/coglet-python/src/worker_bridge.rs
+  s_a3826e8403b131::t_6fc617238a1af1 8,15-72,342-352,413-436,591-597,645,762-769
+crates/coglet/benches/tracing_overhead.rs
+  s_a3826e8403b131::t_a9274b917191ae 1-47
+crates/coglet/src/bridge/protocol.rs
+  s_a3826e8403b131::t_bb99c2f00aa342 68-74,86-87,234-235,239-247,258,260,267,269-275,282,292-298,434,535,548,688,690-693,708,710-713,726,744
+crates/coglet/src/lib.rs
+  s_a3826e8403b131::t_424f98746bf0cf 15-16,22-39
+crates/coglet/src/orchestrator.rs
+  s_a3826e8403b131::t_c67907fe6be776 21,56,367,438-464,482-488,546-555,706,1153-1156,1163-1173,1187
+crates/coglet/src/trace/mod.rs
+  s_a3826e8403b131::t_c3010aa6198d51 1-438
+docs/environment.md
+  s_a3826e8403b131::t_01864e09435bcf 213-231
+docs/llms.txt
+  s_a3826e8403b131::t_b1a2718c3311b6 1154-1172,2858-2877,3816-3840
+pkg/config/config.go
+  s_a3826e8403b131::t_2333d93f291e52 78-89,121-129
+pkg/config/config_file.go
+  s_a3826e8403b131::t_c755164ecd7bc5 15-24,68-79
+uv.lock
+  s_a3826e8403b131::t_cc758390ced438 4-8,129-132,155-158,336-408,423,439-537,556-570
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "7e22dded52284e88f63b4260d22cc8a77049901a",
+  "prompts": {},
+  "sessions": {
+    "s_a3826e8403b131": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fea3b7845ffexxhze2fFo574e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
