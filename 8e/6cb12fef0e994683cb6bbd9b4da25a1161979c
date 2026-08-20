@@ -1,0 +1,19 @@
+uv.lock
+  s_54999048756e3c::t_9f3de5417ef32c 137,140,161,164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "8e6cb12fef0e994683cb6bbd9b4da25a1161979c",
+  "prompts": {},
+  "sessions": {
+    "s_54999048756e3c": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fdef23659ffeZZ0DegXkV8faob",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
