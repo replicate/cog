@@ -8,7 +8,7 @@ jobs:
   review:
     if: github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 30
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: false
@@ -39,7 +39,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_GATEWAY_BASE_URL: https://gateway.ai.cloudflare.com/v1/${{ vars.CLOUDFLARE_ACCOUNT_ID }}/${{ vars.CLOUDFLARE_GATEWAY_ID }}/compat
-          # Must stay below the job's timeout-minutes. The harness defaults to 45m.
+          # Match the job timeout; the harness defaults to 45m.
           OPENCODE_TIMEOUT: 30m
           OPENCODE_PRINT_LOGS: "1"
           OPENCODE_LOG_LEVEL: INFO
