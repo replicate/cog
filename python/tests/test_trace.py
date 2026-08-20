@@ -38,6 +38,20 @@ assert isinstance(trace.get_tracer_provider(), TracerProvider)
     assert result.returncode == 0, result.stderr
 
 
+def test_ratio_sampler_without_arg_defaults_to_one() -> None:
+    script = """
+import os
+os.environ["OTEL_TRACES_SAMPLER"] = "traceidratio"
+from cog import _trace
+from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
+sampler = _trace._sampler()
+assert isinstance(sampler, TraceIdRatioBased)
+assert sampler.rate == 1.0
+"""
+    result = _run_script(script)
+    assert result.returncode == 0, result.stderr
+
+
 def test_trace_provider_rejects_collision() -> None:
     script = """
 import os

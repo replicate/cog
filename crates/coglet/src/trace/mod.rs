@@ -128,17 +128,16 @@ impl TracingConfig {
     }
 
     fn sdk_sampler(&self) -> Sampler {
+        let ratio = self.sampler_arg.unwrap_or(1.0);
         match self.sampler {
             SamplerKind::AlwaysOn => Sampler::AlwaysOn,
             SamplerKind::AlwaysOff => Sampler::AlwaysOff,
-            SamplerKind::TraceIdRatio => {
-                Sampler::TraceIdRatioBased(self.sampler_arg.expect("validated ratio sampler"))
-            }
+            SamplerKind::TraceIdRatio => Sampler::TraceIdRatioBased(ratio),
             SamplerKind::ParentBasedAlwaysOn => Sampler::ParentBased(Box::new(Sampler::AlwaysOn)),
             SamplerKind::ParentBasedAlwaysOff => Sampler::ParentBased(Box::new(Sampler::AlwaysOff)),
-            SamplerKind::ParentBasedTraceIdRatio => Sampler::ParentBased(Box::new(
-                Sampler::TraceIdRatioBased(self.sampler_arg.expect("validated ratio sampler")),
-            )),
+            SamplerKind::ParentBasedTraceIdRatio => {
+                Sampler::ParentBased(Box::new(Sampler::TraceIdRatioBased(ratio)))
+            }
         }
     }
 }
@@ -420,6 +419,22 @@ mod tests {
             "parentbased_traceidratio",
         ] {
             assert!(parse_sampler(sampler).is_ok());
+        }
+    }
+
+    #[test]
+    fn ratio_sampler_without_arg_defaults_to_one() {
+        let config = TracingConfig {
+            endpoint: String::new(),
+            protocol: OtlpProtocol::HttpProtobuf,
+            sampler: SamplerKind::TraceIdRatio,
+            sampler_arg: None,
+            service_name: String::new(),
+        };
+
+        match config.sdk_sampler() {
+            Sampler::TraceIdRatioBased(ratio) => assert_eq!(ratio, 1.0),
+            sampler => panic!("unexpected sampler: {sampler:?}"),
         }
     }
 

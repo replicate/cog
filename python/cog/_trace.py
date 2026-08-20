@@ -203,7 +203,7 @@ def _sampler() -> Sampler:
     ratio = float(
         os.environ.get(
             "OTEL_TRACES_SAMPLER_ARG",
-            os.environ.get("COG_TRACE_SAMPLER_ARG", ""),
+            os.environ.get("COG_TRACE_SAMPLER_ARG", "1"),
         )
     )
     if name == "traceidratio":

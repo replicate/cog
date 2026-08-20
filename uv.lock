@@ -126,8 +126,6 @@ name = "cog"
 source = { editable = "." }
 dependencies = [
     { name = "coglet" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-sdk" },
     { name = "pyyaml" },
     { name = "requests" },
     { name = "structlog" },
@@ -136,8 +134,10 @@ dependencies = [
 
 [package.optional-dependencies]
 tracing = [
+    { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
 ]
 
 [package.dev-dependencies]
@@ -158,10 +158,10 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "coglet", specifier = ">=0.1.0,<1.0" },
-    { name = "opentelemetry-api", specifier = "==1.44.0" },
+    { name = "opentelemetry-api", marker = "extra == 'tracing'", specifier = "==1.44.0" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "extra == 'tracing'", specifier = "==1.44.0" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'tracing'", specifier = "==1.44.0" },
-    { name = "opentelemetry-sdk", specifier = "==1.44.0" },
+    { name = "opentelemetry-sdk", marker = "extra == 'tracing'", specifier = "==1.44.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.25.0" },
     { name = "structlog", specifier = ">=21.0.0" },
