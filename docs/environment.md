@@ -107,6 +107,18 @@ Skips the `cog doctor` Docker environment check. Set it to any non-empty value.
 $ COG_SKIP_DOCKER_CHECK=1 cog doctor
 ```
 
+### `COG_SKIP_GPU_CHECK`
+
+Skips the `cog doctor` GPU compatibility check, which warns when the resolved torch/CUDA
+versions ship no kernels for the GPU in the current machine. Set it to any non-empty value.
+
+Use this when you are deliberately building for a different GPU than the one in this
+machine, so the check should not warn about the local device.
+
+```console
+$ COG_SKIP_GPU_CHECK=1 cog doctor
+```
+
 ### `COG_CACHE_DIR`
 
 Overrides Cog's local cache root.

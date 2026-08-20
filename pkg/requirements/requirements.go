@@ -150,6 +150,47 @@ func PackageName(pipRequirement string) string {
 	return ""
 }
 
+var nameSeparatorRe = regexp.MustCompile(`[-_.]+`)
+
+// NormalizePackageName canonicalizes a distribution name for comparison, PEP 503-style:
+// extras are dropped, "-_." separator runs collapse to "-", and the result is lowercased.
+func NormalizePackageName(name string) string {
+	name, _, _ = strings.Cut(name, "[")
+	return strings.ToLower(nameSeparatorRe.ReplaceAllString(name, "-"))
+}
+
+// versionSpecifierRe matches a single PEP 440 version specifier: an operator followed
+// by a version token. Used to distinguish an exact `==` pin from ranges and inequalities.
+var versionSpecifierRe = regexp.MustCompile(`(===|==|!=|~=|<=|>=|<|>)\s*([^\s,;|]+)`)
+
+// directURLRe matches a PEP 508 direct reference (e.g. "torch @ https://...").
+var directURLRe = regexp.MustCompile(`@\s*\S+`)
+
+// ExactVersion returns the version from a pip requirement only when it is a single exact
+// `==` pin, e.g. "torch==2.7.0" (inline pip options and the CUDA local tag are preserved).
+// Ranges, inequalities, wildcard pins, compound specifiers, direct URLs, and unpinned
+// requirements return ("", false): they do not name one concrete version to reason about.
+func ExactVersion(pipRequirement string) (string, bool) {
+	// Drop environment markers (";" and after); a marker's own comparators are not the pin.
+	if idx := strings.Index(pipRequirement, ";"); idx >= 0 {
+		pipRequirement = pipRequirement[:idx]
+	}
+	// A direct URL reference is never an exact version pin.
+	if directURLRe.MatchString(pipRequirement) {
+		return "", false
+	}
+	matches := versionSpecifierRe.FindAllStringSubmatch(pipRequirement, -1)
+	if len(matches) != 1 {
+		// Zero specifiers (unpinned) or more than one (a range like ">=2.0,<3.0").
+		return "", false
+	}
+	op, ver := matches[0][1], matches[0][2]
+	if op != "==" || strings.Contains(ver, "*") {
+		return "", false
+	}
+	return ver, true
+}
+
 func Versions(pipRequirement string) []string {
 	var versions []string
 

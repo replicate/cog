@@ -19,5 +19,6 @@ func AllChecks() []Check {
 		// Environment checks
 		&DockerCheck{},
 		&PythonVersionCheck{},
+		&GPUCompatibilityCheck{},
 	}
 }

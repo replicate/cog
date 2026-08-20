@@ -133,6 +133,78 @@ foo==1.0.0`
 	require.Equal(t, expected, requirements)
 }
 
+func TestResolvedTorchWheel(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		requirements string
+		cuda         string
+		wantVersion  string
+		wantCUDA     string
+		wantOK       bool
+	}{
+		{
+			name:         "plain pin resolves cuda from the matrix index",
+			requirements: "torch==2.4.1",
+			cuda:         "12.4",
+			wantVersion:  "2.4.1",
+			wantCUDA:     "12.4",
+			wantOK:       true,
+		},
+		{
+			// The +cu118 tag is discarded during resolution: cuda: "12.8" selects the cu128
+			// wheel, so the reported CUDA is 12.8, not the requirement's 11.8.
+			name:         "local tag yields to build cuda via the resolved index",
+			requirements: "torch==2.7.0+cu118",
+			cuda:         "12.8",
+			wantVersion:  "2.7.0",
+			wantCUDA:     "12.8",
+			wantOK:       true,
+		},
+		{
+			// An explicit index is passed through verbatim and wins over cuda: "12.8".
+			name:         "explicit extra-index-url wins over build cuda",
+			requirements: "torch==2.7.0 --extra-index-url=https://download.pytorch.org/whl/cu118",
+			cuda:         "12.8",
+			wantVersion:  "2.7.0",
+			wantCUDA:     "11.8",
+			wantOK:       true,
+		},
+		{
+			name:         "non-exact pin is not resolvable",
+			requirements: "torch<2.7.0",
+			cuda:         "12.4",
+			wantOK:       false,
+		},
+		{
+			name:         "no torch present",
+			requirements: "numpy==1.26.0",
+			cuda:         "12.4",
+			wantOK:       false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(tt.requirements), 0o644))
+			cfg := &Config{
+				Build: &Build{
+					GPU:                true,
+					PythonVersion:      "3.11",
+					PythonRequirements: "requirements.txt",
+					CUDA:               tt.cuda,
+				},
+			}
+			require.NoError(t, cfg.Complete(tmpDir))
+
+			version, cuda, ok := cfg.ResolvedTorchWheel("linux", "amd64")
+			require.Equal(t, tt.wantOK, ok)
+			if tt.wantOK {
+				require.Equal(t, tt.wantVersion, version)
+				require.Equal(t, tt.wantCUDA, cuda)
+			}
+		})
+	}
+}
+
 func TestPythonRequirementsResolvesPythonPackagesAndCudaVersionsWithExtraIndexURL(t *testing.T) {
 	tmpDir := t.TempDir()
 	err := os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`torch==1.12.1

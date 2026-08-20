@@ -214,6 +214,36 @@ func (c *Config) TorchVersion() (string, bool) {
 	return c.pythonPackageVersion("torch")
 }
 
+// ResolvedTorchWheel reports the torch wheel a GPU build will actually install: the exact
+// pinned version and the CUDA it was built against, read from the resolved package index
+// (e.g. .../whl/cu128 -> "12.8"). It mirrors PythonRequirementsForArch, so it reflects the
+// installed wheel rather than the raw requirement line, and falls back to Build.CUDA when the
+// resolved index carries no CUDA. Returns ok=false unless torch is pinned to one exact version.
+func (c *Config) ResolvedTorchWheel(goos string, goarch string) (torchVersion string, cuda string, ok bool) {
+	for _, pkg := range c.Build.pythonRequirementsContent {
+		if requirements.NormalizePackageName(requirements.PackageName(pkg)) != "torch" {
+			continue
+		}
+		resolved, _, extraIndexURLs, err := c.pythonPackageForArch(pkg, goos, goarch)
+		if err != nil {
+			return "", "", false
+		}
+		version, hasExact := requirements.ExactVersion(resolved)
+		if !hasExact {
+			return "", "", false
+		}
+		resolvedCUDA := c.Build.CUDA
+		for _, indexURL := range extraIndexURLs {
+			if derived, found := cudaVersionFromIndexURL(indexURL); found {
+				resolvedCUDA = derived
+				break
+			}
+		}
+		return version, resolvedCUDA, true
+	}
+	return "", "", false
+}
+
 func (c *Config) TorchvisionVersion() (string, bool) {
 	return c.pythonPackageVersion("torchvision")
 }
