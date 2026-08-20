@@ -1,0 +1,21 @@
+.github/workflows/bonk.yml
+  s_a3826e8403b131::t_a2db190482173e 19,36-38,42-44,46
+.github/workflows/new-pr-review.yml
+  s_a3826e8403b131::t_4540c7309a9949 11,42-44,48-49,51,54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "f26524757180f304b0bf1bc527e95c32481673b0",
+  "prompts": {},
+  "sessions": {
+    "s_a3826e8403b131": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fea3b7845ffexxhze2fFo574e1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
