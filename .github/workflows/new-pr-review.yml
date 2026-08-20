@@ -45,7 +45,7 @@ jobs:
           OPENCODE_LOG_LEVEL: INFO
         with:
           oidc_base_url: https://ask-bonk.cloudflare-exponent.workers.dev/auth
-          model: "cf-gateway/nemotron-3-120b-a12b"
+          model: "cf-gateway/deepseek-v4-flash-0731"
           forks: "false"
           permissions: write
           opencode_version: "1.18.13"
