@@ -12,15 +12,16 @@ import (
 // This struct is only used during parsing - validation produces errors,
 // completion produces a Config.
 type configFile struct {
-	Build       *buildFile       `json:"build,omitempty" yaml:"build,omitempty"`
-	Image       *string          `json:"image,omitempty" yaml:"image,omitempty"`
-	Model       *string          `json:"model,omitempty" yaml:"model,omitempty"`
-	Run         *string          `json:"run,omitempty" yaml:"run,omitempty"`
-	Predict     *string          `json:"predict,omitempty" yaml:"predict,omitempty"`
-	Train       *string          `json:"train,omitempty" yaml:"train,omitempty"`
-	Concurrency *concurrencyFile `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
-	Environment []string         `json:"environment,omitempty" yaml:"environment,omitempty"`
-	Weights     []weightFile     `json:"weights,omitempty" yaml:"weights,omitempty"`
+	Build         *buildFile         `json:"build,omitempty" yaml:"build,omitempty"`
+	Image         *string            `json:"image,omitempty" yaml:"image,omitempty"`
+	Model         *string            `json:"model,omitempty" yaml:"model,omitempty"`
+	Run           *string            `json:"run,omitempty" yaml:"run,omitempty"`
+	Predict       *string            `json:"predict,omitempty" yaml:"predict,omitempty"`
+	Train         *string            `json:"train,omitempty" yaml:"train,omitempty"`
+	Concurrency   *concurrencyFile   `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
+	Observability *observabilityFile `json:"observability,omitempty" yaml:"observability,omitempty"`
+	Environment   []string           `json:"environment,omitempty" yaml:"environment,omitempty"`
+	Weights       []weightFile       `json:"weights,omitempty" yaml:"weights,omitempty"`
 }
 
 // buildFile represents the raw build configuration from cog.yaml.
@@ -62,6 +63,19 @@ type weightFile struct {
 // concurrencyFile represents concurrency configuration.
 type concurrencyFile struct {
 	Max *int `json:"max,omitempty" yaml:"max,omitempty"`
+}
+
+type observabilityFile struct {
+	Config *string      `json:"config,omitempty" yaml:"config,omitempty"`
+	Traces *tracingFile `json:"traces,omitempty" yaml:"traces,omitempty"`
+}
+
+type tracingFile struct {
+	Enabled           *bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Sampler           *string `json:"sampler,omitempty" yaml:"sampler,omitempty"`
+	SamplerArg        *string `json:"sampler_arg,omitempty" yaml:"sampler_arg,omitempty"`
+	TraceHeader       *string `json:"trace_header,omitempty" yaml:"trace_header,omitempty"`
+	TraceHeaderFormat *string `json:"trace_header_format,omitempty" yaml:"trace_header_format,omitempty"`
 }
 
 // UnmarshalYAML implements custom YAML unmarshaling for runItemFile

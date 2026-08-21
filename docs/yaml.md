@@ -220,6 +220,35 @@ concurrency:
   max: 10
 ```
 
+## `observability`
+
+OpenTelemetry tracing is disabled by default. Enable it for an image with:
+
+```yaml
+observability:
+  traces:
+    enabled: true
+    sampler: parentbased_always_off
+```
+
+`config` is an optional project-relative Python file for customizing the Python tracer provider. It requires `traces.enabled: true`. The file must define `create_tracer_provider()` returning `opentelemetry.sdk.trace.TracerProvider` and may define `configure_instrumentation()`. Cog installs the returned provider before importing the model and flushes and shuts it down with the worker.
+
+This hook affects model-authored Python spans only. Cog's Rust framework spans continue to use the standard runtime OpenTelemetry configuration. See [Observability](observability.md#custom-python-tracing) for examples and lifecycle details.
+
+The default sampler continues sampled caller traces but does not start new traces. Supported sampler names are `always_on`, `always_off`, `traceidratio`, `parentbased_always_on`, `parentbased_always_off`, and `parentbased_traceidratio`. Ratio samplers require `sampler_arg` as a string between `"0"` and `"1"`.
+
+An operator may configure one additional inbound trace header:
+
+```yaml
+observability:
+  traces:
+    enabled: true
+    trace_header: x-company-trace
+    trace_header_format: w3c # or jaeger
+```
+
+Collector endpoints, protocols, authentication headers, and certificates are runtime configuration and cannot be set through `cog.yaml`.
+
 ## `image`
 
 The name given to built Docker images. If you want to push to a registry, this should also include the registry name.

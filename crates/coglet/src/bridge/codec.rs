@@ -124,6 +124,7 @@ mod tests {
             input_file: None,
             output_dir: "/tmp/coglet/predictions/test/outputs".to_string(),
             context: Default::default(),
+            trace: None,
         };
 
         codec.encode(req.clone(), &mut buf).unwrap();

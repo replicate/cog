@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -159,6 +160,9 @@ func Build(
 	if err != nil {
 		return "", err
 	}
+	if err := stageObservabilityConfig(dir, dockerfileCfg.Observability, bp.buildDir); err != nil {
+		return "", err
+	}
 
 	// --- Runtime weights manifest (/.cog/weights.json) ---
 	// When managed weights are configured and a lockfile exists, project the
@@ -208,6 +212,9 @@ func Build(
 			return "", fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 		if err := addConcurrencyToCustomDockerfileImage(ctx, dockerCommand, tmpImageId, dockerfileCfg.Concurrency, progressOutput, bp.buildDir); err != nil {
+			return "", err
+		}
+		if err := addTracingToCustomDockerfileImage(ctx, dockerCommand, tmpImageId, dockerfileCfg.Observability, progressOutput, bp.buildDir); err != nil {
 			return "", err
 		}
 	} else {
@@ -520,6 +527,31 @@ func addConcurrencyToCustomDockerfileImage(ctx context.Context, dockerCommand co
 	return nil
 }
 
+func addTracingToCustomDockerfileImage(ctx context.Context, dockerCommand command.Command, imageName string, observability *config.Observability, progressOutput string, buildCacheDir string) error {
+	if observability == nil || observability.Traces == nil || !observability.Traces.Enabled {
+		return nil
+	}
+	imageInfo, err := dockerCommand.Inspect(ctx, imageName)
+	if err != nil {
+		return fmt.Errorf("Failed to inspect Docker image before adding tracing configuration: %w", err)
+	}
+	imageUser := ""
+	if imageInfo.Config != nil {
+		imageUser = imageInfo.Config.User
+	}
+	buildOpts := command.ImageBuildOptions{
+		DockerfileContents: tracingDockerfile(imageName, observability, imageUser),
+		ImageName:          imageName,
+		ProgressOutput:     progressOutput,
+		BuildCacheDir:      buildCacheDir,
+		BuildContexts:      map[string]string{cogBuildContextName: buildCacheDir},
+	}
+	if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
+		return fmt.Errorf("Failed to add tracing configuration to Docker image: %w", err)
+	}
+	return nil
+}
+
 func validateEffectiveConcurrency(cfg *config.Config, info *schema.PredictorInfo) error {
 	if cfg.Concurrency == nil || cfg.Concurrency.Max <= 1 {
 		return nil
@@ -621,6 +653,69 @@ func bundleDockerfile(baseImage string, files []string) string {
 
 func concurrencyDockerfile(baseImage string, maxConcurrency int) string {
 	return fmt.Sprintf("FROM %s\nENV COG_MAX_CONCURRENCY=%d\n", baseImage, maxConcurrency)
+}
+
+func tracingDockerfile(baseImage string, observability *config.Observability, imageUser string) string {
+	var b strings.Builder
+	traces := observability.Traces
+	fmt.Fprintf(&b, "FROM %s\n", baseImage)
+	if imageUser != "" {
+		fmt.Fprintln(&b, "USER root")
+	}
+	fmt.Fprintf(&b, "RUN python -m pip install --no-cache-dir %s\n", dockerfile.PythonTracingRequirements)
+	if imageUser != "" {
+		fmt.Fprintf(&b, "USER %s\n", strconv.Quote(imageUser))
+	}
+	fmt.Fprintf(&b, "ENV COG_TRACE_CONFIGURED=true\nENV COG_TRACE_ENABLED=true\nENV COG_TRACE_SAMPLER=\"%s\"\n", traces.Sampler)
+	if traces.SamplerArg != "" {
+		fmt.Fprintf(&b, "ENV COG_TRACE_SAMPLER_ARG=\"%s\"\n", traces.SamplerArg)
+	}
+	if traces.TraceHeader != "" {
+		fmt.Fprintf(&b, "ENV COG_TRACE_HEADER=\"%s\"\nENV COG_TRACE_HEADER_FORMAT=\"%s\"\n", traces.TraceHeader, traces.TraceHeaderFormat)
+	}
+	if observability.Config != "" {
+		fmt.Fprintf(&b, "COPY --from=%s telemetry.py /.cog/telemetry.py\nENV COG_OBSERVABILITY_CONFIG=\"/.cog/telemetry.py\"\n", cogBuildContextName)
+	}
+	return b.String()
+}
+
+func stageObservabilityConfig(projectDir string, observability *config.Observability, buildDir string) error {
+	if observability == nil || observability.Traces == nil || !observability.Traces.Enabled || observability.Config == "" {
+		return nil
+	}
+
+	sourceRoot, err := os.OpenRoot(projectDir)
+	if err != nil {
+		return fmt.Errorf("failed to open project directory: %w", err)
+	}
+	defer sourceRoot.Close()
+	source, err := sourceRoot.Open(observability.Config)
+	if err != nil {
+		return fmt.Errorf("failed to open observability config: %w", err)
+	}
+	defer source.Close()
+	info, err := source.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to inspect observability config: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("observability config must be a regular file")
+	}
+
+	destinationRoot, err := os.OpenRoot(buildDir)
+	if err != nil {
+		return fmt.Errorf("failed to open build directory: %w", err)
+	}
+	defer destinationRoot.Close()
+	destination, err := destinationRoot.OpenFile("telemetry.py", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to stage observability config: %w", err)
+	}
+	defer destination.Close()
+	if _, err := io.Copy(destination, source); err != nil {
+		return fmt.Errorf("failed to stage observability config: %w", err)
+	}
+	return nil
 }
 
 func isGitWorkTree(ctx context.Context, dir string) bool {

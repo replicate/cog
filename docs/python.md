@@ -459,6 +459,28 @@ self.record_metric("count", "now a string")
 
 Outside an active run, `self.record_metric()` and `self.scope` are silent no-ops — no need for `None` checks.
 
+## OpenTelemetry spans
+
+When `observability.traces` is enabled, Cog installs an OpenTelemetry tracer provider before importing the model. Model spans use the standard API and automatically join the active prediction trace:
+
+```python
+from opentelemetry import trace
+
+tracer = trace.get_tracer(__name__)
+
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> str:
+        with tracer.start_as_current_span("model.inference"):
+            return self.model(prompt)
+```
+
+Do not call `set_tracer_provider()` in model code. To customize the Python provider, set `observability.config` to a Python file that defines `create_tracer_provider()`. Cog installs and shuts down the returned provider. See [Custom Python tracing](observability.md#custom-python-tracing).
+
+Asyncio tasks inherit the active Python context. Raw threads and child processes need explicit context propagation, and background tasks that outlive a prediction may emit uncorrelated spans.
+
+Model-authored attributes and exception details are the model owner's responsibility. Do not record prompts, outputs, credentials, or other sensitive values unless the collector is intended to receive them.
+
 ## Cancellation
 
 When a run is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `run()` function. The exception raised depends on whether the runner is sync or async:

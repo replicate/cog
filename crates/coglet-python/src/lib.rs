@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::*;
-use tracing::{debug, error, info, warn};
+use tracing::{Instrument as _, debug, error, info, warn};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 // Define stub info gatherer for generating .pyi files
@@ -101,9 +101,10 @@ fn set_active() {
 fn init_tracing(
     _to_stderr: bool,
     setup_log_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
-) -> Option<tokio::sync::mpsc::UnboundedReceiver<String>> {
+    #[cfg(feature = "tracing")] tracer: Option<coglet_core::trace::SdkTracer>,
+) -> Result<Option<tokio::sync::mpsc::UnboundedReceiver<String>>, String> {
     let filter = if std::env::var("RUST_LOG").is_ok() {
-        EnvFilter::from_default_env()
+        EnvFilter::from_default_env().add_directive("coglet::trace=trace".parse().unwrap())
     } else {
         let base_level = match std::env::var("COG_LOG_LEVEL").as_deref() {
             Ok("debug") => "debug",
@@ -113,7 +114,7 @@ fn init_tracing(
         };
 
         let filter_str = format!(
-            "coglet={level},coglet::setup=info,coglet::user=info,coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
+            "coglet={level},coglet::trace=trace,coglet::setup=info,coglet::user=info,coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
             level = base_level
         );
 
@@ -126,6 +127,11 @@ fn init_tracing(
     // Option<Layer> implements Layer, so this composes cleanly.
     let sentry_layer = sentry_integration::sentry_tracing_layer();
 
+    #[cfg(feature = "tracing")]
+    let otel_layer = tracer.map(|tracer| tracing_opentelemetry::layer().with_tracer(tracer));
+    #[cfg(not(feature = "tracing"))]
+    let otel_layer = tracing_subscriber::layer::Identity::new();
+
     if let Some(tx) = setup_log_tx {
         let accumulator = coglet_core::SetupLogAccumulator::new(tx);
 
@@ -133,33 +139,37 @@ fn init_tracing(
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
                 .with(sentry_layer)
+                .with(otel_layer)
                 .with(accumulator)
                 .with(fmt::layer().json().with_writer(std::io::stderr));
-            let _ = subscriber.try_init();
+            subscriber.try_init().map_err(|error| error.to_string())?;
         } else {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
                 .with(sentry_layer)
+                .with(otel_layer)
                 .with(accumulator)
                 .with(fmt::layer().with_writer(std::io::stderr));
-            let _ = subscriber.try_init();
+            subscriber.try_init().map_err(|error| error.to_string())?;
         }
-        None
+        Ok(None)
     } else {
         if use_json {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
                 .with(sentry_layer)
+                .with(otel_layer)
                 .with(fmt::layer().json().with_writer(std::io::stderr));
-            let _ = subscriber.try_init();
+            subscriber.try_init().map_err(|error| error.to_string())?;
         } else {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
                 .with(sentry_layer)
+                .with(otel_layer)
                 .with(fmt::layer().with_writer(std::io::stderr));
-            let _ = subscriber.try_init();
+            subscriber.try_init().map_err(|error| error.to_string())?;
         }
-        None
+        Ok(None)
     }
 }
 
@@ -331,8 +341,26 @@ fn serve_impl(
     // process exit to ensure pending events are flushed.
     let _sentry_guard = sentry_integration::init_sentry();
 
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|error| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error.to_string()))?;
+
+    #[cfg(feature = "tracing")]
+    let trace_runtime = {
+        let _entered = rt.enter();
+        coglet_core::trace::TracingRuntime::from_env(coglet_core::trace::ProcessRole::Parent)
+    };
+
     let (setup_log_tx, setup_log_rx) = tokio::sync::mpsc::unbounded_channel();
-    init_tracing(false, Some(setup_log_tx));
+    #[cfg(feature = "tracing")]
+    init_tracing(
+        false,
+        Some(setup_log_tx),
+        trace_runtime.as_ref().map(|runtime| runtime.tracer()),
+    )
+    .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
+    #[cfg(not(feature = "tracing"))]
+    init_tracing(false, Some(setup_log_tx))
+        .map_err(|error| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error))?;
 
     let build = BuildInfo::new();
     info!(
@@ -380,31 +408,42 @@ fn serve_impl(
                 .with_health(Health::Unknown)
                 .with_version(version),
         );
-        return py.detach(|| {
-            let rt = tokio::runtime::Runtime::new()
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        let result = py.detach(|| {
             rt.block_on(async {
                 http_serve(config, service)
                     .await
                     .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
             })
         });
+        #[cfg(feature = "tracing")]
+        if let Some(runtime) = trace_runtime.as_ref() {
+            runtime.shutdown();
+        }
+        return result;
     };
 
     info!(predictor_ref = %pred_ref, is_train, "Using subprocess isolation");
-    serve_subprocess(
+    let result = serve_subprocess(
         py,
+        &rt,
         pred_ref,
         config,
         version,
         is_train,
         setup_log_rx,
         upload_url,
-    )
+    );
+    #[cfg(feature = "tracing")]
+    if let Some(runtime) = trace_runtime.as_ref() {
+        runtime.shutdown();
+    }
+    result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn serve_subprocess(
     py: Python<'_>,
+    rt: &tokio::runtime::Runtime,
     pred_ref: String,
     config: ServerConfig,
     version: VersionInfo,
@@ -446,77 +485,79 @@ fn serve_subprocess(
 
     let service_clone = Arc::clone(&service);
     py.detach(|| {
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-
         rt.block_on(async {
             let setup_result = SetupResult::starting();
             service_clone.set_setup_result(setup_result.clone()).await;
 
             let setup_service = Arc::clone(&service_clone);
-            tokio::spawn(async move {
-                info!("Spawning worker subprocess");
-                let spawn_start = std::time::Instant::now();
-                match coglet_core::orchestrator::spawn_worker(orch_config, &mut setup_log_rx).await
-                {
-                    Ok(ready) => {
-                        let spawn_elapsed = spawn_start.elapsed();
-                        debug!(
-                            elapsed_ms = spawn_elapsed.as_millis() as u64,
-                            "Worker ready, configuring service"
-                        );
+            let setup_span = coglet_core::cog_span!(info_span, "cog.setup");
+            tokio::spawn(
+                async move {
+                    info!("Spawning worker subprocess");
+                    let spawn_start = std::time::Instant::now();
+                    match coglet_core::orchestrator::spawn_worker(orch_config, &mut setup_log_rx)
+                        .await
+                    {
+                        Ok(ready) => {
+                            let spawn_elapsed = spawn_start.elapsed();
+                            debug!(
+                                elapsed_ms = spawn_elapsed.as_millis() as u64,
+                                "Worker ready, configuring service"
+                            );
 
-                        let num_slots = ready.handle.slot_ids().len();
-                        debug!(num_slots, "Setting up orchestrator on service");
+                            let num_slots = ready.handle.slot_ids().len();
+                            debug!(num_slots, "Setting up orchestrator on service");
 
-                        setup_service
-                            .set_orchestrator(ready.pool, Arc::new(ready.handle))
-                            .await;
-                        debug!("Transitioning health to Ready");
-                        setup_service.set_health(Health::Ready).await;
+                            setup_service
+                                .set_orchestrator(ready.pool, Arc::new(ready.handle))
+                                .await;
+                            debug!("Transitioning health to Ready");
+                            setup_service.set_health(Health::Ready).await;
 
-                        if let Some(s) = ready.schema {
-                            debug!("Setting OpenAPI schema on service");
-                            setup_service.set_schema(s).await;
-                        } else {
-                            debug!("No OpenAPI schema provided by worker");
+                            if let Some(s) = ready.schema {
+                                debug!("Setting OpenAPI schema on service");
+                                setup_service.set_schema(s).await;
+                            } else {
+                                debug!("No OpenAPI schema provided by worker");
+                            }
+
+                            let mode = if is_train { "train" } else { "predict" };
+                            info!(num_slots, mode, "Server ready");
+
+                            // Drain final logs (includes "Server ready" above)
+                            let final_logs = coglet_core::drain_accumulated_logs(&mut setup_log_rx);
+                            debug!(
+                                initial_logs_len = ready.setup_logs.len(),
+                                final_logs_len = final_logs.len(),
+                                "Drained setup logs"
+                            );
+                            drop(setup_log_rx);
+
+                            // Combine initial + final logs
+                            let complete_logs = ready.setup_logs + &final_logs;
+                            setup_service
+                                .set_setup_result(setup_result.succeeded(complete_logs))
+                                .await;
+
+                            info!("Setup complete, now accepting requests");
                         }
-
-                        let mode = if is_train { "train" } else { "predict" };
-                        info!(num_slots, mode, "Server ready");
-
-                        // Drain final logs (includes "Server ready" above)
-                        let final_logs = coglet_core::drain_accumulated_logs(&mut setup_log_rx);
-                        debug!(
-                            initial_logs_len = ready.setup_logs.len(),
-                            final_logs_len = final_logs.len(),
-                            "Drained setup logs"
-                        );
-                        drop(setup_log_rx);
-
-                        // Combine initial + final logs
-                        let complete_logs = ready.setup_logs + &final_logs;
-                        setup_service
-                            .set_setup_result(setup_result.succeeded(complete_logs))
-                            .await;
-
-                        info!("Setup complete, now accepting requests");
-                    }
-                    Err(e) => {
-                        let spawn_elapsed = spawn_start.elapsed();
-                        error!(
-                            error = %e,
-                            elapsed_ms = spawn_elapsed.as_millis() as u64,
-                            "Worker initialization failed"
-                        );
-                        debug!("Transitioning health to SetupFailed");
-                        setup_service.set_health(Health::SetupFailed).await;
-                        setup_service
-                            .set_setup_result(setup_result.failed(e.to_string()))
-                            .await;
+                        Err(e) => {
+                            let spawn_elapsed = spawn_start.elapsed();
+                            error!(
+                                error = %e,
+                                elapsed_ms = spawn_elapsed.as_millis() as u64,
+                                "Worker initialization failed"
+                            );
+                            debug!("Transitioning health to SetupFailed");
+                            setup_service.set_health(Health::SetupFailed).await;
+                            setup_service
+                                .set_setup_result(setup_result.failed(e.to_string()))
+                                .await;
+                        }
                     }
                 }
-            });
+                .instrument(setup_span),
+            );
 
             http_serve(config, service_clone)
                 .await
@@ -540,14 +581,22 @@ async fn run_worker_with_init() -> Result<(), String> {
         .ok_or_else(|| "stdin closed before Init received".to_string())?
         .map_err(|e| format!("Failed to read Init: {}", e))?;
 
-    let (predictor_ref, num_slots, transport_info, is_train, _is_async) = match init_msg {
+    let (predictor_ref, num_slots, transport_info, is_train, _is_async, trace) = match init_msg {
         ControlRequest::Init {
             predictor_ref,
             num_slots,
             transport_info,
             is_train,
             is_async,
-        } => (predictor_ref, num_slots, transport_info, is_train, is_async),
+            trace,
+        } => (
+            predictor_ref,
+            num_slots,
+            transport_info,
+            is_train,
+            is_async,
+            trace,
+        ),
         other => {
             return Err(format!("Expected Init message, got: {:?}", other));
         }
@@ -575,6 +624,7 @@ async fn run_worker_with_init() -> Result<(), String> {
     let config = coglet_core::WorkerConfig {
         num_slots,
         setup_log_hook: Some(setup_log_hook),
+        trace,
     };
 
     coglet_core::run_worker(handler, config, transport_info)

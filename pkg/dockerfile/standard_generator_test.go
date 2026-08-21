@@ -1482,3 +1482,29 @@ predict: predict.py:Predictor
 	// Must NOT contain a version pin
 	require.NotContains(t, dockerfile, "cog==")
 }
+
+func TestObservabilityConfigUsesStagedPath(t *testing.T) {
+	gen := &StandardGenerator{Config: &config.Config{Observability: &config.Observability{
+		Config: "nested/telemetry.py",
+		Traces: &config.Tracing{Enabled: true, Sampler: "parentbased_always_off"},
+	}}}
+
+	require.Equal(t, "COPY --from=cog_build telemetry.py /.cog/telemetry.py", gen.observabilityConfigCopy())
+	require.Contains(t, gen.cogEnvVars(), `ENV COG_OBSERVABILITY_CONFIG="/.cog/telemetry.py"`)
+}
+
+func TestPythonTracingDependenciesAreOptIn(t *testing.T) {
+	disabled := &StandardGenerator{Config: &config.Config{Build: &config.Build{}}}
+	require.Empty(t, disabled.installPythonTracingDependencies())
+
+	enabled := &StandardGenerator{Config: &config.Config{
+		Build: &config.Build{},
+		Observability: &config.Observability{
+			Traces: &config.Tracing{Enabled: true},
+		},
+	}}
+	require.Contains(t, enabled.installPythonTracingDependencies(), PythonTracingRequirements)
+
+	enabled.strip = true
+	require.Contains(t, enabled.installPythonTracingDependencies(), StripDebugSymbolsCommand)
+}

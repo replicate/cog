@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -60,6 +61,7 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 	validateBuild(cfg, options, result)
 	validateEnvironment(cfg, result)
 	validateConcurrency(cfg, result)
+	validateObservability(cfg, options, result)
 	validateModel(cfg, result)
 	validateWeights(cfg, result)
 
@@ -75,6 +77,123 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 	}
 
 	return result
+}
+
+func validateObservability(cfg *configFile, opts *validateOptions, result *ValidationResult) {
+	if cfg.Observability == nil {
+		return
+	}
+	if cfg.Observability.Config != nil {
+		validateObservabilityConfig(*cfg.Observability.Config, opts, result)
+		if cfg.Observability.Traces == nil || cfg.Observability.Traces.Enabled == nil || !*cfg.Observability.Traces.Enabled {
+			result.AddError(&ValidationError{Field: "observability.config", Value: *cfg.Observability.Config, Message: "requires observability.traces.enabled to be true"})
+		}
+	}
+	if cfg.Observability.Traces == nil {
+		return
+	}
+
+	traces := cfg.Observability.Traces
+	if traces.Enabled == nil {
+		result.AddError(&ValidationError{Field: "observability.traces.enabled", Message: "is required"})
+	}
+
+	const defaultSampler = "parentbased_always_off"
+	samplers := map[string]bool{
+		"always_on":                true,
+		"always_off":               true,
+		"traceidratio":             true,
+		"parentbased_always_on":    true,
+		"parentbased_always_off":   true,
+		"parentbased_traceidratio": true,
+	}
+	samplersWithRatio := map[string]bool{
+		"traceidratio":             true,
+		"parentbased_traceidratio": true,
+	}
+
+	sampler := defaultSampler
+	if traces.Sampler != nil {
+		sampler = *traces.Sampler
+		if !samplers[sampler] {
+			result.AddError(&ValidationError{Field: "observability.traces.sampler", Value: sampler, Message: "must be a supported OpenTelemetry sampler"})
+		}
+	}
+
+	if traces.SamplerArg != nil {
+		value := *traces.SamplerArg
+		if !samplersWithRatio[sampler] {
+			result.AddError(&ValidationError{Field: "observability.traces.sampler_arg", Value: value, Message: "is only valid for ratio samplers"})
+		} else if ratio, err := strconv.ParseFloat(value, 64); err != nil || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < 0 || ratio > 1 {
+			result.AddError(&ValidationError{Field: "observability.traces.sampler_arg", Value: value, Message: "must be a number between 0 and 1"})
+		}
+	}
+	if samplersWithRatio[sampler] && traces.SamplerArg == nil {
+		result.AddError(&ValidationError{Field: "observability.traces.sampler_arg", Message: "is required for ratio samplers"})
+	}
+
+	if traces.TraceHeader != nil {
+		header := *traces.TraceHeader
+		validHeader := regexp.MustCompile(`^[!#$%&'*+.^_\x60|~0-9A-Za-z-]+$`)
+		reserved := map[string]bool{"authorization": true, "cookie": true, "host": true, "traceparent": true, "tracestate": true}
+		if !validHeader.MatchString(header) || reserved[strings.ToLower(header)] {
+			result.AddError(&ValidationError{Field: "observability.traces.trace_header", Value: header, Message: "must be a valid, non-reserved HTTP header name"})
+		}
+	}
+
+	if traces.TraceHeaderFormat != nil {
+		format := *traces.TraceHeaderFormat
+		if format != "w3c" && format != "jaeger" {
+			result.AddError(&ValidationError{Field: "observability.traces.trace_header_format", Value: format, Message: "must be w3c or jaeger"})
+		}
+	}
+}
+
+func validateObservabilityConfig(configPath string, opts *validateOptions, result *ValidationResult) {
+	validationError := &ValidationError{Field: "observability.config", Value: configPath}
+	cleanPath := filepath.Clean(configPath)
+	pathComponents := strings.Split(filepath.ToSlash(configPath), "/")
+	if configPath == "" || filepath.IsAbs(configPath) || cleanPath == "." || slices.Contains(pathComponents, ".") || slices.Contains(pathComponents, "..") {
+		validationError.Message = "must be a project-relative Python file"
+		result.AddError(validationError)
+		return
+	}
+	if filepath.Ext(cleanPath) != ".py" {
+		validationError.Message = "must be a Python file ending in .py"
+		result.AddError(validationError)
+		return
+	}
+	if opts.projectDir == "" {
+		return
+	}
+
+	projectRoot, err := filepath.EvalSymlinks(opts.projectDir)
+	if err != nil {
+		validationError.Message = "project directory cannot be resolved"
+		result.AddError(validationError)
+		return
+	}
+	resolvedPath, err := filepath.EvalSymlinks(filepath.Join(projectRoot, cleanPath))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			validationError.Message = "file does not exist"
+		} else {
+			validationError.Message = "file cannot be resolved"
+		}
+		result.AddError(validationError)
+		return
+	}
+	relativePath, err := filepath.Rel(projectRoot, resolvedPath)
+	if err != nil || relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
+		validationError.Message = "must resolve inside the project directory"
+		result.AddError(validationError)
+		return
+	}
+	info, err := os.Stat(resolvedPath)
+	if err != nil || !info.Mode().IsRegular() {
+		validationError.Message = "must be a regular file"
+		result.AddError(validationError)
+	}
 }
 
 // validateSchema validates the config against the JSON schema.

@@ -60,6 +60,7 @@ Reads `cog.yaml` and validates/completes the configuration:
 - Validates Python version (3.10-3.13)
 - Auto-detects CUDA version from PyTorch/TensorFlow requirements
 - Resolves package versions against compatibility matrix
+- Validates optional Python observability configuration inside the project
 
 ```mermaid
 flowchart LR
@@ -84,6 +85,8 @@ flowchart LR
 ### 2. Dockerfile Generator
 
 The generator produces a Dockerfile from the validated config.
+
+When `observability.config` is set, build orchestration validates the project-local file and stages it in the private `cog_build` context. Generated and custom-Dockerfile wrapper layers copy that artifact to `/.cog/telemetry.py`; the original user path is never exposed to runtime path resolution.
 
 #### Generated Dockerfile Sections
 

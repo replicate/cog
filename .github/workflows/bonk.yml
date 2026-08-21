@@ -33,16 +33,16 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_GATEWAY_BASE_URL: https://gateway.ai.cloudflare.com/v1/${{ vars.CLOUDFLARE_ACCOUNT_ID }}/${{ vars.CLOUDFLARE_GATEWAY_ID }}/compat
-          # Must stay below the job's timeout-minutes. The harness defaults to 45m, so 25m gives opencode enough time to retry
-          OPENCODE_TIMEOUT: 25m
-          OPENCODE_PRINT_LOGS: '1'
+          # Match the job timeout; the harness defaults to 45m.
+          OPENCODE_TIMEOUT: 30m
+          OPENCODE_PRINT_LOGS: "1"
           OPENCODE_LOG_LEVEL: INFO
         with:
           oidc_base_url: https://ask-bonk.cloudflare-exponent.workers.dev/auth
-          model: 'cf-gateway/nemotron-3-120b-a12b'
-          mentions: '/bonk,@ask-bonk'
-          forks: 'false'
+          model: "cf-gateway/deepseek-v4-flash-0731"
+          mentions: "/bonk,@ask-bonk"
+          forks: "false"
           permissions: write
-          opencode_version: '1.18.13'
+          opencode_version: "1.18.13"
           # token_permissions defaults to WRITE so bonk can push commits
           # when asked via /bonk.

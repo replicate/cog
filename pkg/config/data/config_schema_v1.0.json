@@ -204,6 +204,43 @@
         }
       }
     },
+    "observability": {
+      "$id": "#/properties/observability",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\.py$"
+        },
+        "traces": {
+          "$id": "#/properties/observability/properties/traces",
+          "type": "object",
+          "required": ["enabled"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "sampler": {
+              "type": "string",
+              "enum": ["always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_always_off", "parentbased_traceidratio"]
+            },
+            "sampler_arg": {
+              "type": "string"
+            },
+            "trace_header": {
+              "type": "string"
+            },
+            "trace_header_format": {
+              "type": "string",
+              "enum": ["w3c", "jaeger"]
+            }
+          }
+        }
+      }
+    },
     "environment": {
       "$id": "#/properties/properties/environment",
       "type": [

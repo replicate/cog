@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -192,6 +194,68 @@ func TestValidateConfigFileConcurrencyDeprecationWithoutBuild(t *testing.T) {
 	require.False(t, result.HasErrors())
 	require.Len(t, result.Warnings, 1)
 	require.Equal(t, "concurrency.max", result.Warnings[0].Field)
+}
+
+func TestValidateObservabilityTracing(t *testing.T) {
+	tests := []struct {
+		name       string
+		traces     *tracingFile
+		wantErrors bool
+	}{
+		{name: "disabled", traces: &tracingFile{Enabled: new(false)}},
+		{name: "default sampler", traces: &tracingFile{Enabled: new(true)}},
+		{name: "ratio sampler", traces: &tracingFile{Enabled: new(true), Sampler: new("parentbased_traceidratio"), SamplerArg: new("0.25")}},
+		{name: "custom header default format", traces: &tracingFile{Enabled: new(true), TraceHeader: new("x-trace")}},
+		{name: "missing enabled", traces: &tracingFile{}, wantErrors: true},
+		{name: "unsupported sampler", traces: &tracingFile{Enabled: new(true), Sampler: new("random")}, wantErrors: true},
+		{name: "ratio on non-ratio sampler", traces: &tracingFile{Enabled: new(true), Sampler: new("always_on"), SamplerArg: new("0.5")}, wantErrors: true},
+		{name: "invalid ratio", traces: &tracingFile{Enabled: new(true), Sampler: new("traceidratio"), SamplerArg: new("2")}, wantErrors: true},
+		{name: "invalid header format", traces: &tracingFile{Enabled: new(true), TraceHeaderFormat: new("b3")}, wantErrors: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := &configFile{Observability: &observabilityFile{Traces: test.traces}}
+			result := ValidateConfigFile(cfg)
+			require.Equal(t, test.wantErrors, result.HasErrors(), "errors: %v", result.Errors)
+		})
+	}
+}
+
+func TestValidateObservabilityConfig(t *testing.T) {
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "telemetry.py"), []byte("# telemetry"), 0o644))
+	outsideDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outsideDir, "telemetry.py"), []byte("# telemetry"), 0o644))
+	require.NoError(t, os.Symlink(filepath.Join(outsideDir, "telemetry.py"), filepath.Join(projectDir, "outside.py")))
+
+	tests := []struct {
+		name       string
+		configPath string
+		traces     *tracingFile
+		wantError  string
+	}{
+		{name: "valid", configPath: "telemetry.py", traces: &tracingFile{Enabled: new(true)}},
+		{name: "missing traces", configPath: "telemetry.py", wantError: "requires observability.traces.enabled"},
+		{name: "disabled traces", configPath: "telemetry.py", traces: &tracingFile{Enabled: new(false)}, wantError: "requires observability.traces.enabled"},
+		{name: "absolute", configPath: filepath.Join(projectDir, "telemetry.py"), traces: &tracingFile{Enabled: new(true)}, wantError: "project-relative"},
+		{name: "parent component", configPath: "nested/../telemetry.py", traces: &tracingFile{Enabled: new(true)}, wantError: "project-relative"},
+		{name: "wrong extension", configPath: "telemetry.txt", traces: &tracingFile{Enabled: new(true)}, wantError: "ending in .py"},
+		{name: "missing file", configPath: "missing.py", traces: &tracingFile{Enabled: new(true)}, wantError: "file does not exist"},
+		{name: "symlink escape", configPath: "outside.py", traces: &tracingFile{Enabled: new(true)}, wantError: "inside the project directory"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := &configFile{Observability: &observabilityFile{Config: new(test.configPath), Traces: test.traces}}
+			result := ValidateConfigFile(cfg, WithProjectDir(projectDir))
+			if test.wantError == "" {
+				require.False(t, result.HasErrors(), "errors: %v", result.Errors)
+				return
+			}
+			require.ErrorContains(t, result.Err(), test.wantError)
+		})
+	}
 }
 
 func TestValidateConfigFileDeprecatedPythonPackages(t *testing.T) {

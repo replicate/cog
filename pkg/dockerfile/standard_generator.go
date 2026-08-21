@@ -28,6 +28,9 @@ const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const UVVersion = "0.9.26"
 const uvCacheMount = "--mount=type=cache,target=/root/.cache/uv"
 const uvPip = "uv pip"
+const observabilityConfigBuildPath = "telemetry.py"
+const observabilityConfigRuntimePath = "/.cog/telemetry.py"
+const PythonTracingRequirements = "opentelemetry-exporter-otlp-proto-http==1.44.0 opentelemetry-exporter-otlp-proto-grpc==1.44.0"
 const uvBreakSystemPackages = "--break-system-packages"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
@@ -294,6 +297,9 @@ func (g *StandardGenerator) GenerateModelBase(ctx context.Context) (string, erro
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
 	}
+	if step := g.observabilityConfigCopy(); step != "" {
+		steps = append(steps, step)
+	}
 	steps = append(steps, g.cogEnvVars()...)
 	steps = append(steps, `CMD ["python", "-m", "cog.server.http"]`)
 	return strings.Join(steps, "\n"), nil
@@ -349,6 +355,9 @@ func (g *StandardGenerator) GenerateModelBaseWithSeparateWeights(ctx context.Con
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
 	)
+	if step := g.observabilityConfigCopy(); step != "" {
+		base = append(base, step)
+	}
 	base = append(base, g.cogEnvVars()...)
 	base = append(base,
 		`CMD ["python", "-m", "cog.server.http"]`,
@@ -379,7 +388,34 @@ func (g *StandardGenerator) cogEnvVars() []string {
 	if g.Config.Concurrency != nil && g.Config.Concurrency.Max > 0 {
 		envs = append(envs, fmt.Sprintf(`ENV COG_MAX_CONCURRENCY=%d`, g.Config.Concurrency.Max))
 	}
+	if g.Config.Observability != nil && g.Config.Observability.Traces != nil && g.Config.Observability.Traces.Enabled {
+		traces := g.Config.Observability.Traces
+		envs = append(envs,
+			`ENV COG_TRACE_CONFIGURED=true`,
+			`ENV COG_TRACE_ENABLED=true`,
+			fmt.Sprintf(`ENV COG_TRACE_SAMPLER="%s"`, traces.Sampler),
+		)
+		if traces.SamplerArg != "" {
+			envs = append(envs, fmt.Sprintf(`ENV COG_TRACE_SAMPLER_ARG="%s"`, traces.SamplerArg))
+		}
+		if traces.TraceHeader != "" {
+			envs = append(envs,
+				fmt.Sprintf(`ENV COG_TRACE_HEADER="%s"`, traces.TraceHeader),
+				fmt.Sprintf(`ENV COG_TRACE_HEADER_FORMAT="%s"`, traces.TraceHeaderFormat),
+			)
+		}
+		if g.Config.Observability.Config != "" {
+			envs = append(envs, `ENV COG_OBSERVABILITY_CONFIG="`+observabilityConfigRuntimePath+`"`)
+		}
+	}
 	return envs
+}
+
+func (g *StandardGenerator) observabilityConfigCopy() string {
+	if g.Config.Observability == nil || g.Config.Observability.Traces == nil || !g.Config.Observability.Traces.Enabled || g.Config.Observability.Config == "" {
+		return ""
+	}
+	return "COPY --from=cog_build " + observabilityConfigBuildPath + " " + observabilityConfigRuntimePath
 }
 
 func (g *StandardGenerator) cpCogYaml() string {
@@ -704,8 +740,22 @@ func (g *StandardGenerator) installCog() (string, error) {
 		}
 		installLines += cogInstall
 	}
+	if tracingInstall := g.installPythonTracingDependencies(); tracingInstall != "" {
+		installLines += "\n" + tracingInstall
+	}
 
 	return installLines, nil
+}
+
+func (g *StandardGenerator) installPythonTracingDependencies() string {
+	if g.Config.Observability == nil || g.Config.Observability.Traces == nil || !g.Config.Observability.Traces.Enabled {
+		return ""
+	}
+	install := "RUN " + uvCacheMount + " " + uvPip + " install " + g.uvPipInstallFlags("--no-cache") + " " + PythonTracingRequirements
+	if g.strip {
+		install += " && " + StripDebugSymbolsCommand
+	}
+	return install
 }
 
 // installCogFromPyPI installs the cog SDK from PyPI.

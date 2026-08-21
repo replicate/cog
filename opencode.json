@@ -9,12 +9,14 @@
         "apiKey": "{env:CLOUDFLARE_API_TOKEN}"
       },
       "models": {
-        "nemotron-3-120b-a12b": {
-          "id": "workers-ai/@cf/nvidia/nemotron-3-120b-a12b",
-          "name": "NVIDIA Nemotron 3 Super (Workers AI via Gateway)",
+        "deepseek-v4-flash-0731": {
+          "id": "workers-ai/@cf/deepseek-ai/deepseek-v4-flash-0731",
+          "name": "DeepSeek V4 Flash 0731 (Workers AI via Gateway)",
+          "reasoning": true,
+          "tool_call": true,
           "limit": {
-            "context": 262144,
-            "output": 64000
+            "context": 1048576,
+            "output": 65536
           }
         }
       }

@@ -218,8 +218,6 @@ pub fn redirect_fds_for_subprocess_isolation(
     // subprocess stderr. Both will be routed to coglet::user target. The original stderr
     // is still available at fd 101 but unused after redirection.
 
-    tracing::info!("File descriptor redirection complete");
-
     // Safety: We own these fds
     Ok(ControlChannelFds {
         stdin_fd: unsafe { OwnedFd::from_raw_fd(CONTROL_STDIN_FD) },

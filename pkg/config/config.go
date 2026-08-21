@@ -75,6 +75,19 @@ type Concurrency struct {
 	Max int `json:"max,omitempty" yaml:"max"`
 }
 
+type Observability struct {
+	Config string   `json:"config,omitempty" yaml:"config,omitempty"`
+	Traces *Tracing `json:"traces,omitempty" yaml:"traces,omitempty"`
+}
+
+type Tracing struct {
+	Enabled           bool   `json:"enabled" yaml:"enabled"`
+	Sampler           string `json:"sampler,omitempty" yaml:"sampler,omitempty"`
+	SamplerArg        string `json:"sampler_arg,omitempty" yaml:"sampler_arg,omitempty"`
+	TraceHeader       string `json:"trace_header,omitempty" yaml:"trace_header,omitempty"`
+	TraceHeaderFormat string `json:"trace_header_format,omitempty" yaml:"trace_header_format,omitempty"`
+}
+
 // WeightSourceConfig describes where to import weights from.
 // This is the "source" sub-object inside a weights entry.
 type WeightSourceConfig struct {
@@ -106,14 +119,15 @@ func WeightNames(ws []WeightSource) []string {
 }
 
 type Config struct {
-	Build       *Build         `json:"build" yaml:"build"`
-	Image       string         `json:"image,omitempty" yaml:"image,omitempty"`
-	Model       string         `json:"model,omitempty" yaml:"model,omitempty"`
-	Predict     string         `json:"predict,omitempty" yaml:"predict"`
-	Train       string         `json:"train,omitempty" yaml:"train,omitempty"`
-	Concurrency *Concurrency   `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
-	Environment []string       `json:"environment,omitempty" yaml:"environment,omitempty"`
-	Weights     []WeightSource `json:"weights,omitempty" yaml:"weights,omitempty"`
+	Build         *Build         `json:"build" yaml:"build"`
+	Image         string         `json:"image,omitempty" yaml:"image,omitempty"`
+	Model         string         `json:"model,omitempty" yaml:"model,omitempty"`
+	Predict       string         `json:"predict,omitempty" yaml:"predict"`
+	Train         string         `json:"train,omitempty" yaml:"train,omitempty"`
+	Concurrency   *Concurrency   `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
+	Observability *Observability `json:"observability,omitempty" yaml:"observability,omitempty"`
+	Environment   []string       `json:"environment,omitempty" yaml:"environment,omitempty"`
+	Weights       []WeightSource `json:"weights,omitempty" yaml:"weights,omitempty"`
 
 	parsedEnvironment map[string]string
 }

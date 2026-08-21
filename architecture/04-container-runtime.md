@@ -385,6 +385,18 @@ Models can record custom metrics via `self.record_metric(name, value, mode)` in 
 
 Metrics appear in the prediction response's `metrics` object alongside the built-in `predict_time`.
 
+## Distributed Tracing
+
+Opt-in OpenTelemetry tracing uses a provider in the parent process, a provider in the worker process, and a Python provider installed before predictor import. The parent and worker exchange an optional W3C carrier alongside prediction IPC. Transport context remains separate from the user-owned request `context` map.
+
+Models may provide `observability.config`, which Cog validates and stages at a fixed image path. During worker setup, Cog loads that module, installs the `TracerProvider` returned by `create_tracer_provider()`, and then calls optional `configure_instrumentation()` before predictor import. Cog owns provider flush and shutdown. Configuration failures stop model setup because the user explicitly selected that module.
+
+The framework trace covers HTTP handling, validation, the logical prediction lifetime, worker execution, input preparation, predictor invocation, output upload, and setup. Model code creates ordinary child spans through `opentelemetry.trace`.
+
+The `Prediction` state object owns the logical prediction span so asynchronous and SSE requests can return before the span reaches a terminal state. Signed output uploads never receive trace headers. Webhooks receive the active prediction context.
+
+Framework tracing is inert unless the image enables it and the runtime supplies a collector endpoint. A configured Python provider may run without that endpoint, but it then emits model spans without framework parents. The disabled path creates no provider, exporter, background telemetry thread, connection, or real framework span.
+
 ## User-Defined Healthchecks
 
 Models can implement a custom healthcheck that runs alongside the built-in health state machine. The parent sends `Healthcheck { id }` on the control channel; the worker runs the user's healthcheck and responds with `HealthcheckResult { id, status, error }`.
@@ -399,6 +411,8 @@ If the healthcheck fails, the HTTP `/health-check` endpoint returns `UNHEALTHY` 
 | `COG_LOG_LEVEL`                  | INFO    | Logging verbosity (ignored if `RUST_LOG` is set) |
 | `COG_MAX_CONCURRENCY`            | 1       | Number of concurrent prediction slots            |
 | `COG_SETUP_TIMEOUT`              | none    | Setup timeout in seconds (0 is ignored)          |
+| `COG_TRACE_ENABLED`              | false   | Runtime tracing switch for an opted-in image     |
+| `COG_OBSERVABILITY_CONFIG`       | none    | Internal path to staged Python telemetry config  |
 | `COG_THROTTLE_RESPONSE_INTERVAL` | 0.5s    | Webhook response throttling interval             |
 | `LOG_FORMAT`                     | json    | Set to `console` for human-readable log output   |
 

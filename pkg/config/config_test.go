@@ -851,6 +851,15 @@ build:
 	require.NoError(t, err)
 }
 
+func TestObservabilityConfigParsing(t *testing.T) {
+	cfgFile, err := parseBytes([]byte("observability:\n  config: telemetry.py\n  traces:\n    enabled: true\n"))
+	require.NoError(t, err)
+	cfg, err := configFileToConfig(cfgFile)
+	require.NoError(t, err)
+	require.Equal(t, "telemetry.py", cfg.Observability.Config)
+	require.True(t, cfg.Observability.Traces.Enabled)
+}
+
 func TestConfigMarshal(t *testing.T) {
 	cfg := &Config{
 		Build: &Build{

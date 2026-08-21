@@ -18,6 +18,7 @@ use futures::{SinkExt, StreamExt};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
+use tracing::Instrument as _;
 
 use crate::PredictionOutput;
 use crate::bridge::codec::JsonCodec;
@@ -52,7 +53,7 @@ async fn upload_file(
         .timeout(std::time::Duration::from_secs(25))
         .send()
         .await
-        .map_err(|e| format!("upload request failed: {e}"))?;
+        .map_err(|e| format!("upload request failed: {}", e.without_url()))?;
 
     if !resp.status().is_success() {
         return Err(format!("upload returned status {}", resp.status()));
@@ -363,7 +364,7 @@ struct RegisterPredictionMessage {
 }
 
 pub struct OrchestratorHandle {
-    child: Child,
+    child: tokio::sync::Mutex<Option<Child>>,
     ctrl_writer:
         Arc<tokio::sync::Mutex<FramedWrite<tokio::process::ChildStdin, JsonCodec<ControlRequest>>>>,
     register_tx: mpsc::Sender<RegisterPredictionMessage>,
@@ -434,11 +435,33 @@ impl Orchestrator for OrchestratorHandle {
     }
 
     async fn shutdown(&self) -> Result<(), OrchestratorError> {
-        let mut writer = self.ctrl_writer.lock().await;
-        writer
-            .send(ControlRequest::Shutdown)
-            .await
-            .map_err(|e| OrchestratorError::Protocol(format!("failed to send shutdown: {}", e)))
+        {
+            let mut writer = self.ctrl_writer.lock().await;
+            writer.send(ControlRequest::Shutdown).await.map_err(|e| {
+                OrchestratorError::Protocol(format!("failed to send shutdown: {}", e))
+            })?;
+        }
+
+        let mut child_guard = self.child.lock().await;
+        let Some(child) = child_guard.as_mut() else {
+            return Ok(());
+        };
+        let wait_result = tokio::time::timeout(Duration::from_secs(10), child.wait()).await;
+        if let Ok(Err(error)) = wait_result {
+            return Err(OrchestratorError::Protocol(format!(
+                "failed to wait for worker: {error}"
+            )));
+        }
+        if wait_result.is_err() {
+            child.start_kill().map_err(|error| {
+                OrchestratorError::Protocol(format!("failed to kill worker: {error}"))
+            })?;
+            child.wait().await.map_err(|error| {
+                OrchestratorError::Protocol(format!("failed to reap worker: {error}"))
+            })?;
+        }
+        *child_guard = None;
+        Ok(())
     }
 }
 
@@ -456,9 +479,13 @@ impl OrchestratorHandle {
     }
 
     pub async fn wait(&mut self) -> Result<(), OrchestratorError> {
-        self.child.wait().await.map_err(|e| {
-            OrchestratorError::Protocol(format!("failed to wait for worker: {}", e))
-        })?;
+        let mut child = self.child.lock().await;
+        if let Some(child) = child.as_mut() {
+            child.wait().await.map_err(|e| {
+                OrchestratorError::Protocol(format!("failed to wait for worker: {}", e))
+            })?;
+        }
+        *child = None;
         Ok(())
     }
 }
@@ -516,6 +543,16 @@ pub async fn spawn_worker(
             transport_info: child_transport_info,
             is_train: config.is_train,
             is_async: config.is_async,
+            trace: {
+                #[cfg(feature = "tracing")]
+                {
+                    crate::trace::carrier_from_span(&tracing::Span::current())
+                }
+                #[cfg(not(feature = "tracing"))]
+                {
+                    None
+                }
+            },
         })
         .await
         .map_err(|e| OrchestratorError::Protocol(format!("failed to send Init: {}", e)))?;
@@ -666,7 +703,7 @@ pub async fn spawn_worker(
     let ctrl_writer = Arc::new(tokio::sync::Mutex::new(ctrl_writer));
 
     let handle = OrchestratorHandle {
-        child,
+        child: tokio::sync::Mutex::new(Some(child)),
         ctrl_writer: Arc::clone(&ctrl_writer),
         register_tx,
         healthcheck_tx,
@@ -1113,12 +1150,27 @@ async fn run_event_loop(
                                 if let Some(ref url) = upload_url {
                                     // Spawn upload task so we don't block the event loop
                                     let pred = predictions.get(&slot_id).cloned();
+                                    #[cfg(feature = "tracing")]
+                                    let trace = pred.as_ref().and_then(|pred| {
+                                        try_lock_prediction(pred).and_then(|prediction| prediction.trace_carrier())
+                                    });
                                     let endpoint = ensure_trailing_slash(url);
                                     let basename = std::path::Path::new(&filename)
                                         .file_name()
                                         .and_then(|n| n.to_str())
                                         .unwrap_or("output")
                                         .to_string();
+                                    let upload_span = crate::cog_span!(
+                                        info_span,
+                                        "cog.prediction.upload_output",
+                                        "cog.output.bytes" = bytes.len() as u64,
+                                        "cog.output.mime_type" = %mime,
+                                        "otel.kind" = "client"
+                                    );
+                                    #[cfg(feature = "tracing")]
+                                    if let Some(trace) = trace.as_ref() {
+                                        crate::trace::set_parent_from_carrier(&upload_span, trace);
+                                    }
                                     let handle = tokio::spawn(async move {
                                         match upload_file(&endpoint, &basename, &bytes, &mime).await {
                                             Ok(url) => {
@@ -1132,7 +1184,7 @@ async fn run_event_loop(
                                                 tracing::error!(error = %e, "Failed to upload file output");
                                             }
                                         }
-                                    });
+                                    }.instrument(upload_span));
                                     pending_uploads.entry(slot_id).or_default().push(handle);
                                 } else {
                                     // No upload URL — base64-encode as data URI

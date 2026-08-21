@@ -11,12 +11,17 @@ nox.options.default_venv_backend = "uv"
 PYTHON_VERSIONS = ["3.10", "3.11", "3.12", "3.13"]
 PYTHON_DEFAULT = "3.13"
 
+TRACING_DEPS = [
+    "opentelemetry-exporter-otlp-proto-http==1.44.0",
+    "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
+]
 # Test dependencies (mirrored from pyproject.toml [dependency-groups].test)
 TEST_DEPS = [
     "pytest",
     "pytest-timeout",
     "pytest-xdist",
     "pytest-cov",
+    *TRACING_DEPS,
 ]
 
 
@@ -97,7 +102,7 @@ def tests(session: nox.Session) -> None:
 def typecheck(session: nox.Session) -> None:
     """Run type checking with pyright."""
     _install_package(session)
-    session.install("pyright==1.1.375")
+    session.install("pyright==1.1.375", *TRACING_DEPS)
     session.run("pyright", *session.posargs)
 
 

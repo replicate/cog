@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 async-trait = "0.1.89"
 base64 = "0.22"
-coglet_core = { path = "../coglet", package = "coglet" }
+coglet_core = { path = "../coglet", package = "coglet", default-features = false }
 futures.workspace = true
 pyo3.workspace = true
 pyo3-async-runtimes.workspace = true
@@ -24,6 +24,7 @@ tokio-util = { workspace = true, features = ["codec"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 sentry.workspace = true
+tracing-opentelemetry = { version = "=0.33.0", default-features = false, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -33,4 +34,7 @@ pyo3 = { workspace = true, features = ["auto-initialize"] }
 tempfile = "3"
 
 [features]
+default = ["tracing", "tracing-grpc"]
 extension-module = ["pyo3/extension-module"]
+tracing = ["coglet_core/tracing", "dep:tracing-opentelemetry"]
+tracing-grpc = ["tracing", "coglet_core/tracing-grpc"]

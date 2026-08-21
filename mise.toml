@@ -607,7 +607,10 @@ run = [{ tasks = ["typecheck:rust", "typecheck:python"] }]
 
 [tasks."typecheck:rust"]
 description = "Type check Rust code (cargo check)"
-run = "cargo check --manifest-path crates/Cargo.toml --workspace"
+run = [
+  "cargo check --manifest-path crates/Cargo.toml --workspace",
+  "cargo check --manifest-path crates/Cargo.toml --workspace --no-default-features",
+]
 
 [tasks."typecheck:python"]
 description = "Type check Python code"

@@ -2,7 +2,7 @@
 
 Streaming text generation with `HuggingFaceTB/SmolLM2-135M-Instruct`.
 
-This example shows how a Cog runner can yield text chunks as a model generates them, and how to consume those chunks with Server-Sent Events.
+This CPU-only example shows how a Cog runner can yield text chunks as a model generates them and how to consume those chunks with Server-Sent Events. It relies only on Cog's automatic framework tracing and contains no model-authored spans.
 
 ## Run a normal prediction
 
@@ -46,6 +46,8 @@ data: {"id":"streaming-demo","status":"succeeded",...}
 
 ## How it works
 
-`predict.py` defines `run() -> Iterator[str]`. Each `yield` becomes one streamed output chunk. The example uses Hugging Face `TextIteratorStreamer` to receive generated text from `model.generate()` while generation is still running.
+`run.py` defines `run() -> Iterator[str]`. Each `yield` becomes one streamed output chunk. The example uses Hugging Face `TextIteratorStreamer` to receive generated text from `model.generate()` while generation is still running.
+
+Configure the collector with `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_PROTOCOL` when starting the container. The automatic `cog.prediction.invoke` span covers the complete `run()` generator lifetime.
 
 The normal prediction response still contains the accumulated output for compatibility. Requesting `Accept: text/event-stream` is useful when clients want to display tokens as they arrive.

@@ -25,8 +25,15 @@ dependencies = [
   "requests>=2.25.0",
   "coglet>=0.1.0,<1.0",
 ]
-
 dynamic = ["version"]
+
+[project.optional-dependencies]
+tracing = [
+  "opentelemetry-api==1.44.0",
+  "opentelemetry-sdk==1.44.0",
+  "opentelemetry-exporter-otlp-proto-http==1.44.0",
+  "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
+]
 
 [dependency-groups]
 dev = [
@@ -40,6 +47,8 @@ test = [
     "pytest-timeout",
     "pytest-xdist",
     "pytest-cov",
+    "opentelemetry-exporter-otlp-proto-http==1.44.0",
+    "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
 ]
 
 [tool.setuptools_scm]
