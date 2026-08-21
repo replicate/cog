@@ -75,10 +75,11 @@ func testInstallPython(version string) string {
 COPY --from=ghcr.io/astral-sh/uv:`+UVVersion+` /uv /uvx /usr/local/bin/
 ENV UV_SYSTEM_PYTHON=true
 RUN uv python install %s && \
-	ln -sf $(uv python find %s) /usr/bin/python3
+	ln -sf $(uv python find %s) /usr/bin/python3 && \
+	ln -sf $(uv python find %s) /usr/local/bin/python
 ENV UV_PYTHON=%s
 ENV PATH="/usr/local/bin:$PATH"
-`, version, version, version)
+`, version, version, version, version)
 }
 
 func TestGenerateEmptyCPU(t *testing.T) {
@@ -617,6 +618,7 @@ predict: predict.py:Predictor
 
 			require.Contains(t, actual, `uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt`)
 			require.Contains(t, actual, `uv pip install --break-system-packages --no-cache cog`)
+			require.Contains(t, actual, `RUN ln -sf /usr/bin/python3 /usr/local/bin/python`)
 		})
 	}
 }

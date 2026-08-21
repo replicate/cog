@@ -214,6 +214,7 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 			envs,
 			aptInstalls,
 			g.installUV(),
+			g.installPythonAlias(),
 		}
 		// Install user packages before the SDK so that changing the SDK
 		// wheel (e.g. via --cog-ref or COG_SDK_WHEEL) does not invalidate
@@ -505,6 +506,13 @@ func (g *StandardGenerator) installPython() (string, error) {
 	return "", nil
 }
 
+func (g *StandardGenerator) installPythonAlias() string {
+	if g.IsUsingCogBaseImage() && version.GreaterOrEqual(g.Config.Build.CUDA, "13.0") {
+		return `RUN ln -sf /usr/bin/python3 /usr/local/bin/python`
+	}
+	return ""
+}
+
 func (g *StandardGenerator) installUV() string {
 	return `COPY --from=ghcr.io/astral-sh/uv:` + UVVersion + ` /uv /uvx /usr/local/bin/
 ENV UV_SYSTEM_PYTHON=true`
@@ -522,9 +530,10 @@ func (g *StandardGenerator) installPythonCUDA() (string, error) {
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
 ` + g.installUV() + "\n" + fmt.Sprintf(`RUN uv python install %s && \
-	ln -sf $(uv python find %s) /usr/bin/python3
+	ln -sf $(uv python find %s) /usr/bin/python3 && \
+	ln -sf $(uv python find %s) /usr/local/bin/python
 ENV UV_PYTHON=%s
-ENV PATH="/usr/local/bin:$PATH"`, py, py, py), nil
+ENV PATH="/usr/local/bin:$PATH"`, py, py, py, py), nil
 }
 
 // resolveCogWheelConfigs resolves and caches the cog and coglet wheel configs.
