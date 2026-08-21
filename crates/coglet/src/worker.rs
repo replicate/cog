@@ -497,8 +497,7 @@ pub async fn run_worker<H: PredictHandler>(
 
     crate::install_crypto_provider();
     #[cfg(feature = "tracing")]
-    let trace_runtime = crate::trace::TracingRuntime::from_env(crate::trace::ProcessRole::Worker)
-        .map_err(io::Error::other)?;
+    let trace_runtime = crate::trace::TracingRuntime::from_env(crate::trace::ProcessRole::Worker);
     #[cfg(feature = "tracing")]
     init_worker_tracing(
         setup_log_tx.clone(),

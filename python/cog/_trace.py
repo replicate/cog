@@ -59,7 +59,13 @@ def install_provider() -> None:
         module = _load_config(config_path)
         provider = _create_custom_provider(module)
     else:
-        provider = _create_default_provider()
+        try:
+            provider = _create_default_provider()
+        except Exception:
+            _logger.exception(
+                "Invalid OpenTelemetry tracing configuration; tracing disabled"
+            )
+            return
         if provider is None:
             return
 
@@ -107,10 +113,10 @@ def _create_custom_provider(module: ModuleType) -> TracerProvider:
 
 
 def _create_default_provider() -> TracerProvider | None:
-    endpoint = os.environ.get(
-        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
-        os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
-    ).rstrip("/")
+    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+    append_trace_path = endpoint is None
+    if endpoint is None:
+        endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "")
     if not endpoint:
         return None
 
@@ -123,7 +129,9 @@ def _create_default_provider() -> TracerProvider | None:
             OTLPSpanExporter as HttpOTLPSpanExporter,
         )
 
-        exporter = HttpOTLPSpanExporter(endpoint=f"{endpoint}/v1/traces")
+        exporter = HttpOTLPSpanExporter(
+            endpoint=_http_trace_endpoint(endpoint, append_trace_path)
+        )
     elif protocol == "grpc":
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
             OTLPSpanExporter as GrpcOTLPSpanExporter,
@@ -146,6 +154,21 @@ def _create_default_provider() -> TracerProvider | None:
     )
     provider.add_span_processor(BatchSpanProcessor(exporter))
     return provider
+
+
+def _http_trace_endpoint(endpoint: str, append_trace_path: bool) -> str:
+    if not append_trace_path:
+        return endpoint
+
+    suffix_start = min(
+        (index for delimiter in "?#" if (index := endpoint.find(delimiter)) >= 0),
+        default=len(endpoint),
+    )
+    path = endpoint[:suffix_start].rstrip("/")
+    suffix = endpoint[suffix_start:]
+    if path.endswith("/v1/traces"):
+        return f"{path}{suffix}"
+    return f"{path}/v1/traces{suffix}"
 
 
 def attach(carrier: Mapping[str, str]) -> Token[Context] | None:

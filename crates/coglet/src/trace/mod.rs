@@ -53,6 +53,7 @@ enum SamplerKind {
 #[derive(Clone, Debug)]
 pub struct TracingConfig {
     endpoint: String,
+    append_trace_path: bool,
     protocol: OtlpProtocol,
     sampler: SamplerKind,
     sampler_arg: Option<f64>,
@@ -69,15 +70,21 @@ impl TracingConfig {
             return Ok(None);
         }
 
-        let endpoint = match std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
-            .or_else(|_| std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT"))
-        {
-            Ok(value) if !value.trim().is_empty() => value,
-            _ => {
-                eprintln!("Tracing enabled without an OTLP endpoint; tracing disabled");
-                return Ok(None);
-            }
-        };
+        let (endpoint, append_trace_path) =
+            match std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") {
+                Ok(value) if !value.trim().is_empty() => (value, false),
+                Ok(_) => {
+                    eprintln!("Tracing enabled without an OTLP endpoint; tracing disabled");
+                    return Ok(None);
+                }
+                Err(_) => match std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+                    Ok(value) if !value.trim().is_empty() => (value, true),
+                    _ => {
+                        eprintln!("Tracing enabled without an OTLP endpoint; tracing disabled");
+                        return Ok(None);
+                    }
+                },
+            };
 
         let protocol = match std::env::var("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
             .or_else(|_| std::env::var("OTEL_EXPORTER_OTLP_PROTOCOL"))
@@ -120,6 +127,7 @@ impl TracingConfig {
 
         Ok(Some(Self {
             endpoint,
+            append_trace_path,
             protocol,
             sampler,
             sampler_arg,
@@ -148,7 +156,17 @@ pub struct TracingRuntime {
 }
 
 impl TracingRuntime {
-    pub fn from_env(role: ProcessRole) -> Result<Option<Self>, String> {
+    pub fn from_env(role: ProcessRole) -> Option<Self> {
+        match Self::try_from_env(role) {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                eprintln!("Invalid OpenTelemetry tracing configuration; tracing disabled: {error}");
+                None
+            }
+        }
+    }
+
+    fn try_from_env(role: ProcessRole) -> Result<Option<Self>, String> {
         let Some(config) = TracingConfig::from_env()? else {
             return Ok(None);
         };
@@ -356,7 +374,7 @@ fn build_exporter(config: &TracingConfig) -> Result<SpanExporter, String> {
     let builder = SpanExporter::builder();
     match config.protocol {
         OtlpProtocol::HttpProtobuf => {
-            let endpoint = format!("{}/v1/traces", config.endpoint.trim_end_matches('/'));
+            let endpoint = http_trace_endpoint(&config.endpoint, config.append_trace_path);
             builder
                 .with_http()
                 .with_protocol(Protocol::HttpBinary)
@@ -379,6 +397,20 @@ fn build_exporter(config: &TracingConfig) -> Result<SpanExporter, String> {
             }
         }
     }
+}
+
+fn http_trace_endpoint(endpoint: &str, append_trace_path: bool) -> String {
+    if !append_trace_path {
+        return endpoint.to_string();
+    }
+
+    let suffix_start = endpoint.find(['?', '#']).unwrap_or(endpoint.len());
+    let (path, suffix) = endpoint.split_at(suffix_start);
+    let path = path.trim_end_matches('/');
+    if path.ends_with("/v1/traces") {
+        return format!("{path}{suffix}");
+    }
+    format!("{path}/v1/traces{suffix}")
 }
 
 fn env_bool(name: &str, default: bool) -> Result<bool, String> {
@@ -426,6 +458,7 @@ mod tests {
     fn ratio_sampler_without_arg_defaults_to_one() {
         let config = TracingConfig {
             endpoint: String::new(),
+            append_trace_path: true,
             protocol: OtlpProtocol::HttpProtobuf,
             sampler: SamplerKind::TraceIdRatio,
             sampler_arg: None,
@@ -436,6 +469,26 @@ mod tests {
             Sampler::TraceIdRatioBased(ratio) => assert_eq!(ratio, 1.0),
             sampler => panic!("unexpected sampler: {sampler:?}"),
         }
+    }
+
+    #[test]
+    fn http_trace_endpoint_appends_signal_path_once() {
+        assert_eq!(
+            http_trace_endpoint("https://collector:4318", true),
+            "https://collector:4318/v1/traces"
+        );
+        assert_eq!(
+            http_trace_endpoint("https://collector:4318/v1/traces", true),
+            "https://collector:4318/v1/traces"
+        );
+        assert_eq!(
+            http_trace_endpoint("https://collector:4318/base?token=secret", true),
+            "https://collector:4318/base/v1/traces?token=secret"
+        );
+        assert_eq!(
+            http_trace_endpoint("https://collector:4318/custom?token=secret", false),
+            "https://collector:4318/custom?token=secret"
+        );
     }
 
     #[test]

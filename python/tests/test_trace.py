@@ -52,6 +52,37 @@ assert sampler.rate == 1.0
     assert result.returncode == 0, result.stderr
 
 
+def test_http_trace_endpoint_appends_signal_path_once() -> None:
+    script = """
+from cog import _trace
+assert _trace._http_trace_endpoint("https://collector:4318", True) == "https://collector:4318/v1/traces"
+assert _trace._http_trace_endpoint("https://collector:4318/v1/traces", True) == "https://collector:4318/v1/traces"
+assert _trace._http_trace_endpoint("https://collector:4318/base?token=secret", True) == "https://collector:4318/base/v1/traces?token=secret"
+assert _trace._http_trace_endpoint("https://collector:4318/custom?token=secret", False) == "https://collector:4318/custom?token=secret"
+"""
+    result = _run_script(script)
+    assert result.returncode == 0, result.stderr
+
+
+def test_invalid_default_trace_config_disables_tracing() -> None:
+    script = """
+import os
+os.environ.update({
+    "COG_TRACE_CONFIGURED": "true",
+    "COG_TRACE_ENABLED": "true",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "https",
+})
+from cog import _trace
+from opentelemetry import trace
+from opentelemetry.trace import ProxyTracerProvider
+_trace.install_provider()
+assert isinstance(trace.get_tracer_provider(), ProxyTracerProvider)
+"""
+    result = _run_script(script)
+    assert result.returncode == 0, result.stderr
+
+
 def test_trace_provider_rejects_collision() -> None:
     script = """
 import os

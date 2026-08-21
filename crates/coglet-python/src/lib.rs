@@ -348,7 +348,6 @@ fn serve_impl(
     let trace_runtime = {
         let _entered = rt.enter();
         coglet_core::trace::TracingRuntime::from_env(coglet_core::trace::ProcessRole::Parent)
-            .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?
     };
 
     let (setup_log_tx, setup_log_rx) = tokio::sync::mpsc::unbounded_channel();
