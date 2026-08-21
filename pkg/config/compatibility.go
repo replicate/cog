@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -117,6 +118,20 @@ func init() {
 		}
 	}
 	TorchCompatibilityMatrix = filteredTorchCompatibilityMatrix
+}
+
+var cudaIndexURLRe = regexp.MustCompile(`cu(\d{2,})`)
+
+// cudaVersionFromIndexURL derives the CUDA version from a pytorch package index URL, e.g.
+// "https://download.pytorch.org/whl/cu128/" -> "12.8". Returns ok=false when the URL has no
+// cuXYZ segment, as with the cpu and rocm indexes.
+func cudaVersionFromIndexURL(indexURL string) (string, bool) {
+	m := cudaIndexURLRe.FindStringSubmatch(indexURL)
+	if m == nil {
+		return "", false
+	}
+	digits := m[1]
+	return digits[:len(digits)-1] + "." + digits[len(digits)-1:], true
 }
 
 func cudaVersionFromTorchPlusVersion(ver string) (string, string) {
