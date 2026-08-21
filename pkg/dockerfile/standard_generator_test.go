@@ -586,6 +586,41 @@ predict: predict.py:Predictor
 	require.Contains(t, actual, `uv pip install --break-system-packages --no-cache cog`)
 }
 
+// CUDA 13+ Cog base images install Python with uv, so their Python environment
+// is externally managed regardless of whether the config also sets gpu: true.
+func TestGPUCogBasePathIncludesBreakSystemPackages(t *testing.T) {
+	for _, gpu := range []bool{true, false} {
+		t.Run(fmt.Sprintf("gpu=%t", gpu), func(t *testing.T) {
+			tmpDir := t.TempDir()
+			yaml := fmt.Sprintf(`
+build:
+  gpu: %t
+  cuda: "13.0"
+  python_version: "3.13"
+  python_packages:
+    - torch==2.11.0
+    - pandas==2.0.3
+predict: predict.py:Predictor
+`, gpu)
+			conf, err := config.FromYAML([]byte(yaml))
+			require.NoError(t, err)
+			require.NoError(t, conf.Complete(""))
+			command := dockertest.NewMockCommand()
+			client := registrytest.NewMockRegistryClient()
+			client.AddMockImage(BaseImageName("13.0", "3.13", "2.11.0"))
+			gen, err := NewStandardGenerator(conf, tmpDir, t.TempDir(), "", command, client, true)
+			require.NoError(t, err)
+			gen.SetUseCogBaseImage(true)
+			pypiWheels(gen)
+			_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+			require.NoError(t, err)
+
+			require.Contains(t, actual, `uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt`)
+			require.Contains(t, actual, `uv pip install --break-system-packages --no-cache cog`)
+		})
+	}
+}
+
 // CPU builds use python:X-slim where Python is not uv-managed,
 // so --break-system-packages must NOT appear.
 func TestCPUPathOmitsBreakSystemPackages(t *testing.T) {

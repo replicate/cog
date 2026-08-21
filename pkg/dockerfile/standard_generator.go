@@ -150,15 +150,14 @@ func (g *StandardGenerator) SetBreakSystemPackages(breakSystemPackages bool) {
 }
 
 // needsBreakSystemPackages reports whether pip invocations need
-// --break-system-packages. True when either the caller opted in explicitly
-// (SetBreakSystemPackages) or the generated Dockerfile installs Python via
-// `uv python install` (inside installPythonCUDA). The latter happens when the
-// base image is nvidia/cuda — which has no Python — as opposed to python:X-slim
-// or r8.im/cog-base, which ship their own. uv marks its installed Pythons as
-// externally managed (PEP 668).
+// --break-system-packages. True when the caller opts in explicitly, the
+// generated Dockerfile installs Python via uv, or a CUDA 13+ Cog base supplies
+// uv-managed Python. uv marks its installed Pythons as externally managed
+// (PEP 668).
 func (g *StandardGenerator) needsBreakSystemPackages() bool {
 	return g.breakSystemPackages ||
-		(g.Config.Build.GPU && g.useCudaBaseImage && !g.IsUsingCogBaseImage())
+		(g.Config.Build.GPU && g.useCudaBaseImage && !g.IsUsingCogBaseImage()) ||
+		(g.IsUsingCogBaseImage() && version.GreaterOrEqual(g.Config.Build.CUDA, "13.0"))
 }
 
 func (g *StandardGenerator) uvPipInstallFlags(flags string) string {
