@@ -18,3 +18,24 @@ func TestCudasFromTorchWithCUVersionModifier(t *testing.T) {
 	require.Equal(t, cudas[0], "11.8")
 	require.Nil(t, err)
 }
+
+func TestCUDAVersionFromIndexURL(t *testing.T) {
+	for _, tt := range []struct {
+		url  string
+		want string
+		ok   bool
+	}{
+		{"https://download.pytorch.org/whl/cu128/", "12.8", true},
+		{"https://download.pytorch.org/whl/cu118", "11.8", true},
+		{"https://download.pytorch.org/whl/cu92/", "9.2", true},
+		{"https://download.pytorch.org/whl/cpu/", "", false},
+		{"https://download.pytorch.org/whl/rocm6.2/", "", false},
+		{"", "", false},
+	} {
+		t.Run(tt.url, func(t *testing.T) {
+			got, ok := cudaVersionFromIndexURL(tt.url)
+			require.Equal(t, tt.ok, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
