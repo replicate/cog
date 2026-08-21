@@ -1,0 +1,19 @@
+docs/llms.txt
+  s_d881944a81db0e::t_40bc41c4131eff 2412-2413,2438,2441
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "92c590de9a1a1716eb3d3f27d0ea6c9c57312792",
+  "prompts": {},
+  "sessions": {
+    "s_d881944a81db0e": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fdedd879fffe77YQJyEAhN5pOZ",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
