@@ -1,0 +1,19 @@
+crates/coglet/src/trace/mod.rs
+  s_d881944a81db0e::t_323dd1640bb6b4 56,73-87,130,159-169,377,402-415,461,474-493
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "453c097007419da6097ea6dd1b2892e6d2ee4f0e",
+  "prompts": {},
+  "sessions": {
+    "s_d881944a81db0e": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fdedd879fffe77YQJyEAhN5pOZ",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
