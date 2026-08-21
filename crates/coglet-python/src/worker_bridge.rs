@@ -441,6 +441,7 @@ impl PredictHandler for PythonPredictHandler {
             "cog.prediction.id" = %id,
             "cog.slot.id" = %slot
         );
+        let _invoke_entered = _invoke_span.enter();
         let trace_carrier = {
             #[cfg(feature = "tracing")]
             {
@@ -458,7 +459,6 @@ impl PredictHandler for PythonPredictHandler {
                 None
             }
         };
-        let _invoke_entered = _invoke_span.enter();
 
         // Track that we're starting a prediction on this slot.
         // Capture the Python thread ID for this thread (used by

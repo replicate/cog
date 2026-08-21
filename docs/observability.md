@@ -47,8 +47,8 @@ POST /predictions
 └── cog.prediction
     ├── cog.prediction.validate
     └── cog.prediction.execute
-        ├── cog.prediction.prepare_input
-        └── cog.prediction.invoke  # complete run() duration
+        └── cog.prediction.invoke
+            └── cog.prediction.prepare_input
 ```
 
 Add this to `cog.yaml` to enable tracing:
@@ -72,11 +72,11 @@ POST /predictions
 └── cog.prediction
     ├── cog.prediction.validate
     └── cog.prediction.execute
-        ├── cog.prediction.prepare_input
         └── cog.prediction.invoke
+            └── cog.prediction.prepare_input
 ```
 
-`cog.prediction.invoke` covers the complete `run()` or legacy `predict()` call. For generators and async generators, it remains open while Cog consumes the returned output.
+`cog.prediction.invoke` covers input preparation and the complete `run()` or legacy `predict()` call. For generators and async generators, it remains open while Cog consumes the returned output.
 
 File outputs may add `cog.prediction.upload_output`. Setup uses a separate `cog.setup` and `cog.setup.predictor` trace when the sampler records root spans.
 
