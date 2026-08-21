@@ -1,0 +1,19 @@
+crates/Cargo.lock
+  s_55d1adc1d993d2::t_20e5abaf95728e 506,715,717,2237,2294,2730,3436
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2f9327608c57d6bae93e97e4c8f7b63375734469",
+  "prompts": {},
+  "sessions": {
+    "s_55d1adc1d993d2": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fdfdc67dbffebFmaRlmji56RiG",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
