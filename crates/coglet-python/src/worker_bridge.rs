@@ -165,21 +165,14 @@ impl SlotState {
 
 /// Wraps PythonPredictor to implement the PredictHandler trait.
 ///
-/// The `is_train` flag determines whether predict() calls the Python
-/// predict() or train() method. This is set at construction time.
-///
-/// BUG-FOR-BUG COMPATIBILITY: In cog mainline, training routes use a worker
-/// that was created with is_train=false, so training routes actually call
-/// predict() instead of train(). We replicate this by always creating the
-/// handler with is_train=false. To fix this bug, pass is_train=true when
-/// creating a handler for training routes.
+/// The mode determines whether predict() calls the Python predict() or train()
+/// method. This is set at construction time from the worker's `is_train` flag.
 pub struct PythonPredictHandler {
     predictor_ref: String,
     predictor: Mutex<Option<Arc<PythonPredictor>>>,
     /// Per-slot cancellation state (keyed by SlotId).
     slots: Mutex<HashMap<SlotId, SlotState>>,
     /// What operation this handler performs (predict or train).
-    /// BUG: cog mainline always uses Predict mode, even for training routes.
     mode: HandlerMode,
     /// Shared asyncio event loop for async predictions (runs in dedicated thread).
     async_loop: Mutex<Option<Py<PyAny>>>,
@@ -204,10 +197,6 @@ impl PythonPredictHandler {
     }
 
     /// Create a handler in training mode.
-    ///
-    /// NOTE: For bug-for-bug compatibility with cog mainline, use new() instead.
-    /// Cog mainline's training routes incorrectly use a predict-mode worker.
-    #[allow(dead_code)]
     pub fn new_train(predictor_ref: String, max_concurrency: usize) -> Result<Self, SetupError> {
         let (loop_obj, thread) = Self::init_async_loop()?;
         Ok(Self {
@@ -413,6 +402,10 @@ impl PredictHandler for PythonPredictHandler {
         })
     }
 
+    fn is_train(&self) -> bool {
+        self.mode == HandlerMode::Train
+    }
+
     async fn predict(
         &self,
         slot: SlotId,
@@ -435,12 +428,20 @@ impl PredictHandler for PythonPredictHandler {
         };
         let is_async = pred.is_async();
         tracing::trace!(%slot, %id, is_async, "Got predictor");
-        let _invoke_span = coglet_core::cog_span!(
-            info_span,
-            "cog.prediction.invoke",
-            "cog.prediction.id" = %id,
-            "cog.slot.id" = %slot
-        );
+        let _invoke_span = match self.mode {
+            HandlerMode::Train => coglet_core::cog_span!(
+                info_span,
+                "cog.train.invoke",
+                "cog.prediction.id" = %id,
+                "cog.slot.id" = %slot
+            ),
+            HandlerMode::Predict => coglet_core::cog_span!(
+                info_span,
+                "cog.prediction.invoke",
+                "cog.prediction.id" = %id,
+                "cog.slot.id" = %slot
+            ),
+        };
         let _invoke_entered = _invoke_span.enter();
         let trace_carrier = {
             #[cfg(feature = "tracing")]

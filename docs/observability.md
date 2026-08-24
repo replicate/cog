@@ -78,6 +78,14 @@ POST /predictions
 
 `cog.prediction.invoke` covers input preparation and the complete `run()` or legacy `predict()` call. For generators and async generators, it remains open while Cog consumes the returned output.
 
+Training uses operation-specific worker spans:
+
+```text
+cog.train.execute
+└── cog.train.invoke
+    └── cog.train.prepare_input
+```
+
 File outputs may add `cog.prediction.upload_output`. Setup uses a separate `cog.setup` and `cog.setup.predictor` trace when the sampler records root spans.
 
 Models can add spans around any Python function, including every function call if needed. Cog does not enable function-level tracing automatically because it adds overhead and can produce very large traces. For routine use, add spans around meaningful internal operations; use a profiler when a complete function-level call stack is required.

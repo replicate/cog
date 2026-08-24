@@ -328,6 +328,11 @@ pub trait PredictHandler: Send + Sync + 'static {
     /// Initialize the predictor (load model, run setup).
     async fn setup(&self) -> Result<(), SetupError>;
 
+    /// Whether this handler runs the training operation.
+    fn is_train(&self) -> bool {
+        false
+    }
+
     /// Run a prediction.
     async fn predict(
         &self,
@@ -920,12 +925,21 @@ async fn run_prediction<H: PredictHandler>(
     // threads. Without this, the log forwarder can be work-stolen onto the
     // same thread as the prediction and starved until predict returns, causing
     // all logs to arrive in a single batch at prediction end.
-    let execute_span = crate::cog_span!(
-        info_span,
-        "cog.prediction.execute",
-        "cog.prediction.id" = %prediction_id,
-        "cog.slot.id" = %slot_id
-    );
+    let execute_span = if handler.is_train() {
+        crate::cog_span!(
+            info_span,
+            "cog.train.execute",
+            "cog.prediction.id" = %prediction_id,
+            "cog.slot.id" = %slot_id
+        )
+    } else {
+        crate::cog_span!(
+            info_span,
+            "cog.prediction.execute",
+            "cog.prediction.id" = %prediction_id,
+            "cog.slot.id" = %slot_id
+        )
+    };
     #[cfg(feature = "tracing")]
     if let Some(trace) = _trace.as_ref() {
         crate::trace::set_parent_from_carrier(&execute_span, trace);

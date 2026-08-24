@@ -913,7 +913,7 @@ impl PythonPredictor {
             let func = self.train_func(py).map_err(|e| {
                 PredictionError::Failed(format!("Failed to get train function: {}", e))
             })?;
-            let prepare_span = coglet_core::cog_span!(info_span, "cog.prediction.prepare_input");
+            let prepare_span = coglet_core::cog_span!(info_span, "cog.train.prepare_input");
             let prepared = {
                 let _prepare_entered = prepare_span.enter();
                 input::prepare_input(py, raw_input_dict, &func)
@@ -1247,7 +1247,7 @@ impl PythonPredictor {
             let func = self.train_func(py).map_err(|e| {
                 PredictionError::Failed(format!("Failed to get train function: {}", e))
             })?;
-            let prepare_span = coglet_core::cog_span!(info_span, "cog.prediction.prepare_input");
+            let prepare_span = coglet_core::cog_span!(info_span, "cog.train.prepare_input");
             let prepared = {
                 let _prepare_entered = prepare_span.enter();
                 input::prepare_input(py, raw_input_dict, &func)
