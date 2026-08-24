@@ -100,9 +100,10 @@ impl TracingConfig {
             .or_else(|_| std::env::var("COG_TRACE_SAMPLER"))
             .unwrap_or_else(|_| "parentbased_always_off".to_string());
         let sampler = parse_sampler(&sampler_name)?;
-        let sampler_arg = std::env::var("OTEL_TRACES_SAMPLER_ARG")
-            .or_else(|_| std::env::var("COG_TRACE_SAMPLER_ARG"))
-            .ok()
+        let runtime_sampler_arg = std::env::var("OTEL_TRACES_SAMPLER_ARG").ok();
+        let sampler_arg = runtime_sampler_arg
+            .clone()
+            .or_else(|| std::env::var("COG_TRACE_SAMPLER_ARG").ok())
             .map(|value| {
                 value
                     .parse::<f64>()
@@ -116,12 +117,7 @@ impl TracingConfig {
                     })
             })
             .transpose()?;
-        if sampler_arg.is_some()
-            && !matches!(
-                sampler,
-                SamplerKind::TraceIdRatio | SamplerKind::ParentBasedTraceIdRatio
-            )
-        {
+        if !sampler_arg_is_valid(sampler, sampler_arg, runtime_sampler_arg.is_some()) {
             return Err("sampler_arg is only valid for ratio samplers".to_string());
         }
 
@@ -324,8 +320,10 @@ fn caller_attributes(context: &std::collections::HashMap<String, String>) -> Vec
             {
                 return None;
             }
-            let value_end = value.floor_char_boundary(value.len().min(128));
-            Some((format!("caller.{suffix}"), value[..value_end].to_string()))
+            Some((
+                format!("caller.{suffix}"),
+                crate::bounded_attribute_value(value).to_string(),
+            ))
         })
         .collect::<Vec<_>>();
     attributes.sort_unstable_by(|left, right| left.0.cmp(&right.0));
@@ -436,6 +434,19 @@ fn parse_sampler(value: &str) -> Result<SamplerKind, String> {
     }
 }
 
+fn sampler_arg_is_valid(
+    sampler: SamplerKind,
+    sampler_arg: Option<f64>,
+    runtime_sampler_arg_set: bool,
+) -> bool {
+    sampler_arg.is_none()
+        || !runtime_sampler_arg_set
+        || matches!(
+            sampler,
+            SamplerKind::TraceIdRatio | SamplerKind::ParentBasedTraceIdRatio
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,6 +480,20 @@ mod tests {
             Sampler::TraceIdRatioBased(ratio) => assert_eq!(ratio, 1.0),
             sampler => panic!("unexpected sampler: {sampler:?}"),
         }
+    }
+
+    #[test]
+    fn image_sampler_arg_does_not_reject_runtime_non_ratio_sampler() {
+        assert!(sampler_arg_is_valid(
+            SamplerKind::AlwaysOn,
+            Some(0.5),
+            false
+        ));
+        assert!(!sampler_arg_is_valid(
+            SamplerKind::AlwaysOn,
+            Some(0.5),
+            true
+        ));
     }
 
     #[test]

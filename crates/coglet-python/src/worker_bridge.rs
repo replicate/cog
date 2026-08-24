@@ -428,17 +428,18 @@ impl PredictHandler for PythonPredictHandler {
         };
         let is_async = pred.is_async();
         tracing::trace!(%slot, %id, is_async, "Got predictor");
+        let bounded_prediction_id = coglet_core::bounded_attribute_value(&id);
         let _invoke_span = match self.mode {
             HandlerMode::Train => coglet_core::cog_span!(
                 info_span,
                 "cog.train.invoke",
-                "cog.prediction.id" = %id,
+                "cog.prediction.id" = %bounded_prediction_id,
                 "cog.slot.id" = %slot
             ),
             HandlerMode::Predict => coglet_core::cog_span!(
                 info_span,
                 "cog.prediction.invoke",
-                "cog.prediction.id" = %id,
+                "cog.prediction.id" = %bounded_prediction_id,
                 "cog.slot.id" = %slot
             ),
         };

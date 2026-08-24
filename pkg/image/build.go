@@ -662,7 +662,7 @@ func tracingDockerfile(baseImage string, observability *config.Observability, im
 	if imageUser != "" {
 		fmt.Fprintln(&b, "USER root")
 	}
-	fmt.Fprintf(&b, "RUN python -m pip install --no-cache-dir %s\n", dockerfile.PythonTracingRequirements)
+	fmt.Fprintf(&b, "RUN python -m pip install --no-cache-dir --break-system-packages %s\n", dockerfile.PythonTracingRequirements)
 	if imageUser != "" {
 		fmt.Fprintf(&b, "USER %s\n", strconv.Quote(imageUser))
 	}

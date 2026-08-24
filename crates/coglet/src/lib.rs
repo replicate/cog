@@ -52,6 +52,23 @@ pub use worker::{
     PredictHandler, PredictResult, SetupError, SetupLogHook, SlotSender, WorkerConfig, run_worker,
 };
 
+pub fn bounded_attribute_value(value: &str) -> &str {
+    let end = value.floor_char_boundary(value.len().min(128));
+    &value[..end]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bounded_attribute_value;
+
+    #[test]
+    fn bounds_attributes_without_splitting_utf8() {
+        let value = format!("{}é", "x".repeat(127));
+
+        assert_eq!(bounded_attribute_value(&value), "x".repeat(127));
+    }
+}
+
 /// Install the `ring` TLS crypto provider for `rustls`.
 ///
 /// Must be called once before any `reqwest::Client` is created. Safe to call

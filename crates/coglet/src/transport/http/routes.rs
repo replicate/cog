@@ -745,8 +745,7 @@ async fn create_prediction_with_id(
 
 #[cfg(feature = "tracing")]
 fn bounded_prediction_id(id: &str) -> &str {
-    let end = id.floor_char_boundary(id.len().min(128));
-    &id[..end]
+    crate::bounded_attribute_value(id)
 }
 
 async fn cancel_prediction(

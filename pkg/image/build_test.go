@@ -437,7 +437,7 @@ func TestTracingDockerfileUsesStagedObservabilityConfig(t *testing.T) {
 	}, "")
 
 	assert.Contains(t, dockerfile, "COPY --from=cog_build telemetry.py /.cog/telemetry.py")
-	assert.Contains(t, dockerfile, "python -m pip install --no-cache-dir "+dockerfilepkg.PythonTracingRequirements)
+	assert.Contains(t, dockerfile, "python -m pip install --no-cache-dir --break-system-packages "+dockerfilepkg.PythonTracingRequirements)
 	assert.Contains(t, dockerfile, `ENV COG_OBSERVABILITY_CONFIG="/.cog/telemetry.py"`)
 	assert.NotContains(t, dockerfile, "config/telemetry.py")
 }
