@@ -428,6 +428,7 @@ impl PredictHandler for PythonPredictHandler {
         };
         let is_async = pred.is_async();
         tracing::trace!(%slot, %id, is_async, "Got predictor");
+        #[cfg(feature = "tracing")]
         let bounded_prediction_id = coglet_core::bounded_attribute_value(&id);
         let _invoke_span = match self.mode {
             HandlerMode::Train => coglet_core::cog_span!(
@@ -536,9 +537,13 @@ impl PredictHandler for PythonPredictHandler {
 
                     // Submit coroutine and get future + prepared input for cleanup
                     let scope_ref = scope_guard.as_ref().map(|g| g.scope());
-                    let (future, is_async_gen, prepared) = match pred
-                        .train_async_worker(input, &loop_obj, &id, scope_ref)
-                    {
+                    let (future, is_async_gen, prepared) = match pred.train_async_worker(
+                        input,
+                        &loop_obj,
+                        &id,
+                        scope_ref,
+                        trace_carrier.as_ref(),
+                    ) {
                         Ok(f) => f,
                         Err(e) => {
                             self.finish_prediction(slot);
@@ -585,7 +590,7 @@ impl PredictHandler for PythonPredictHandler {
                 } else {
                     // Sync train - set sync prediction ID for log routing
                     crate::log_writer::set_sync_prediction_id(Some(&id));
-                    let r = pred.train_worker(input, slot_sender.clone());
+                    let r = pred.train_worker(input, slot_sender.clone(), trace_carrier.as_ref());
                     crate::log_writer::set_sync_prediction_id(None);
 
                     // Upgrade to Cancelled if the slot was marked cancelled

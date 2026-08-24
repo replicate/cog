@@ -925,6 +925,7 @@ async fn run_prediction<H: PredictHandler>(
     // threads. Without this, the log forwarder can be work-stolen onto the
     // same thread as the prediction and starved until predict returns, causing
     // all logs to arrive in a single batch at prediction end.
+    #[cfg(feature = "tracing")]
     let bounded_prediction_id = crate::bounded_attribute_value(&prediction_id);
     let execute_span = if handler.is_train() {
         crate::cog_span!(

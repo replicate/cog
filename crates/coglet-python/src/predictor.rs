@@ -885,73 +885,78 @@ impl PythonPredictor {
         &self,
         input: serde_json::Value,
         slot_sender: Arc<SlotSender>,
+        trace_carrier: Option<&std::collections::HashMap<String, String>>,
     ) -> Result<PredictionResult, PredictionError> {
         Python::attach(|py| {
-            let json_module = py.import("json").map_err(|e| {
-                PredictionError::Failed(format!("Failed to import json module: {}", e))
-            })?;
-            let types_module = py.import("types").map_err(|e| {
-                PredictionError::Failed(format!("Failed to import types module: {}", e))
-            })?;
-            let generator_type = types_module.getattr("GeneratorType").map_err(|e| {
-                PredictionError::Failed(format!("Failed to get GeneratorType: {}", e))
-            })?;
+            with_trace_context(py, trace_carrier, || {
+                let json_module = py.import("json").map_err(|e| {
+                    PredictionError::Failed(format!("Failed to import json module: {}", e))
+                })?;
+                let types_module = py.import("types").map_err(|e| {
+                    PredictionError::Failed(format!("Failed to import types module: {}", e))
+                })?;
+                let generator_type = types_module.getattr("GeneratorType").map_err(|e| {
+                    PredictionError::Failed(format!("Failed to get GeneratorType: {}", e))
+                })?;
 
-            let input_str = serde_json::to_string(&input)
-                .map_err(|e| PredictionError::InvalidInput(e.to_string()))?;
+                let input_str = serde_json::to_string(&input)
+                    .map_err(|e| PredictionError::InvalidInput(e.to_string()))?;
 
-            let py_input = json_module
-                .call_method1("loads", (input_str,))
-                .map_err(|e| PredictionError::InvalidInput(format!("Invalid JSON input: {}", e)))?;
+                let py_input = json_module
+                    .call_method1("loads", (input_str,))
+                    .map_err(|e| {
+                        PredictionError::InvalidInput(format!("Invalid JSON input: {}", e))
+                    })?;
 
-            #[allow(deprecated)]
-            let raw_input_dict = py_input.downcast::<PyDict>().map_err(|_| {
-                PredictionError::InvalidInput("Input must be a JSON object".to_string())
-            })?;
+                #[allow(deprecated)]
+                let raw_input_dict = py_input.downcast::<PyDict>().map_err(|_| {
+                    PredictionError::InvalidInput("Input must be a JSON object".to_string())
+                })?;
 
-            // PreparedInput cleans up temp files on drop (RAII)
-            let func = self.train_func(py).map_err(|e| {
-                PredictionError::Failed(format!("Failed to get train function: {}", e))
-            })?;
-            let prepare_span = coglet_core::cog_span!(info_span, "cog.train.prepare_input");
-            let prepared = {
-                let _prepare_entered = prepare_span.enter();
-                input::prepare_input(py, raw_input_dict, &func)
-            }
-            .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
-            let input_dict = prepared.dict(py);
-
-            // Call train
-            let result = self.train_raw(py, &input_dict);
-
-            // Handle errors
-            let result = match result {
-                Ok(r) => r,
-                Err(e) => {
-                    drop(prepared);
-                    if is_cancelation_exception(py, &e) {
-                        return Err(PredictionError::Cancelled);
-                    }
-                    return Err(PredictionError::Failed(format!("Training failed: {}", e)));
+                // PreparedInput cleans up temp files on drop (RAII)
+                let func = self.train_func(py).map_err(|e| {
+                    PredictionError::Failed(format!("Failed to get train function: {}", e))
+                })?;
+                let prepare_span = coglet_core::cog_span!(info_span, "cog.train.prepare_input");
+                let prepared = {
+                    let _prepare_entered = prepare_span.enter();
+                    input::prepare_input(py, raw_input_dict, &func)
                 }
-            };
+                .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
+                let input_dict = prepared.dict(py);
 
-            let result_bound = result.bind(py);
-            let is_generator: bool = result_bound.is_instance(&generator_type).unwrap_or(false);
+                // Call train
+                let result = self.train_raw(py, &input_dict);
 
-            let output = if is_generator {
-                self.process_generator_output(py, result_bound, &json_module, &slot_sender)?
-            } else {
-                self.process_single_output(py, result_bound, &json_module, &slot_sender)?
-            };
+                // Handle errors
+                let result = match result {
+                    Ok(r) => r,
+                    Err(e) => {
+                        drop(prepared);
+                        if is_cancelation_exception(py, &e) {
+                            return Err(PredictionError::Cancelled);
+                        }
+                        return Err(PredictionError::Failed(format!("Training failed: {}", e)));
+                    }
+                };
 
-            drop(prepared);
+                let result_bound = result.bind(py);
+                let is_generator: bool = result_bound.is_instance(&generator_type).unwrap_or(false);
 
-            Ok(PredictionResult {
-                output,
-                predict_time: None,
-                logs: String::new(),
-                metrics: Default::default(),
+                let output = if is_generator {
+                    self.process_generator_output(py, result_bound, &json_module, &slot_sender)?
+                } else {
+                    self.process_single_output(py, result_bound, &json_module, &slot_sender)?
+                };
+
+                drop(prepared);
+
+                Ok(PredictionResult {
+                    output,
+                    predict_time: None,
+                    logs: String::new(),
+                    metrics: Default::default(),
+                })
             })
         })
     }
@@ -1227,6 +1232,7 @@ impl PythonPredictor {
         event_loop: &Py<PyAny>,
         prediction_id: &str,
         scope: Option<&Py<crate::metric_scope::Scope>>,
+        trace_carrier: Option<&std::collections::HashMap<String, String>>,
     ) -> Result<(Py<PyAny>, bool, PreparedInput), PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
@@ -1264,7 +1270,8 @@ impl PythonPredictor {
             .map_err(|e| PredictionError::Failed(format!("Failed to call train: {}", e)))?;
 
             // Wrap coroutine with log + metric context and submit to event loop
-            let future = submit_async_coroutine(py, &coro, event_loop, prediction_id, scope, None)?;
+            let future =
+                submit_async_coroutine(py, &coro, event_loop, prediction_id, scope, trace_carrier)?;
 
             // Train doesn't typically use async generators, but we return false for consistency
             Ok((future, false, prepared))
@@ -1503,6 +1510,133 @@ sys.modules.setdefault('requests', requests)
                 .extract()
                 .expect("__name__ should be a string")
         })
+    }
+
+    fn install_fake_trace_module(py: Python<'_>) {
+        py.run(
+            c"\
+import cog
+import sys
+import types
+
+trace = types.ModuleType('cog._trace')
+trace.current = None
+
+def attach(carrier):
+    token = (trace.current,)
+    trace.current = dict(carrier)
+    return token
+
+def detach(token):
+    trace.current = token[0]
+
+trace.attach = attach
+trace.detach = detach
+sys.modules['cog._trace'] = trace
+cog._trace = trace
+",
+            None,
+            None,
+        )
+        .expect("failed to install fake trace module");
+    }
+
+    #[test]
+    fn training_propagates_trace_carrier_to_sync_and_async_models() {
+        let traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        let carrier =
+            std::collections::HashMap::from([("traceparent".to_string(), traceparent.to_string())]);
+        let sync_predictor = load_predictor_source(
+            r#"
+def Predictor() -> str:
+    from cog import _trace
+    return _trace.current["traceparent"]
+"#,
+        )
+        .expect("sync trainer should load");
+        let async_predictor = load_predictor_source(
+            r#"
+async def Predictor() -> str:
+    from cog import _trace
+    return _trace.current["traceparent"]
+"#,
+        )
+        .expect("async trainer should load");
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let output_dir = tempfile::tempdir().expect("output directory should be created");
+        let slot_sender = Arc::new(SlotSender::new(tx, output_dir.path().to_path_buf()));
+
+        Python::attach(install_fake_trace_module);
+        let sync_result = sync_predictor
+            .train_worker(
+                serde_json::json!({}),
+                Arc::clone(&slot_sender),
+                Some(&carrier),
+            )
+            .expect("sync training should succeed");
+        match sync_result.output {
+            PredictionOutput::Single(value) => assert_eq!(value, traceparent),
+            PredictionOutput::Stream(_) => panic!("sync training returned a stream"),
+        }
+
+        let (event_loop, event_loop_thread) = Python::attach(|py| {
+            let locals = PyDict::new(py);
+            py.run(
+                c"\
+import asyncio
+import threading
+
+event_loop = asyncio.new_event_loop()
+event_loop_thread = threading.Thread(target=event_loop.run_forever, daemon=True)
+event_loop_thread.start()
+",
+                None,
+                Some(&locals),
+            )
+            .expect("event loop should start");
+            (
+                locals
+                    .get_item("event_loop")
+                    .expect("event loop lookup should succeed")
+                    .expect("event loop should exist")
+                    .unbind(),
+                locals
+                    .get_item("event_loop_thread")
+                    .expect("thread lookup should succeed")
+                    .expect("event loop thread should exist")
+                    .unbind(),
+            )
+        });
+        let (future, _, prepared) = async_predictor
+            .train_async_worker(
+                serde_json::json!({}),
+                &event_loop,
+                "training-trace-test",
+                None,
+                Some(&carrier),
+            )
+            .expect("async training should be submitted");
+        let async_result = Python::attach(|py| {
+            future
+                .call_method0(py, "result")
+                .expect("async training should succeed")
+                .extract::<String>(py)
+                .expect("async training should return a string")
+        });
+        assert_eq!(async_result, traceparent);
+        drop(prepared);
+
+        Python::attach(|py| {
+            let stop = event_loop
+                .getattr(py, "stop")
+                .expect("event loop should have stop");
+            event_loop
+                .call_method1(py, "call_soon_threadsafe", (stop,))
+                .expect("event loop should stop");
+            event_loop_thread
+                .call_method0(py, "join")
+                .expect("event loop thread should join");
+        });
     }
 
     #[test]

@@ -81,9 +81,11 @@ POST /predictions
 Training uses operation-specific worker spans:
 
 ```text
-cog.train.execute
-└── cog.train.invoke
-    └── cog.train.prepare_input
+POST /trainings
+└── cog.train
+    └── cog.train.execute
+        └── cog.train.invoke
+            └── cog.train.prepare_input
 ```
 
 File outputs may add `cog.prediction.upload_output`. Setup uses a separate `cog.setup` and `cog.setup.predictor` trace when the sampler records root spans.
@@ -109,7 +111,7 @@ class Runner(BaseRunner):
             return self.model(inputs)
 ```
 
-These spans become children of `cog.prediction.invoke`. Cog owns the tracer providers for its parent process, worker process, and Python model spans. Do not replace the global provider in model code. Use `observability.config` when the Python provider needs custom configuration.
+These spans become children of `cog.prediction.invoke`, or `cog.train.invoke` during training. Cog owns the tracer providers for its parent process, worker process, and Python model spans. Do not replace the global provider in model code. Use `observability.config` when the Python provider needs custom configuration.
 
 Asyncio tasks inherit the active Python context. Raw threads and child processes require explicit context propagation. A background task that outlives the prediction may produce an uncorrelated span.
 

@@ -431,7 +431,16 @@ async fn create_prediction_with_id(
     is_training: bool,
 ) -> Response {
     let prediction_span = if is_training {
-        tracing::Span::none()
+        crate::cog_span!(
+            info_span,
+            "cog.train",
+            "cog.prediction.id" = %bounded_prediction_id(&prediction_id),
+            "cog.prediction.response_mode" = response_mode.as_str(),
+            "cog.prediction.status" = tracing::field::Empty,
+            "cog.slot.id" = tracing::field::Empty,
+            "error.type" = tracing::field::Empty,
+            "otel.status_code" = tracing::field::Empty
+        )
     } else {
         crate::cog_span!(
             info_span,
@@ -445,7 +454,9 @@ async fn create_prediction_with_id(
         )
     };
     #[cfg(feature = "tracing")]
-    crate::trace::set_caller_attributes(&prediction_span, &context);
+    if !is_training {
+        crate::trace::set_caller_attributes(&prediction_span, &context);
+    }
 
     if !is_training
         && response_mode == PredictionResponseMode::AsyncSse
@@ -1016,8 +1027,7 @@ async fn trace_request(request: Request<Body>, next: Next) -> Response {
     if matches!(
         route.as_str(),
         "/" | "/health-check" | "/openapi.json" | "/shutdown"
-    ) || route.starts_with("/trainings")
-    {
+    ) {
         return next.run(request).await;
     }
     let method = request.method().to_string();
@@ -1180,7 +1190,7 @@ mod tests {
     // --- Tests with MockOrchestrator for full prediction flow ---
 
     use crate::PredictionOutput;
-    use crate::bridge::protocol::SlotId;
+    use crate::bridge::protocol::{SlotId, TraceCarrier};
     use crate::orchestrator::Orchestrator;
     use crate::permit::PermitPool;
     use std::sync::Mutex as StdMutex;
@@ -1190,6 +1200,7 @@ mod tests {
     struct MockOrchestrator {
         register_count: AtomicUsize,
         complete_immediately: bool,
+        trace_carrier: StdMutex<Option<TraceCarrier>>,
     }
 
     impl MockOrchestrator {
@@ -1197,6 +1208,7 @@ mod tests {
             Self {
                 register_count: AtomicUsize::new(0),
                 complete_immediately: true,
+                trace_carrier: StdMutex::new(None),
             }
         }
 
@@ -1205,7 +1217,13 @@ mod tests {
             Self {
                 register_count: AtomicUsize::new(0),
                 complete_immediately: false,
+                trace_carrier: StdMutex::new(None),
             }
+        }
+
+        #[cfg(feature = "tracing")]
+        fn trace_carrier(&self) -> Option<TraceCarrier> {
+            self.trace_carrier.lock().unwrap().clone()
         }
     }
 
@@ -1218,8 +1236,9 @@ mod tests {
             _idle_sender: tokio::sync::oneshot::Sender<crate::permit::SlotIdleToken>,
         ) {
             self.register_count.fetch_add(1, Ordering::SeqCst);
+            let mut pred = prediction.lock().unwrap();
+            *self.trace_carrier.lock().unwrap() = pred.trace_carrier();
             if self.complete_immediately {
-                let mut pred = prediction.lock().unwrap();
                 pred.set_succeeded(PredictionOutput::Single(serde_json::json!("mock output")));
             }
         }
@@ -1268,12 +1287,18 @@ mod tests {
     }
 
     async fn create_ready_service() -> Arc<PredictionService> {
+        create_ready_service_with_orchestrator().await.0
+    }
+
+    async fn create_ready_service_with_orchestrator()
+    -> (Arc<PredictionService>, Arc<MockOrchestrator>) {
         let service = Arc::new(PredictionService::new_no_pool());
         let pool = create_test_pool(2).await;
         let orchestrator = Arc::new(MockOrchestrator::new());
-        service.set_orchestrator(pool, orchestrator).await;
+        let orchestrator_dyn: Arc<dyn Orchestrator> = orchestrator.clone();
+        service.set_orchestrator(pool, orchestrator_dyn).await;
         service.set_health(Health::Ready).await;
-        service
+        (service, orchestrator)
     }
 
     async fn enable_prediction_streaming(service: &PredictionService) {
@@ -1814,6 +1839,43 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let json = response_json(response).await;
         assert_eq!(json["status"], "succeeded");
+    }
+
+    #[cfg(feature = "tracing")]
+    #[tokio::test]
+    async fn training_forwards_incoming_trace_context() {
+        use opentelemetry::trace::TracerProvider as _;
+        use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider};
+        use tracing_subscriber::layer::SubscriberExt as _;
+
+        let _active = crate::trace::activate_for_test();
+        let provider = SdkTracerProvider::builder()
+            .with_sampler(Sampler::AlwaysOn)
+            .build();
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_opentelemetry::layer().with_tracer(provider.tracer("training-route-test")),
+        );
+        let _subscriber = tracing::subscriber::set_default(subscriber);
+        let (service, orchestrator) = create_ready_service_with_orchestrator().await;
+        let app = routes(service);
+        let trace_id = "4bf92f3577b34da6a3ce929d0e0e4736";
+
+        let response = app
+            .oneshot(
+                Request::post("/trainings")
+                    .header("content-type", "application/json")
+                    .header("traceparent", format!("00-{trace_id}-00f067aa0ba902b7-01"))
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let carrier = orchestrator
+            .trace_carrier()
+            .expect("training should carry trace context to the worker");
+        assert_eq!(carrier.traceparent.split('-').nth(1), Some(trace_id));
     }
 
     #[tokio::test]

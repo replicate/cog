@@ -211,6 +211,21 @@ pub fn is_active() -> bool {
     ACTIVE.load(Ordering::Acquire)
 }
 
+#[cfg(test)]
+pub(crate) struct ActiveTestGuard(bool);
+
+#[cfg(test)]
+pub(crate) fn activate_for_test() -> ActiveTestGuard {
+    ActiveTestGuard(ACTIVE.swap(true, Ordering::AcqRel))
+}
+
+#[cfg(test)]
+impl Drop for ActiveTestGuard {
+    fn drop(&mut self) {
+        ACTIVE.store(self.0, Ordering::Release);
+    }
+}
+
 pub fn extract_parent(headers: &HeaderMap) -> Option<Context> {
     if !is_active() {
         return None;
