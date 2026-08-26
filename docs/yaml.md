@@ -222,15 +222,7 @@ concurrency:
 
 ## `observability`
 
-OpenTelemetry tracing and metrics are disabled by default. Enable either signal with a boolean shorthand:
-
-```yaml
-observability:
-  traces: true
-  metrics: true
-```
-
-Use an object when tracing needs sampler or propagation settings:
+OpenTelemetry tracing and metrics are disabled by default. Enable either signal with an object:
 
 ```yaml
 observability:
@@ -240,6 +232,8 @@ observability:
   metrics:
     enabled: true
 ```
+
+The boolean forms `traces: true` and `metrics: true` are accepted as shorthand.
 
 `config` is an optional project-relative Python file for customizing Python telemetry providers and selecting Cog runtime metrics. It requires at least one enabled signal. The file may define `create_tracer_provider(resource)`, `create_meter_provider(resource)`, `configure_runtime_metrics()`, and `configure_instrumentation()`. Cog installs selected providers before importing the model and flushes and shuts them down with the worker.
 

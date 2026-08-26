@@ -8,4 +8,6 @@ build:
 run: "run.py:Runner"
 
 observability:
-  traces: true
+  traces:
+    enabled: true
+    sampler: parentbased_always_off

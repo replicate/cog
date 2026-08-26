@@ -8,7 +8,8 @@ build:
 run: "predict.py:Runner"
 observability:
   config: telemetry.py
-  metrics: true
+  metrics:
+    enabled: true
 
 -- telemetry.py --
 from opentelemetry.sdk.metrics import MeterProvider

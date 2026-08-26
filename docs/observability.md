@@ -4,17 +4,11 @@ Cog can join incoming distributed traces, export fixed runtime metrics, and make
 
 Cog has two telemetry ownership domains. The Rust parent owns fixed runtime metrics. The Python worker owns model-authored spans and metrics. Both can export to the same collector, but a Python provider never replaces the parent runtime provider.
 
+OpenTelemetry log export is not supported.
+
 ## Enable telemetry
 
-Enable either signal with the boolean shorthand:
-
-```yaml
-observability:
-  traces: true
-  metrics: true
-```
-
-Signals can also use objects when tracing needs sampler or propagation settings:
+Enable either signal with an object:
 
 ```yaml
 observability:
@@ -24,6 +18,8 @@ observability:
   metrics:
     enabled: true
 ```
+
+The boolean forms `traces: true` and `metrics: true` are accepted as shorthand.
 
 An image can enable either signal independently. Runtime configuration can disable an enabled signal, but cannot enable a signal omitted from the image.
 
@@ -52,20 +48,7 @@ class Runner(BaseRunner):
         return expensive_model_call(prompt)
 ```
 
-Add this to `cog.yaml` to enable tracing:
-
-```yaml
-observability:
-  traces: true
-```
-
-For information about continuing upstream traces or starting standalone traces, see [Sampling](#sampling).
-
-Custom model spans are optional. Add them only when the automatic `cog.prediction.invoke` duration needs to be split into model-specific phases.
-
-## Automatic spans
-
-Cog creates framework spans without requiring tracing code in the model:
+Cog automatically produces:
 
 ```text
 POST /predictions
@@ -75,6 +58,22 @@ POST /predictions
         └── cog.prediction.invoke
             └── cog.prediction.prepare_input
 ```
+
+Add this to `cog.yaml` to enable tracing:
+
+```yaml
+observability:
+  traces:
+    enabled: true
+```
+
+For information about continuing upstream traces or starting standalone traces, see [Sampling](#sampling).
+
+Custom model spans are optional. Add them only when the automatic `cog.prediction.invoke` duration needs to be split into model-specific phases.
+
+## Automatic spans
+
+The prediction span tree above requires no tracing code in the model.
 
 `cog.prediction.invoke` covers input preparation and the complete `run()` or legacy `predict()` call. For generators and async generators, it remains open while Cog consumes the returned output.
 
@@ -128,13 +127,13 @@ observability:
     enabled: true
 ```
 
-Cog validates the file during configuration, copies it to a fixed path in the image, and loads it before importing the model. Provider factories are optional. A missing factory uses Cog's default provider for that signal. Factories receive Cog's base `Resource` and may merge or replace its attributes.
+Cog validates the file during configuration, copies it to a fixed path in the image, and loads it before importing the model. Provider factories are optional. A missing factory uses Cog's default provider for that signal. Factories receive Cog's base `Resource` and may merge or replace its attributes. Existing zero-argument `create_tracer_provider()` factories remain supported.
 
 ```python
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -145,6 +144,7 @@ def create_tracer_provider(resource: Resource) -> TracerProvider:
     provider = TracerProvider(
         resource=resource.merge(Resource({"model.name": "example"})),
         sampler=ParentBased(TraceIdRatioBased(0.1)),
+        span_limits=SpanLimits(max_span_attributes=64),
         shutdown_on_exit=False,
     )
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
@@ -173,7 +173,7 @@ Import errors, a wrong return type, factory errors, and instrumentation errors f
 
 ## Metrics
 
-`metrics: true` enables two providers. The Rust parent exports fixed Cog runtime instruments. The Python worker installs a standard `MeterProvider` so model code can create its own instruments with the OpenTelemetry API. The worker does not export a second copy of the fixed runtime metrics.
+`metrics.enabled: true` enables two providers. The Rust parent exports fixed Cog runtime instruments. The Python worker installs a standard `MeterProvider` so model code can create its own instruments with the OpenTelemetry API. The worker does not export a second copy of the fixed runtime metrics.
 
 ### Runtime metrics
 
@@ -224,7 +224,7 @@ def configure_runtime_metrics() -> RuntimeMetricsConfig:
     )
 ```
 
-Set `enabled=False` to disable all current and future Cog runtime metrics. This does not disable the Python `MeterProvider`, so model metrics can still export.
+Set `enabled=False` to disable all current and future built-in Cog metrics. This does not disable the Python `MeterProvider`, so model metrics can still export.
 
 ## Streaming predictions
 
@@ -334,7 +334,7 @@ OTEL_SERVICE_NAME=cog
 OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production
 ```
 
-Cog adds `service.version`, a process-local `service.instance.id`, and `cog.process.role=parent|worker` to the base resource. Request-specific values belong on `cog.prediction` through caller tags rather than resources.
+Cog provides defaults for `service.version` and the process-local `service.instance.id`, and always sets `cog.process.role=parent|worker`. `OTEL_RESOURCE_ATTRIBUTES` can override the default identity attributes except the process role. `OTEL_SERVICE_NAME` takes precedence over `service.name` in `OTEL_RESOURCE_ATTRIBUTES`. Request-specific values belong on `cog.prediction` through caller tags rather than resources.
 
 ## Failure behavior
 

@@ -37,4 +37,10 @@ cog run \
 
 The `parentbased_always_on` sampler preserves an upstream trace's sampling decision and samples predictions that start a new trace locally. `model.output_tokens` is a model-owned OpenTelemetry counter; `current_scope().record_metric()` continues to populate the prediction response separately.
 
+To print Python spans locally without an OTLP endpoint, run:
+
+```shell
+cog run -e OTEL_DEBUG_TRACES=true -i total=5 -i interval=1
+```
+
 See [Honeycomb's OpenTelemetry endpoint documentation](https://docs.honeycomb.io/send-data/opentelemetry/#using-the-honeycomb-opentelemetry-endpoint) for regional endpoints and Honeycomb Classic dataset headers.

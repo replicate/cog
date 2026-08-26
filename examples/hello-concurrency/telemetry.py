@@ -1,3 +1,5 @@
+import os
+
 from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -7,11 +9,21 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import (
     BatchSpanProcessor,
+    ConsoleSpanExporter,
+    SimpleSpanProcessor,
     SpanProcessor,
 )
 from opentelemetry.sdk.trace.sampling import DEFAULT_ON
 
 from cog.telemetry import RuntimeMetric, RuntimeMetricsConfig
+
+
+def _has_export_endpoint(signal: str) -> bool:
+    signal_endpoint = os.getenv(f"OTEL_EXPORTER_OTLP_{signal.upper()}_ENDPOINT")
+    if signal_endpoint is not None:
+        return bool(signal_endpoint.strip())
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    return bool(endpoint and endpoint.strip())
 
 
 class ModelAttributesProcessor(SpanProcessor):
@@ -45,15 +57,20 @@ def create_tracer_provider(resource: Resource) -> TracerProvider:
     )
     provider.add_span_processor(ModelAttributesProcessor())
 
-    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+    if _has_export_endpoint("traces"):
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+    if os.getenv("OTEL_DEBUG_TRACES", "false").lower() == "true":
+        provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
 
     return provider
 
 
 def create_meter_provider(resource: Resource) -> MeterProvider:
-    reader = PeriodicExportingMetricReader(OTLPMetricExporter())
+    readers: list[PeriodicExportingMetricReader] = []
+    if _has_export_endpoint("metrics"):
+        readers.append(PeriodicExportingMetricReader(OTLPMetricExporter()))
     return MeterProvider(
-        metric_readers=[reader],
+        metric_readers=readers,
         resource=resource.merge(Resource({"model.name": "hello-concurrency"})),
         shutdown_on_exit=False,
     )

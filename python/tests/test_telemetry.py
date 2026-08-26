@@ -67,6 +67,23 @@ assert _telemetry._base_resource().attributes["service.version"] == "worker-vers
     assert result.returncode == 0, result.stderr
 
 
+def test_worker_resource_attributes_override_cog_defaults() -> None:
+    result = _run_script(
+        """
+import os
+os.environ["OTEL_RESOURCE_ATTRIBUTES"] = "service.name=resource-service,service.version=resource-version,service.instance.id=resource-instance,cog.process.role=invalid"
+os.environ["OTEL_SERVICE_NAME"] = "service-name-override"
+from cog import _telemetry
+resource = _telemetry._base_resource()
+assert resource.attributes["service.name"] == "service-name-override"
+assert resource.attributes["service.version"] == "resource-version"
+assert resource.attributes["service.instance.id"] == "resource-instance"
+assert resource.attributes["cog.process.role"] == "worker"
+"""
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_custom_meter_provider_and_runtime_metric_config(tmp_path: Path) -> None:
     config = tmp_path / "telemetry.py"
     config.write_text(

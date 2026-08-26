@@ -21,7 +21,7 @@ from opentelemetry.context import (
 )
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.resources import OTELResourceDetector, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.trace.sampling import (
@@ -346,18 +346,19 @@ def _http_endpoint(endpoint: str, append_path: bool, signal: str) -> str:
 
 
 def _base_resource() -> Resource:
-    return Resource.create(
+    resource = Resource.create(
         {
-            "service.name": os.environ.get("OTEL_SERVICE_NAME", "cog"),
+            "service.name": "cog",
             "service.version": os.environ.get(
                 "COG_OBSERVABILITY_SERVICE_VERSION", __version__
             ),
             "service.instance.id": os.environ.get(
                 "COG_OBSERVABILITY_INSTANCE_ID", str(uuid.uuid4())
             ),
-            "cog.process.role": "worker",
         }
     )
+    resource = resource.merge(OTELResourceDetector().detect())
+    return resource.merge(Resource({"cog.process.role": "worker"}))
 
 
 def _validate_tracer_provider_collision(
