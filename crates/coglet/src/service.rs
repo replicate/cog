@@ -671,11 +671,6 @@ impl PredictionService {
                 cancel_on_stream_drop,
             },
         );
-        prediction_arc
-            .lock()
-            .expect("prediction mutex poisoned after admission")
-            .mark_runtime_metrics_admitted();
-
         let handle = PredictionHandle { id, cancel_token };
 
         Ok((handle, UnregisteredPredictionSlot::new(slot, idle_tx)))
@@ -777,6 +772,7 @@ impl PredictionService {
                     "Prediction mutex poisoned".to_string(),
                 ));
             };
+            pred.mark_runtime_metrics_admitted();
             pred.set_processing();
             pred.record_trace_slot(slot_id);
         }
