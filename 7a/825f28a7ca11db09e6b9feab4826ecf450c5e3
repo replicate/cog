@@ -1,0 +1,39 @@
+crates/README.md
+  s_af397569a4642a::t_72a05bb24286b4 117
+crates/coglet/src/orchestrator.rs
+  s_af397569a4642a::t_cbdc89713b8b8b 907-912
+crates/coglet/src/permit/pool.rs
+  s_af397569a4642a::t_c85f7aa440943f 181-183,186-187,355-357,359
+crates/coglet/src/prediction.rs
+  s_af397569a4642a::t_a33f2088a5323f 393
+crates/coglet/src/runtime_metrics.rs
+  s_af397569a4642a::t_ff700c8c7e0dd4 243-249,258,261-295,300-315,377-387,448,453-455,460-462,468-557,580,583,588-591,598-638,640-641,643-683,692-694
+docs/environment.md
+  s_af397569a4642a::t_d17dd256b6c195 241-243
+docs/llms.txt
+  s_af397569a4642a::t_7bfa37c3f96fc0 1183-1185,2561,2587,4229
+docs/observability.md
+  s_af397569a4642a::t_9b6e18ec02c0a4 189,215
+docs/yaml.md
+  s_af397569a4642a::t_69efe6adf4eddd 238
+pyproject.toml
+  s_af397569a4642a::t_14eace014d21f1 37
+python/tests/test_trace.py
+  s_af397569a4642a::t_87169899dec41e 10-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "7a825f28a7ca11db09e6b9feab4826ecf450c5e3",
+  "prompts": {},
+  "sessions": {
+    "s_af397569a4642a": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fbfcedaf1ffeMi5pgMw7ck9eBM",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
