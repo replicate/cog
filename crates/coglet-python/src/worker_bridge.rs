@@ -7,7 +7,7 @@ use std::thread::JoinHandle;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use coglet_core::bridge::protocol::SlotId;
+use coglet_core::bridge::protocol::{RuntimeMetric, RuntimeMetricsConfig, SlotId};
 use coglet_core::worker::{PredictHandler, PredictResult, SetupError, SlotSender};
 
 use crate::predictor::PythonPredictor;
@@ -58,25 +58,45 @@ fn env_true(name: &str, default: bool) -> bool {
     })
 }
 
-fn python_tracing_enabled() -> bool {
-    if !env_true("COG_TRACE_CONFIGURED", false)
-        || !env_true("COG_TRACE_ENABLED", true)
-        || env_true("OTEL_SDK_DISABLED", false)
-    {
+fn python_telemetry_enabled() -> bool {
+    if env_true("OTEL_SDK_DISABLED", false) {
         return false;
     }
-    if std::env::var_os("COG_OBSERVABILITY_CONFIG").is_some() {
-        return true;
-    }
-    if std::env::var("OTEL_TRACES_EXPORTER").as_deref() == Ok("none") {
-        return false;
-    }
-    [
-        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
-        "OTEL_EXPORTER_OTLP_ENDPOINT",
-    ]
-    .iter()
-    .any(|name| std::env::var(name).is_ok_and(|value| !value.trim().is_empty()))
+    (env_true("COG_TRACE_CONFIGURED", false) && env_true("COG_TRACE_ENABLED", true))
+        || (env_true("COG_METRICS_CONFIGURED", false) && env_true("COG_METRICS_ENABLED", true))
+}
+
+fn runtime_metrics_config_from_python(
+    config: &Bound<'_, PyAny>,
+) -> Result<RuntimeMetricsConfig, SetupError> {
+    let enabled = config
+        .getattr("enabled")
+        .and_then(|value| value.extract::<bool>())
+        .map_err(|error| SetupError::setup(error.to_string()))?;
+    let disabled = config
+        .getattr("disabled")
+        .and_then(|values| values.try_iter())
+        .map_err(|error| SetupError::setup(error.to_string()))?
+        .map(|value| {
+            let value = value.map_err(|error| SetupError::setup(error.to_string()))?;
+            let name = value
+                .getattr("value")
+                .and_then(|value| value.extract::<String>())
+                .map_err(|error| SetupError::setup(error.to_string()))?;
+            match name.as_str() {
+                "prediction_count" => Ok(RuntimeMetric::PredictionCount),
+                "prediction_rejected" => Ok(RuntimeMetric::PredictionRejected),
+                "prediction_active" => Ok(RuntimeMetric::PredictionActive),
+                "prediction_duration" => Ok(RuntimeMetric::PredictionDuration),
+                "setup_duration" => Ok(RuntimeMetric::SetupDuration),
+                "slot_count" => Ok(RuntimeMetric::SlotCount),
+                _ => Err(SetupError::setup(format!(
+                    "unsupported runtime metric selector {name:?}"
+                ))),
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(RuntimeMetricsConfig { enabled, disabled })
 }
 
 fn current_trace_carrier() -> Option<HashMap<String, String>> {
@@ -179,6 +199,7 @@ pub struct PythonPredictHandler {
     /// Handle to the asyncio loop thread for joining on shutdown.
     async_thread: Mutex<Option<JoinHandle<()>>>,
     max_concurrency: usize,
+    runtime_metrics: Mutex<Option<RuntimeMetricsConfig>>,
 }
 
 impl PythonPredictHandler {
@@ -193,6 +214,7 @@ impl PythonPredictHandler {
             async_loop: Mutex::new(Some(loop_obj)),
             async_thread: Mutex::new(Some(thread)),
             max_concurrency,
+            runtime_metrics: Mutex::new(None),
         })
     }
 
@@ -207,6 +229,7 @@ impl PythonPredictHandler {
             async_loop: Mutex::new(Some(loop_obj)),
             async_thread: Mutex::new(Some(thread)),
             max_concurrency,
+            runtime_metrics: Mutex::new(None),
         })
     }
 
@@ -354,13 +377,29 @@ impl PredictHandler for PythonPredictHandler {
     async fn setup(&self) -> Result<(), SetupError> {
         Python::attach(|py| {
             let carrier = current_trace_carrier();
-            if python_tracing_enabled() {
-                let trace_module = py
-                    .import("cog._trace")
+            if python_telemetry_enabled() {
+                let telemetry_module = py
+                    .import("cog._telemetry")
                     .map_err(|error| SetupError::setup(error.to_string()))?;
-                trace_module
-                    .call_method0("install_provider")
-                    .map_err(|error| SetupError::setup(error.to_string()))?;
+                let config = match telemetry_module.call_method0("install_providers") {
+                    Ok(config) => config,
+                    Err(error) => {
+                        if let Ok(config) = telemetry_module.call_method0("runtime_metrics_config")
+                            && let Ok(config) = runtime_metrics_config_from_python(&config)
+                        {
+                            *self
+                                .runtime_metrics
+                                .lock()
+                                .expect("runtime_metrics mutex poisoned") = Some(config);
+                        }
+                        return Err(SetupError::setup(error.to_string()));
+                    }
+                };
+                *self
+                    .runtime_metrics
+                    .lock()
+                    .expect("runtime_metrics mutex poisoned") =
+                    Some(runtime_metrics_config_from_python(&config)?);
             }
             let _trace_guard = PythonTraceGuard::enter(py, carrier.as_ref())
                 .map_err(|error| SetupError::internal(error.to_string()))?;
@@ -404,6 +443,13 @@ impl PredictHandler for PythonPredictHandler {
 
     fn is_train(&self) -> bool {
         self.mode == HandlerMode::Train
+    }
+
+    fn runtime_metrics_config(&self) -> Option<RuntimeMetricsConfig> {
+        self.runtime_metrics
+            .lock()
+            .expect("runtime_metrics mutex poisoned")
+            .clone()
     }
 
     async fn predict(
@@ -793,12 +839,9 @@ impl PredictHandler for PythonPredictHandler {
     }
 
     async fn shutdown(&self) {
-        if !python_tracing_enabled() {
-            return;
-        }
         Python::attach(|py| {
-            if let Ok(trace_module) = py.import("cog._trace") {
-                let _ = trace_module.call_method0("shutdown");
+            if let Ok(telemetry_module) = py.import("cog._telemetry") {
+                let _ = telemetry_module.call_method0("shutdown");
             }
         });
     }

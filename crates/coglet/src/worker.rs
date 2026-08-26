@@ -145,7 +145,8 @@ fn init_worker_tracing(
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
     ControlRequest, ControlResponse, FileOutputKind, LogSource, MAX_INLINE_IPC_SIZE, MetricMode,
-    SLOT_RESPONSE_PROTOCOL_VERSION, SlotId, SlotOutcome, SlotRequest, SlotResponse,
+    RuntimeMetricsConfig, SLOT_RESPONSE_PROTOCOL_VERSION, SlotId, SlotOutcome, SlotRequest,
+    SlotResponse,
 };
 use crate::bridge::transport::{ChildTransportInfo, connect_transport};
 use crate::orchestrator::HealthcheckResult;
@@ -331,6 +332,11 @@ pub trait PredictHandler: Send + Sync + 'static {
     /// Whether this handler runs the training operation.
     fn is_train(&self) -> bool {
         false
+    }
+
+    /// Runtime metric selectors chosen during worker setup.
+    fn runtime_metrics_config(&self) -> Option<RuntimeMetricsConfig> {
+        None
     }
 
     /// Run a prediction.
@@ -620,6 +626,7 @@ pub async fn run_worker<H: PredictHandler>(
             .send(ControlResponse::Failed {
                 slot,
                 error: format!("Setup failed: {}", e),
+                runtime_metrics: handler.runtime_metrics_config(),
             })
             .await;
         handler.shutdown().await;
@@ -655,6 +662,7 @@ pub async fn run_worker<H: PredictHandler>(
         w.send(ControlResponse::Ready {
             slots: slot_ids.clone(),
             schema,
+            runtime_metrics: handler.runtime_metrics_config(),
         })
         .await?;
     }

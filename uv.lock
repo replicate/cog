@@ -133,6 +133,12 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+observability = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+]
 tracing = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
@@ -157,17 +163,21 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "coglet", specifier = ">=0.1.0,<1.0" },
+    { name = "coglet", specifier = ">=0.22.0,<1.0" },
+    { name = "opentelemetry-api", marker = "extra == 'observability'", specifier = "==1.44.0" },
     { name = "opentelemetry-api", marker = "extra == 'tracing'", specifier = "==1.44.0" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "extra == 'observability'", specifier = "==1.44.0" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "extra == 'tracing'", specifier = "==1.44.0" },
+    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'observability'", specifier = "==1.44.0" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'tracing'", specifier = "==1.44.0" },
+    { name = "opentelemetry-sdk", marker = "extra == 'observability'", specifier = "==1.44.0" },
     { name = "opentelemetry-sdk", marker = "extra == 'tracing'", specifier = "==1.44.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.25.0" },
     { name = "structlog", specifier = ">=21.0.0" },
     { name = "typing-extensions", specifier = ">=4.0" },
 ]
-provides-extras = ["tracing"]
+provides-extras = ["observability", "tracing"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -186,12 +196,12 @@ test = [
 
 [[package]]
 name = "coglet"
-version = "0.17.0b1"
+version = "0.22.0"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/3c/001a01b07c4829c09a3a891de593743e282d2f7f2905f63159638709c92b/coglet-0.17.0b1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:54efcf2f6b2efd40ef76abe9712e024be178dca219fa7c0d1d0609b1c9383820", size = 3043026, upload-time = "2026-02-11T22:54:30.253Z" },
-    { url = "https://files.pythonhosted.org/packages/c0/dc/26bd58d6a3378e11392d44b2a11fe81db3d504ab3f5bb85979595188fd05/coglet-0.17.0b1-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:6726921767a84f0d259550579fec566a6fa19fd879433fc3d8c75e83875c6822", size = 2862875, upload-time = "2026-02-11T22:54:32.429Z" },
-    { url = "https://files.pythonhosted.org/packages/96/41/18b54ed28e2e75f62e517529e85b2300b41f635a42a5b82383953a939a3d/coglet-0.17.0b1-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4f509e5dbb751ccb59f87b7eb3c579daab9f0bbcad3bc33c5fda3b3d9de7191f", size = 3021687, upload-time = "2026-02-11T22:54:34.504Z" },
+    { url = "https://files.pythonhosted.org/packages/93/0f/e6c789e22d3129b9a5407580a45f4304a0d64102bedbc24d6bb12bb79cc3/coglet-0.22.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:3fff1aae18620664477ad78f41ed764b41254337c8af0965ae739bdab30f8154", size = 6265352, upload-time = "2026-08-14T00:52:57.089Z" },
+    { url = "https://files.pythonhosted.org/packages/57/f3/c6c594e0dbb2b3ecb6532123b8560129ef68ab0e61798b5d460e7bb65a82/coglet-0.22.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8399fd440defa798f7dff48004cb0a9fbefd0fab0c1dbe1439bab56e22a0818f", size = 5705608, upload-time = "2026-08-14T00:52:58.828Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/da/a537a7431af94103523f079fdc43e8a168359792afec88f0dbad0e287f75/coglet-0.22.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1b87e944db9606530f6bba1473db16fcfa4677c9625af18d607b8ef51cd6ffec", size = 5992560, upload-time = "2026-08-14T00:53:01.08Z" },
 ]
 
 [[package]]

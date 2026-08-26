@@ -23,6 +23,21 @@ pub enum PredictionStatus {
     Canceled,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PredictionOperation {
+    Predict,
+    Train,
+}
+
+impl PredictionOperation {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Predict => "predict",
+            Self::Train => "train",
+        }
+    }
+}
+
 impl PredictionStatus {
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Succeeded | Self::Failed | Self::Canceled)
@@ -140,6 +155,8 @@ pub struct Prediction {
     id: String,
     cancel_token: CancellationToken,
     started_at: Instant,
+    operation: PredictionOperation,
+    runtime_metrics_admitted: bool,
     status: PredictionStatus,
     logs: String,
     outputs: Vec<serde_json::Value>,
@@ -158,6 +175,14 @@ pub struct Prediction {
 
 impl Prediction {
     pub fn new(id: String, webhook: Option<WebhookSender>) -> Self {
+        Self::new_with_operation(id, webhook, PredictionOperation::Predict)
+    }
+
+    pub fn new_with_operation(
+        id: String,
+        webhook: Option<WebhookSender>,
+        operation: PredictionOperation,
+    ) -> Self {
         let (stream_tx, _) = tokio::sync::broadcast::channel(STREAM_CHANNEL_CAPACITY);
         let stream_history_capacity = stream_history_capacity_from_env();
 
@@ -165,6 +190,8 @@ impl Prediction {
             id,
             cancel_token: CancellationToken::new(),
             started_at: Instant::now(),
+            operation,
+            runtime_metrics_admitted: false,
             status: PredictionStatus::Starting,
             logs: String::new(),
             outputs: Vec::new(),
@@ -187,6 +214,16 @@ impl Prediction {
 
     pub fn cancel_token(&self) -> CancellationToken {
         self.cancel_token.clone()
+    }
+
+    pub fn operation(&self) -> PredictionOperation {
+        self.operation
+    }
+
+    pub fn mark_runtime_metrics_admitted(&mut self) {
+        self.runtime_metrics_admitted = true;
+        #[cfg(feature = "tracing")]
+        crate::runtime_metrics::record_prediction_admitted(self.operation.as_str());
     }
 
     pub fn subscribe_stream(
@@ -297,6 +334,7 @@ impl Prediction {
             return;
         }
         self.status = PredictionStatus::Succeeded;
+        self.record_runtime_metrics_terminal();
         self.output = Some(output);
         self.finish_trace("succeeded", None);
         self.emit_stream_event(PredictionStreamEvent::Completed {
@@ -317,6 +355,7 @@ impl Prediction {
             return;
         }
         self.status = PredictionStatus::Failed;
+        self.record_runtime_metrics_terminal();
         self.error = Some(error);
         self.finish_trace("failed", Some("prediction_failed"));
         self.emit_stream_event(PredictionStreamEvent::Completed {
@@ -331,6 +370,7 @@ impl Prediction {
             return;
         }
         self.status = PredictionStatus::Canceled;
+        self.record_runtime_metrics_terminal();
         self.finish_trace("canceled", Some("canceled"));
         self.emit_stream_event(PredictionStreamEvent::Completed {
             payload: self.build_state_snapshot(),
@@ -348,6 +388,18 @@ impl Prediction {
             span.record("error.type", error_type);
             span.record("otel.status_code", "ERROR");
         }
+    }
+
+    fn record_runtime_metrics_terminal(&self) {
+        if !self.runtime_metrics_admitted {
+            return;
+        }
+        #[cfg(feature = "tracing")]
+        crate::runtime_metrics::record_prediction_terminal(
+            self.operation.as_str(),
+            self.status.as_str(),
+            self.elapsed(),
+        );
     }
 
     pub fn elapsed(&self) -> std::time::Duration {

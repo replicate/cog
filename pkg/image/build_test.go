@@ -153,14 +153,14 @@ func TestAddConcurrencyToCustomDockerfileImageBuildsWrapperLayer(t *testing.T) {
 	require.Equal(t, "/tmp/build-cache", dockerCommand.builds[0].BuildCacheDir)
 }
 
-func TestAddTracingToCustomDockerfileImageUsesStagedConfig(t *testing.T) {
+func TestAddObservabilityToCustomDockerfileImageUsesStagedConfig(t *testing.T) {
 	dockerCommand := &recordingCommand{MockCommand: dockertest.NewMockCommand(), imageUser: "1000:1000"}
 	observability := &config.Observability{
 		Config: "config/telemetry.py",
 		Traces: &config.Tracing{Enabled: true, Sampler: "parentbased_always_off"},
 	}
 
-	err := addTracingToCustomDockerfileImage(t.Context(), dockerCommand, "my-image", observability, "plain", "/tmp/build-cache")
+	err := addObservabilityToCustomDockerfileImage(t.Context(), dockerCommand, "my-image", observability, "plain", "/tmp/build-cache")
 
 	require.NoError(t, err)
 	require.Len(t, dockerCommand.builds, 1)
@@ -169,6 +169,28 @@ func TestAddTracingToCustomDockerfileImageUsesStagedConfig(t *testing.T) {
 	require.Contains(t, build.DockerfileContents, "USER root")
 	require.Contains(t, build.DockerfileContents, "USER \"1000:1000\"")
 	require.Equal(t, map[string]string{cogBuildContextName: "/tmp/build-cache"}, build.BuildContexts)
+}
+
+func TestAddObservabilityToCustomDockerfileImageSupportsMetricsOnly(t *testing.T) {
+	dockerCommand := &recordingCommand{MockCommand: dockertest.NewMockCommand(), imageUser: "1000:1000"}
+	observability := &config.Observability{
+		Config:  "config/telemetry.py",
+		Metrics: &config.Metrics{Enabled: true},
+	}
+
+	err := addObservabilityToCustomDockerfileImage(t.Context(), dockerCommand, "my-image", observability, "plain", "/tmp/build-cache")
+
+	require.NoError(t, err)
+	require.Len(t, dockerCommand.builds, 1)
+	build := dockerCommand.builds[0]
+	assert.Contains(t, build.DockerfileContents, "COPY --from=cog_build telemetry.py /.cog/telemetry.py")
+	assert.Contains(t, build.DockerfileContents, "ENV COG_METRICS_CONFIGURED=true")
+	assert.Contains(t, build.DockerfileContents, "ENV COG_METRICS_ENABLED=true")
+	assert.Contains(t, build.DockerfileContents, dockerfilepkg.PythonObservabilityCheck)
+	assert.Contains(t, build.DockerfileContents, dockerfilepkg.PythonObservabilityCheckError)
+	assert.NotContains(t, build.DockerfileContents, "COG_TRACE_CONFIGURED")
+	assert.Contains(t, build.DockerfileContents, "USER root")
+	assert.Contains(t, build.DockerfileContents, "USER \"1000:1000\"")
 }
 
 func TestGeneratePredictorMetadataDoesNotRequireValidOutputSchema(t *testing.T) {
@@ -430,14 +452,26 @@ func TestStageObservabilityConfigRejectsSymlinkEscape(t *testing.T) {
 	require.Error(t, stageObservabilityConfig(projectDir, observability, buildDir))
 }
 
-func TestTracingDockerfileUsesStagedObservabilityConfig(t *testing.T) {
-	dockerfile := tracingDockerfile("model:latest", &config.Observability{
+func TestObservabilityDockerfileUsesStagedObservabilityConfig(t *testing.T) {
+	dockerfile := observabilityDockerfile("model:latest", &config.Observability{
 		Config: "config/telemetry.py",
 		Traces: &config.Tracing{Enabled: true, Sampler: "parentbased_always_off"},
 	}, "")
 
 	assert.Contains(t, dockerfile, "COPY --from=cog_build telemetry.py /.cog/telemetry.py")
-	assert.Contains(t, dockerfile, "python -m pip install --no-cache-dir --break-system-packages "+dockerfilepkg.PythonTracingRequirements)
+	assert.Contains(t, dockerfile, "python -m pip install --no-cache-dir --break-system-packages "+dockerfilepkg.PythonObservabilityRequirements)
 	assert.Contains(t, dockerfile, `ENV COG_OBSERVABILITY_CONFIG="/.cog/telemetry.py"`)
 	assert.NotContains(t, dockerfile, "config/telemetry.py")
+}
+
+func TestObservabilityDockerfileSupportsMetricsOnly(t *testing.T) {
+	dockerfile := observabilityDockerfile("model:latest", &config.Observability{
+		Config:  "config/telemetry.py",
+		Metrics: &config.Metrics{Enabled: true},
+	}, "")
+
+	assert.Contains(t, dockerfile, "ENV COG_METRICS_CONFIGURED=true")
+	assert.Contains(t, dockerfile, "ENV COG_METRICS_ENABLED=true")
+	assert.Contains(t, dockerfile, "COPY --from=cog_build telemetry.py /.cog/telemetry.py")
+	assert.NotContains(t, dockerfile, "COG_TRACE_CONFIGURED")
 }

@@ -222,18 +222,28 @@ concurrency:
 
 ## `observability`
 
-OpenTelemetry tracing is disabled by default. Enable it for an image with:
+OpenTelemetry tracing and metrics are disabled by default. Enable either signal with a boolean shorthand:
+
+```yaml
+observability:
+  traces: true
+  metrics: true
+```
+
+Use an object when tracing needs sampler or propagation settings:
 
 ```yaml
 observability:
   traces:
     enabled: true
     sampler: parentbased_always_off
+  metrics:
+    enabled: true
 ```
 
-`config` is an optional project-relative Python file for customizing the Python tracer provider. It requires `traces.enabled: true`. The file must define `create_tracer_provider()` returning `opentelemetry.sdk.trace.TracerProvider` and may define `configure_instrumentation()`. Cog installs the returned provider before importing the model and flushes and shuts it down with the worker.
+`config` is an optional project-relative Python file for customizing Python telemetry providers and selecting Cog runtime metrics. It requires at least one enabled signal. The file may define `create_tracer_provider(resource)`, `create_meter_provider(resource)`, `configure_runtime_metrics()`, and `configure_instrumentation()`. Cog installs selected providers before importing the model and flushes and shuts them down with the worker.
 
-This hook affects model-authored Python spans only. Cog's Rust framework spans continue to use the standard runtime OpenTelemetry configuration. See [Observability](observability.md#custom-python-tracing) for examples and lifecycle details.
+This hook affects model-authored Python spans and metrics only. Cog's Rust parent continues to own fixed runtime metrics. See [Observability](observability.md#custom-python-telemetry) for examples and lifecycle details.
 
 The default sampler continues sampled caller traces but does not start new traces. Supported sampler names are `always_on`, `always_off`, `traceidratio`, `parentbased_always_on`, `parentbased_always_off`, and `parentbased_traceidratio`. Ratio samplers require `sampler_arg` as a string between `"0"` and `"1"`.
 

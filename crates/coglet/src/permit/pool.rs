@@ -3,6 +3,7 @@
 //! Slot poisoning is a pool-level property: a poisoned slot is permanently removed
 //! from the pool regardless of whether a prediction was active on it.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -25,6 +26,7 @@ pub(crate) struct PermitInner {
 struct PoolConnection {
     pool_tx: mpsc::Sender<PermitInner>,
     pool_available: Arc<AtomicUsize>,
+    slot_states: Arc<StdMutex<HashMap<SlotId, SlotState>>>,
 }
 
 impl Clone for PoolConnection {
@@ -32,7 +34,38 @@ impl Clone for PoolConnection {
         Self {
             pool_tx: self.pool_tx.clone(),
             pool_available: Arc::clone(&self.pool_available),
+            slot_states: Arc::clone(&self.slot_states),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotState {
+    Available,
+    Busy,
+    Poisoned,
+}
+
+impl SlotState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Available => "available",
+            Self::Busy => "busy",
+            Self::Poisoned => "poisoned",
+        }
+    }
+}
+
+fn transition_slot_state(
+    states: &StdMutex<HashMap<SlotId, SlotState>>,
+    slot_id: SlotId,
+    state: SlotState,
+) {
+    if let Ok(mut states) = states.lock() {
+        if states.get(&slot_id) == Some(&SlotState::Poisoned) {
+            return;
+        }
+        states.insert(slot_id, state);
     }
 }
 
@@ -50,6 +83,7 @@ impl PermitInUse {
         inner: PermitInner,
         pool_tx: mpsc::Sender<PermitInner>,
         pool_available: Arc<AtomicUsize>,
+        slot_states: Arc<StdMutex<HashMap<SlotId, SlotState>>>,
     ) -> Self {
         inner.idle_flag.store(false, Ordering::Release);
 
@@ -61,6 +95,7 @@ impl PermitInUse {
             pool: PoolConnection {
                 pool_tx,
                 pool_available,
+                slot_states,
             },
         }
     }
@@ -87,6 +122,7 @@ impl PermitInUse {
     /// Also sets the pool-level poison flag so the slot is never reused.
     pub fn into_poisoned(mut self) -> PermitPoisoned {
         self.poisoned.store(true, Ordering::Release);
+        transition_slot_state(&self.pool.slot_states, self.slot_id, SlotState::Poisoned);
         PermitPoisoned {
             slot_id: self.slot_id,
             _writer: self.writer.take(),
@@ -144,6 +180,7 @@ impl Drop for PermitIdle {
 
             if self.pool.pool_tx.try_send(inner).is_ok() {
                 self.pool.pool_available.fetch_add(1, Ordering::Release);
+                transition_slot_state(&self.pool.slot_states, self.slot_id, SlotState::Available);
             }
         }
     }
@@ -275,6 +312,7 @@ pub struct PermitPool {
     available_count: Arc<AtomicUsize>,
     /// Per-slot poison flags, shared with permits for fast checking.
     poison_flags: StdMutex<Vec<(SlotId, Arc<AtomicBool>)>>,
+    slot_states: Arc<StdMutex<HashMap<SlotId, SlotState>>>,
 }
 
 impl PermitPool {
@@ -287,6 +325,7 @@ impl PermitPool {
             num_slots,
             available_count: Arc::new(AtomicUsize::new(0)),
             poison_flags: StdMutex::new(Vec::with_capacity(num_slots)),
+            slot_states: Arc::new(StdMutex::new(HashMap::with_capacity(num_slots))),
         }
     }
 
@@ -313,6 +352,7 @@ impl PermitPool {
             tracing::error!(slot = %slot_id, error = %e, "Failed to add permit to pool");
         } else {
             self.available_count.fetch_add(1, Ordering::Release);
+            transition_slot_state(&self.slot_states, slot_id, SlotState::Available);
         }
     }
 
@@ -328,11 +368,28 @@ impl PermitPool {
                     if !flag.swap(true, Ordering::AcqRel) {
                         tracing::warn!(slot = %slot_id, "Slot poisoned - capacity permanently reduced");
                     }
+                    transition_slot_state(&self.slot_states, slot_id, SlotState::Poisoned);
                     return;
                 }
             }
         }
         tracing::warn!(slot = %slot_id, "Attempted to poison unknown slot");
+    }
+
+    pub fn poison_all(&self) {
+        let slot_ids = self
+            .poison_flags
+            .lock()
+            .map(|flags| {
+                flags
+                    .iter()
+                    .map(|(slot_id, _)| *slot_id)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for slot_id in slot_ids {
+            self.poison(slot_id);
+        }
     }
 
     /// Check if a slot is poisoned.
@@ -359,10 +416,13 @@ impl PermitPool {
                 continue;
             }
 
+            transition_slot_state(&self.slot_states, inner.slot_id, SlotState::Busy);
+
             return Some(PermitInUse::new(
                 inner,
                 self.available_tx.clone(),
                 Arc::clone(&self.available_count),
+                Arc::clone(&self.slot_states),
             ));
         }
     }
@@ -379,10 +439,13 @@ impl PermitPool {
                 continue;
             }
 
+            transition_slot_state(&self.slot_states, inner.slot_id, SlotState::Busy);
+
             return Some(PermitInUse::new(
                 inner,
                 self.available_tx.clone(),
                 Arc::clone(&self.available_count),
+                Arc::clone(&self.slot_states),
             ));
         }
     }
@@ -393,6 +456,26 @@ impl PermitPool {
 
     pub fn available(&self) -> usize {
         self.available_count.load(Ordering::Acquire)
+    }
+
+    pub fn slot_state_counts(&self) -> [(SlotState, u64); 3] {
+        let mut available = 0;
+        let mut busy = 0;
+        let mut poisoned = 0;
+        if let Ok(states) = self.slot_states.lock() {
+            for state in states.values() {
+                match state {
+                    SlotState::Available => available += 1,
+                    SlotState::Busy => busy += 1,
+                    SlotState::Poisoned => poisoned += 1,
+                }
+            }
+        }
+        [
+            (SlotState::Available, available),
+            (SlotState::Busy, busy),
+            (SlotState::Poisoned, poisoned),
+        ]
     }
 }
 
@@ -528,5 +611,37 @@ mod tests {
         pool.poison(slot);
         pool.poison(slot); // Should not panic or double-count.
         assert!(pool.is_poisoned(slot));
+    }
+
+    #[tokio::test]
+    async fn slot_state_counts_are_disjoint_and_complete() {
+        let pool = PermitPool::new(2);
+        let (write1, _read1) = make_socket_pair().await;
+        let (write2, _read2) = make_socket_pair().await;
+        let slot1 = SlotId::new();
+        let slot2 = SlotId::new();
+        pool.add_permit(slot1, FramedWrite::new(write1, JsonCodec::new()));
+        pool.add_permit(slot2, FramedWrite::new(write2, JsonCodec::new()));
+
+        let counts = pool.slot_state_counts();
+        assert_eq!(counts[0], (SlotState::Available, 2));
+        assert_eq!(counts.iter().map(|(_, count)| count).sum::<u64>(), 2);
+
+        let permit = pool.try_acquire().unwrap();
+        let counts = pool.slot_state_counts();
+        assert_eq!(counts.iter().map(|(_, count)| count).sum::<u64>(), 2);
+        assert_eq!(counts[1], (SlotState::Busy, 1));
+
+        pool.poison(slot2);
+        let counts = pool.slot_state_counts();
+        assert_eq!(counts.iter().map(|(_, count)| count).sum::<u64>(), 2);
+        assert_eq!(counts[2], (SlotState::Poisoned, 1));
+
+        pool.poison(permit.slot_id());
+        drop(permit);
+        pool.poison_all();
+        let counts = pool.slot_state_counts();
+        assert_eq!(counts.iter().map(|(_, count)| count).sum::<u64>(), 2);
+        assert_eq!(counts[2], (SlotState::Poisoned, 2));
     }
 }

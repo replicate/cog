@@ -1,3 +1,4 @@
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -26,12 +27,51 @@ pub enum ProcessRole {
 }
 
 impl ProcessRole {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Parent => "parent",
             Self::Worker => "worker",
         }
     }
+}
+
+pub fn base_resource(role: ProcessRole) -> Resource {
+    static PARENT_RESOURCE: OnceLock<Resource> = OnceLock::new();
+    static WORKER_RESOURCE: OnceLock<Resource> = OnceLock::new();
+
+    let resource = match role {
+        ProcessRole::Parent => PARENT_RESOURCE.get_or_init(|| new_base_resource(role)),
+        ProcessRole::Worker => WORKER_RESOURCE.get_or_init(|| new_base_resource(role)),
+    };
+    resource.clone()
+}
+
+pub fn process_instance_id(role: ProcessRole) -> &'static str {
+    static PARENT_INSTANCE_ID: OnceLock<String> = OnceLock::new();
+    static WORKER_INSTANCE_ID: OnceLock<String> = OnceLock::new();
+
+    match role {
+        ProcessRole::Parent => PARENT_INSTANCE_ID
+            .get_or_init(|| uuid::Uuid::new_v4().to_string())
+            .as_str(),
+        ProcessRole::Worker => WORKER_INSTANCE_ID
+            .get_or_init(|| {
+                std::env::var("COG_OBSERVABILITY_INSTANCE_ID")
+                    .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string())
+            })
+            .as_str(),
+    }
+}
+
+fn new_base_resource(role: ProcessRole) -> Resource {
+    Resource::builder()
+        .with_service_name(std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "cog".to_string()))
+        .with_attributes([
+            KeyValue::new("service.version", crate::COGLET_VERSION),
+            KeyValue::new("service.instance.id", process_instance_id(role)),
+            KeyValue::new("cog.process.role", role.as_str()),
+        ])
+        .build()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -168,13 +208,7 @@ impl TracingRuntime {
         };
 
         let exporter = build_exporter(&config)?;
-        let resource = Resource::builder()
-            .with_service_name(config.service_name.clone())
-            .with_attributes([
-                KeyValue::new("service.version", crate::COGLET_VERSION),
-                KeyValue::new("cog.process.role", role.as_str()),
-            ])
-            .build();
+        let resource = base_resource(role);
         let provider = SdkTracerProvider::builder()
             .with_resource(resource)
             .with_sampler(config.sdk_sampler())
@@ -541,6 +575,22 @@ mod tests {
         assert_eq!(
             caller_attributes(&context),
             vec![("caller.model.name".to_string(), "example".to_string())]
+        );
+    }
+
+    #[test]
+    fn process_instance_id_is_stable_per_role() {
+        assert_eq!(
+            process_instance_id(ProcessRole::Parent),
+            process_instance_id(ProcessRole::Parent)
+        );
+        assert_eq!(
+            process_instance_id(ProcessRole::Worker),
+            process_instance_id(ProcessRole::Worker)
+        );
+        assert_ne!(
+            process_instance_id(ProcessRole::Parent),
+            process_instance_id(ProcessRole::Worker)
         );
     }
 }

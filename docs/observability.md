@@ -1,19 +1,31 @@
 # Observability
 
-Cog can join an incoming distributed trace, trace work across its parent and worker processes, and make the active context available to model-authored OpenTelemetry spans. Tracing is opt-in and uses OTLP, so it works with collectors and backends that support OpenTelemetry.
+Cog can join incoming distributed traces, export fixed runtime metrics, and make standard OpenTelemetry APIs available to model code. Signals are opt-in and use OTLP, so they work with collectors and backends that support OpenTelemetry.
 
-Metrics and OpenTelemetry log export are not part of this tracing release.
+Cog has two telemetry ownership domains. The Rust parent owns fixed runtime metrics. The Python worker owns model-authored spans and metrics. Both can export to the same collector, but a Python provider never replaces the parent runtime provider.
 
-## Enable tracing
+## Enable telemetry
 
-Enable tracing in `cog.yaml`:
+Enable either signal with the boolean shorthand:
+
+```yaml
+observability:
+  traces: true
+  metrics: true
+```
+
+Signals can also use objects when tracing needs sampler or propagation settings:
 
 ```yaml
 observability:
   traces:
     enabled: true
     sampler: parentbased_always_off
+  metrics:
+    enabled: true
 ```
+
+An image can enable either signal independently. Runtime configuration can disable an enabled signal, but cannot enable a signal omitted from the image.
 
 Configure the collector when running the image:
 
@@ -25,7 +37,7 @@ OTEL_SERVICE_NAME=cog
 
 Cog supports OTLP gRPC and HTTP/protobuf. Collector endpoints, authentication headers, certificates, and other `OTEL_*` values are runtime configuration and cannot be set through the general `cog.yaml` `environment` list.
 
-Framework tracing starts only when the image opts in and a collector endpoint is present. `COG_TRACE_ENABLED=false` or `OTEL_SDK_DISABLED=true` disables all tracing at runtime. `OTEL_TRACES_EXPORTER=none` disables framework tracing and Cog's built-in Python exporter but does not suppress an explicitly configured custom Python provider.
+Framework telemetry starts only when the image opts in and a collector endpoint is present. `COG_TRACE_ENABLED=false` and `COG_METRICS_ENABLED=false` disable the entire matching signal, including custom Python providers. `OTEL_SDK_DISABLED=true` disables all signals. `OTEL_TRACES_EXPORTER=none` and `OTEL_METRICS_EXPORTER=none` disable only the matching built-in provider. An explicitly configured Python factory can still use a different exporter or no exporter.
 
 ## Getting started with tracing
 
@@ -40,23 +52,11 @@ class Runner(BaseRunner):
         return expensive_model_call(prompt)
 ```
 
-Cog automatically produces:
-
-```text
-POST /predictions
-└── cog.prediction
-    ├── cog.prediction.validate
-    └── cog.prediction.execute
-        └── cog.prediction.invoke
-            └── cog.prediction.prepare_input
-```
-
 Add this to `cog.yaml` to enable tracing:
 
 ```yaml
 observability:
-  traces:
-    enabled: true
+  traces: true
 ```
 
 For information about continuing upstream traces or starting standalone traces, see [Sampling](#sampling).
@@ -115,43 +115,46 @@ These spans become children of `cog.prediction.invoke`, or `cog.train.invoke` du
 
 Asyncio tasks inherit the active Python context. Raw threads and child processes require explicit context propagation. A background task that outlives the prediction may produce an uncorrelated span.
 
-## Custom Python tracing
+## Custom Python telemetry
 
 Set `observability.config` to a project-relative Python file:
 
 ```yaml
 observability:
   config: telemetry.py
-  traces:
-    enabled: true
+  traces: true
+  metrics: true
 ```
 
-Cog validates the file during configuration, copies it to a fixed path in the image, and loads it before importing the model. The file must define `create_tracer_provider()` and may define `configure_instrumentation()`:
+Cog validates the file during configuration, copies it to a fixed path in the image, and loads it before importing the model. Provider factories are optional. A missing factory uses Cog's default provider for that signal. Factories receive Cog's base `Resource` and may merge or replace its attributes.
 
 ```python
-import os
-
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import SpanLimits, TracerProvider
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 
 
-def create_tracer_provider() -> TracerProvider:
+def create_tracer_provider(resource: Resource) -> TracerProvider:
     provider = TracerProvider(
-        resource=Resource.create(
-            {
-                "service.name": os.getenv("OTEL_SERVICE_NAME", "my-model"),
-                "model.name": "acme/example",
-            }
-        ),
+        resource=resource.merge(Resource({"model.name": "example"})),
         sampler=ParentBased(TraceIdRatioBased(0.1)),
-        span_limits=SpanLimits(max_span_attributes=64),
         shutdown_on_exit=False,
     )
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     return provider
+
+
+def create_meter_provider(resource: Resource) -> MeterProvider:
+    return MeterProvider(
+        metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter())],
+        resource=resource,
+        shutdown_on_exit=False,
+    )
 
 
 def configure_instrumentation() -> None:
@@ -160,11 +163,66 @@ def configure_instrumentation() -> None:
     RequestsInstrumentor().instrument()
 ```
 
-Add instrumentation packages such as `opentelemetry-instrumentation-requests` to the model's requirements. Cog installs the provider globally before calling `configure_instrumentation()`, then imports the model. Cog force-flushes and shuts down the provider with the worker, so custom providers should set `shutdown_on_exit=False`.
+Add instrumentation packages such as `opentelemetry-instrumentation-requests` to the model's requirements. Cog constructs every selected provider, validates their types, installs them globally, then calls `configure_instrumentation()` before importing the model. Cog force-flushes and shuts down providers with the worker, so custom providers should set `shutdown_on_exit=False`.
 
-The custom provider controls Python spans only. The Rust parent and worker providers continue to use `observability.traces` and standard `OTEL_*` variables. Without an OTLP endpoint, the custom provider can still emit Python spans to a console or another exporter, but there is no `cog.prediction.invoke` parent or other framework spans.
+Custom Python providers control model-authored telemetry only. The Rust parent provider continues to own fixed runtime metrics. Without an OTLP endpoint, a custom provider can still emit model telemetry to a different destination, but there are no framework trace parents.
 
-Import errors, a missing factory, the wrong return type, or instrumentation errors fail model setup. Auto-instrumentation can capture model inputs, HTTP headers, or other sensitive data; review each instrumentation package before enabling it.
+Import errors, a wrong return type, factory errors, and instrumentation errors fail model setup. Auto-instrumentation can capture model inputs, HTTP headers, or other sensitive data; review each instrumentation package before enabling it.
+
+## Metrics
+
+`metrics: true` enables two providers. The Rust parent exports fixed Cog runtime instruments. The Python worker installs a standard `MeterProvider` so model code can create its own instruments with the OpenTelemetry API. The worker does not export a second copy of the fixed runtime metrics.
+
+### Runtime metrics
+
+| Instrument                        | Type            | Unit           | Attributes            |
+| --------------------------------- | --------------- | -------------- | --------------------- |
+| `cog.runtime.prediction.count`    | Counter         | `{prediction}` | `operation`, `status` |
+| `cog.runtime.prediction.rejected` | Counter         | `{prediction}` | `operation`, `reason` |
+| `cog.runtime.prediction.active`   | UpDownCounter   | `{prediction}` | `operation`           |
+| `cog.runtime.prediction.duration` | Histogram       | `s`            | `operation`, `status` |
+| `cog.runtime.setup.duration`      | Histogram       | `s`            | `status`              |
+| `cog.runtime.slot.count`          | ObservableGauge | `{slot}`       | `state`               |
+
+`operation` is `predict` or `train`. Terminal status is `succeeded`, `failed`, or `canceled`. Rejection reasons are `invalid_input`, `not_ready`, and `at_capacity`. Slot state is `available`, `busy`, or `poisoned`.
+
+Prediction duration starts after readiness validation and permit acquisition. It includes request preparation, worker execution, streaming, and output upload work. Setup duration is measured by the parent from setup start to its terminal result. Runtime metrics have fixed names, units, attributes, and histogram boundaries so dashboard queries remain stable.
+
+### Model metrics
+
+Use the standard OpenTelemetry API for model-owned metrics:
+
+```python
+from opentelemetry import metrics
+
+meter = metrics.get_meter(__name__)
+tokens = meter.create_counter("model.tokens")
+
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> str:
+        result = self.model(prompt)
+        tokens.add(result.token_count)
+        return result.text
+```
+
+Use names outside the reserved `cog.runtime.*` namespace for model instruments. `self.record_metric()` is separate from OpenTelemetry. It continues to populate the prediction response and does not create an OpenTelemetry instrument.
+
+### Runtime metric selection
+
+Models may disable fixed runtime instruments, but cannot rename, relabel, or change their buckets. Put this optional hook in `telemetry.py`:
+
+```python
+from cog.telemetry import RuntimeMetric, RuntimeMetricsConfig
+
+
+def configure_runtime_metrics() -> RuntimeMetricsConfig:
+    return RuntimeMetricsConfig(
+        disabled={RuntimeMetric.SETUP_DURATION},
+    )
+```
+
+Set `enabled=False` to disable all current and future Cog runtime metrics. This does not disable the Python `MeterProvider`, so model metrics can still export.
 
 ## Streaming predictions
 
@@ -271,21 +329,19 @@ Use standard resource variables for values fixed across the running container:
 
 ```shell
 OTEL_SERVICE_NAME=cog
-OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production,service.instance.id=instance-123
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production
 ```
 
-Request-specific values belong on `cog.prediction` through caller tags rather than resources.
+Cog adds `service.version`, a process-local `service.instance.id`, and `cog.process.role=parent|worker` to the base resource. Request-specific values belong on `cog.prediction` through caller tags rather than resources.
 
 ## Failure behavior
 
-- Missing collector endpoint: warn and serve without framework tracing; a custom Python provider may still run.
+- Missing collector endpoint or invalid built-in exporter settings: warn and serve without the matching built-in provider; a custom Python provider may still run.
 - Unreachable collector: Cog's built-in exporters retry or drop without failing predictions.
 - Malformed parent context: ignore it and continue.
 - Worker shutdown: flush and shut down parent and worker providers with bounded best effort; call custom Python provider cleanup synchronously.
 - Forced termination, crashes, and OOM: final spans may be lost.
 
-Delivery from Cog's built-in exporters never determines whether a prediction succeeds. Custom processors and exporters run model-owned code and may raise or block. Invalid explicit tracing configuration fails model setup.
+If metrics telemetry configuration fails before the worker sends `Ready`, and the runtime metric exporter is configured, Cog uses the default runtime metric selection only long enough to record the failed setup result. The failed configuration cannot supply its own selections.
 
-## What's next
-
-Metrics and OpenTelemetry log export are planned next. They will use the same opt-in approach as tracing.
+Delivery from Cog's built-in exporters never determines whether a prediction succeeds. Custom processors and exporters run model-owned code and may raise or block. Invalid explicit telemetry configuration fails model setup.

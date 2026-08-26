@@ -1,16 +1,17 @@
-import os
-
 from opentelemetry.context import Context
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import (
     BatchSpanProcessor,
-    ConsoleSpanExporter,
-    SimpleSpanProcessor,
     SpanProcessor,
 )
 from opentelemetry.sdk.trace.sampling import DEFAULT_ON
+
+from cog.telemetry import RuntimeMetric, RuntimeMetricsConfig
 
 
 class ModelAttributesProcessor(SpanProcessor):
@@ -31,11 +32,9 @@ class ModelAttributesProcessor(SpanProcessor):
         return True
 
 
-def create_tracer_provider() -> TracerProvider:
+def create_tracer_provider(resource: Resource) -> TracerProvider:
     provider = TracerProvider(
-        resource=Resource.create(
-            {"service.name": os.getenv("OTEL_SERVICE_NAME", "hello-concurrency")}
-        ),
+        resource=resource.merge(Resource({"model.name": "hello-concurrency"})),
         sampler=DEFAULT_ON,
         span_limits=SpanLimits(
             max_span_attributes=64,
@@ -46,9 +45,19 @@ def create_tracer_provider() -> TracerProvider:
     )
     provider.add_span_processor(ModelAttributesProcessor())
 
-    if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
-        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-    if os.getenv("OTEL_DEBUG_TRACES", "false").lower() == "true":
-        provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 
     return provider
+
+
+def create_meter_provider(resource: Resource) -> MeterProvider:
+    reader = PeriodicExportingMetricReader(OTLPMetricExporter())
+    return MeterProvider(
+        metric_readers=[reader],
+        resource=resource.merge(Resource({"model.name": "hello-concurrency"})),
+        shutdown_on_exit=False,
+    )
+
+
+def configure_runtime_metrics() -> RuntimeMetricsConfig:
+    return RuntimeMetricsConfig(disabled={RuntimeMetric.SLOT_COUNT})

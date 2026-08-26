@@ -30,7 +30,9 @@ const uvCacheMount = "--mount=type=cache,target=/root/.cache/uv"
 const uvPip = "uv pip"
 const observabilityConfigBuildPath = "telemetry.py"
 const observabilityConfigRuntimePath = "/.cog/telemetry.py"
-const PythonTracingRequirements = "opentelemetry-exporter-otlp-proto-http==1.44.0 opentelemetry-exporter-otlp-proto-grpc==1.44.0"
+const PythonObservabilityRequirements = "opentelemetry-api==1.44.0 opentelemetry-sdk==1.44.0 opentelemetry-exporter-otlp-proto-http==1.44.0 opentelemetry-exporter-otlp-proto-grpc==1.44.0"
+const PythonObservabilityCheck = `python -c "import cog._telemetry; from coglet import _impl; raise SystemExit(0 if getattr(_impl, '_supports_observability_metrics', False) else 1)"`
+const PythonObservabilityCheckError = "OpenTelemetry tracing and metrics require matching cog and coglet builds with metrics support"
 const uvBreakSystemPackages = "--break-system-packages"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
@@ -404,15 +406,21 @@ func (g *StandardGenerator) cogEnvVars() []string {
 				fmt.Sprintf(`ENV COG_TRACE_HEADER_FORMAT="%s"`, traces.TraceHeaderFormat),
 			)
 		}
-		if g.Config.Observability.Config != "" {
-			envs = append(envs, `ENV COG_OBSERVABILITY_CONFIG="`+observabilityConfigRuntimePath+`"`)
-		}
+	}
+	if g.Config.Observability.AnyTelemetryEnabled() && g.Config.Observability.Config != "" {
+		envs = append(envs, `ENV COG_OBSERVABILITY_CONFIG="`+observabilityConfigRuntimePath+`"`)
+	}
+	if g.Config.Observability != nil && g.Config.Observability.Metrics != nil && g.Config.Observability.Metrics.Enabled {
+		envs = append(envs,
+			`ENV COG_METRICS_CONFIGURED=true`,
+			`ENV COG_METRICS_ENABLED=true`,
+		)
 	}
 	return envs
 }
 
 func (g *StandardGenerator) observabilityConfigCopy() string {
-	if g.Config.Observability == nil || g.Config.Observability.Traces == nil || !g.Config.Observability.Traces.Enabled || g.Config.Observability.Config == "" {
+	if !g.Config.Observability.AnyTelemetryEnabled() || g.Config.Observability.Config == "" {
 		return ""
 	}
 	return "COPY --from=cog_build " + observabilityConfigBuildPath + " " + observabilityConfigRuntimePath
@@ -644,6 +652,10 @@ func (g *StandardGenerator) resolveCogWheelConfigs() error {
 // Older SDKs use the built-in Python HTTP server and are incompatible with coglet.
 const cogletMinSDKVersion = "0.17.0"
 
+// observabilityMinSDKVersion is the minimum SDK version that includes Cog's
+// telemetry bootstrap module and provider customization API.
+const observabilityMinSDKVersion = "0.22.1"
+
 // isLegacySDKVersion returns true if the resolved cog SDK version is explicitly
 // pinned below the minimum version that supports coglet. Returns false for
 // unpinned versions (including the "prerelease" sentinel), non-PyPI sources,
@@ -664,6 +676,29 @@ func (g *StandardGenerator) isLegacySDKVersion() bool {
 	return !ver.GreaterOrEqual(version.MustVersion(cogletMinSDKVersion))
 }
 
+func (g *StandardGenerator) validateObservabilitySDKVersion() error {
+	if !g.Config.Observability.AnyTelemetryEnabled() {
+		return nil
+	}
+
+	cfg := g.resolvedCogConfig
+	if cfg == nil || cfg.Source != wheels.WheelSourcePyPI || cfg.Version == "" {
+		return nil
+	}
+	base := cfg.Version
+	if m := wheels.BaseVersionRe.FindString(base); m != "" {
+		base = m
+	}
+	ver, err := version.NewVersion(base)
+	if err != nil || ver.GreaterOrEqual(version.MustVersion(observabilityMinSDKVersion)) {
+		return nil
+	}
+	return fmt.Errorf(
+		"OpenTelemetry tracing and metrics require cog SDK %s or newer; update build.sdk_version or remove the pin",
+		observabilityMinSDKVersion,
+	)
+}
+
 func (g *StandardGenerator) installCog() (string, error) {
 	// Do not install Cog in base images
 	if !g.requiresCog {
@@ -674,6 +709,9 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", err
 	}
 	wheelConfig := g.resolvedCogConfig
+	if err := g.validateObservabilitySDKVersion(); err != nil {
+		return "", err
+	}
 
 	// Determine if we need --pre flag (pre-release SDK implies pre-release coglet too)
 	sdkIsPreRelease := wheelConfig.Source == wheels.WheelSourcePyPI &&
@@ -748,21 +786,22 @@ func (g *StandardGenerator) installCog() (string, error) {
 		}
 		installLines += cogInstall
 	}
-	if tracingInstall := g.installPythonTracingDependencies(); tracingInstall != "" {
-		installLines += "\n" + tracingInstall
+	if observabilityInstall := g.installPythonObservabilityDependencies(); observabilityInstall != "" {
+		installLines += "\n" + observabilityInstall
 	}
 
 	return installLines, nil
 }
 
-func (g *StandardGenerator) installPythonTracingDependencies() string {
-	if g.Config.Observability == nil || g.Config.Observability.Traces == nil || !g.Config.Observability.Traces.Enabled {
+func (g *StandardGenerator) installPythonObservabilityDependencies() string {
+	if !g.Config.Observability.AnyTelemetryEnabled() {
 		return ""
 	}
-	install := "RUN " + uvCacheMount + " " + uvPip + " install " + g.uvPipInstallFlags("--no-cache") + " " + PythonTracingRequirements
+	install := "RUN " + uvCacheMount + " " + uvPip + " install " + g.uvPipInstallFlags("--no-cache") + " " + PythonObservabilityRequirements
 	if g.strip {
 		install += " && " + StripDebugSymbolsCommand
 	}
+	install += " && (" + PythonObservabilityCheck + " || (echo \"" + PythonObservabilityCheckError + "\" >&2; exit 1))"
 	return install
 }
 
