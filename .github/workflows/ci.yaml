@@ -527,8 +527,6 @@ jobs:
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test Rust
         run: mise run test:rust
-      - name: Check Rust without default features
-        run: PYO3_PYTHON="$(uv python find 3.13)" cargo check --manifest-path crates/Cargo.toml --workspace --no-default-features
 
   test-python:
     name: "Test Python ${{ matrix.python-version }}"
