@@ -178,9 +178,13 @@ impl Drop for PermitIdle {
                 poisoned: Arc::clone(&self.poisoned),
             };
 
+            // Mark available before the permit becomes acquirable, so an
+            // acquirer writing Busy can't be overwritten by this transition.
+            transition_slot_state(&self.pool.slot_states, self.slot_id, SlotState::Available);
             if self.pool.pool_tx.try_send(inner).is_ok() {
                 self.pool.pool_available.fetch_add(1, Ordering::Release);
-                transition_slot_state(&self.pool.slot_states, self.slot_id, SlotState::Available);
+            } else {
+                transition_slot_state(&self.pool.slot_states, self.slot_id, SlotState::Busy);
             }
         }
     }
@@ -348,11 +352,14 @@ impl PermitPool {
             poisoned,
         };
 
+        // Mark available before the permit becomes acquirable, so an
+        // acquirer writing Busy can't be overwritten by this transition.
+        transition_slot_state(&self.slot_states, slot_id, SlotState::Available);
         if let Err(e) = self.available_tx.try_send(inner) {
+            transition_slot_state(&self.slot_states, slot_id, SlotState::Busy);
             tracing::error!(slot = %slot_id, error = %e, "Failed to add permit to pool");
         } else {
             self.available_count.fetch_add(1, Ordering::Release);
-            transition_slot_state(&self.slot_states, slot_id, SlotState::Available);
         }
     }
 

@@ -114,7 +114,7 @@ HTTP Request                     Parent Process                    Worker Subpro
        │         │ install audit hook, load predictor, run setup │
        │         └────────────────────────────────────────────────┘
        │
-       ├─▶ Wait for Ready {slots, schema, runtime_metrics} or Failed {error}
+       ├─▶ Wait for Ready {slots, schema, runtime_metrics} or Failed {error, runtime_metrics}
        │
        ├─▶ Populate PermitPool with slot sockets and initialize parent runtime metrics
        │

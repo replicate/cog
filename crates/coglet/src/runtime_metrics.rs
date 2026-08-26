@@ -240,12 +240,13 @@ pub fn shutdown() {
 }
 
 pub fn record_prediction_admitted(operation: &'static str) {
-    if let Ok(registry) = registry().read()
-        && let Some(active) = registry
-            .metrics
-            .as_ref()
-            .and_then(|metrics| metrics.prediction_active.as_ref())
-    {
+    if let Ok(registry) = registry().read() {
+        record_prediction_admitted_on(registry.metrics.as_ref(), operation);
+    }
+}
+
+fn record_prediction_admitted_on(metrics: Option<&RuntimeMetrics>, operation: &'static str) {
+    if let Some(active) = metrics.and_then(|metrics| metrics.prediction_active.as_ref()) {
         active.add(1, &[KeyValue::new("operation", operation)]);
     }
 }
@@ -254,28 +255,64 @@ pub fn record_prediction_terminal(
     operation: &'static str,
     status: &'static str,
     duration: Duration,
+    was_processing: bool,
 ) {
     if let Ok(registry) = registry().read() {
-        let Some(metrics) = registry.metrics.as_ref() else {
-            return;
-        };
-        let attributes = [
-            KeyValue::new("operation", operation),
-            KeyValue::new("status", status),
-        ];
-        if let Some(count) = metrics.prediction_count.as_ref() {
-            count.add(1, &attributes);
-        }
-        if let Some(duration_metric) = metrics.prediction_duration.as_ref() {
-            duration_metric.record(duration.as_secs_f64(), &attributes);
-        }
-        if let Some(active) = metrics.prediction_active.as_ref() {
-            active.add(-1, &[KeyValue::new("operation", operation)]);
-        }
+        record_prediction_terminal_on(
+            registry.metrics.as_ref(),
+            operation,
+            status,
+            duration,
+            was_processing,
+        );
+    }
+}
+
+fn record_prediction_terminal_on(
+    metrics: Option<&RuntimeMetrics>,
+    operation: &'static str,
+    status: &'static str,
+    duration: Duration,
+    was_processing: bool,
+) {
+    let Some(metrics) = metrics else {
+        return;
+    };
+    let attributes = [
+        KeyValue::new("operation", operation),
+        KeyValue::new("status", status),
+    ];
+    if let Some(count) = metrics.prediction_count.as_ref() {
+        count.add(1, &attributes);
+    }
+    if let Some(duration_metric) = metrics.prediction_duration.as_ref() {
+        duration_metric.record(duration.as_secs_f64(), &attributes);
+    }
+    // The active gauge only counts predictions that reached Processing,
+    // matching the increment in set_processing. Predictions that end
+    // before that (e.g. canceled while queued) still count above.
+    if was_processing && let Some(active) = metrics.prediction_active.as_ref() {
+        active.add(-1, &[KeyValue::new("operation", operation)]);
     }
 }
 
 pub fn record_prediction_rejected(operation: &'static str, reason: &'static str) {
+    if let Ok(registry) = registry().read() {
+        if let Some(rejected) = registry
+            .metrics
+            .as_ref()
+            .and_then(|metrics| metrics.prediction_rejected.as_ref())
+        {
+            rejected.add(1, &rejection_attributes(operation, reason));
+            return;
+        }
+        if registry.initialized {
+            return;
+        }
+    }
+    // Metrics are not installed yet, so buffer the rejection. The write lock
+    // is only taken on this pre-install path; re-check under it in case
+    // install() ran between dropping the read lock and acquiring this one.
     let Ok(mut registry) = registry().write() else {
         return;
     };
@@ -337,12 +374,17 @@ fn drain_pending_rejections(registry: &mut Registry) {
 }
 
 pub fn record_setup_duration(status: &'static str, duration: Duration) {
-    if let Ok(registry) = registry().read()
-        && let Some(setup_duration) = registry
-            .metrics
-            .as_ref()
-            .and_then(|metrics| metrics.setup_duration.as_ref())
-    {
+    if let Ok(registry) = registry().read() {
+        record_setup_duration_on(registry.metrics.as_ref(), status, duration);
+    }
+}
+
+fn record_setup_duration_on(
+    metrics: Option<&RuntimeMetrics>,
+    status: &'static str,
+    duration: Duration,
+) {
+    if let Some(setup_duration) = metrics.and_then(|metrics| metrics.setup_duration.as_ref()) {
         setup_duration.record(duration.as_secs_f64(), &[KeyValue::new("status", status)]);
     }
 }
@@ -403,20 +445,115 @@ fn env_bool(name: &str, default: bool) -> Result<bool, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::collections::HashSet;
     use std::sync::{Arc, Mutex, OnceLock};
     use std::time::Duration;
 
+    use opentelemetry_sdk::metrics::data::{
+        AggregatedMetrics, Metric, MetricData, ResourceMetrics,
+    };
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader};
 
     use super::{
         RuntimeMetric, RuntimeMetrics, drain_pending_rejections, http_metrics_endpoint,
-        record_prediction_admitted, record_prediction_rejected, record_prediction_terminal,
-        record_setup_duration, registry, shutdown,
+        record_prediction_admitted, record_prediction_admitted_on, record_prediction_rejected,
+        record_prediction_terminal, record_prediction_terminal_on, record_setup_duration,
+        record_setup_duration_on, registry, shutdown,
     };
     use crate::permit::PermitPool;
 
     static TEST_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn metric_from<'a>(resource: &'a ResourceMetrics, name: &str) -> Option<&'a Metric> {
+        resource
+            .scope_metrics()
+            .flat_map(|scope| scope.metrics())
+            .find(|metric| metric.name() == name)
+    }
+
+    fn sum_u64(resource: &ResourceMetrics, name: &str) -> Option<u64> {
+        match metric_from(resource, name)?.data() {
+            AggregatedMetrics::U64(MetricData::Sum(sum)) => {
+                Some(sum.data_points().map(|point| point.value()).sum())
+            }
+            _ => None,
+        }
+    }
+
+    fn sum_i64(resource: &ResourceMetrics, name: &str) -> Option<i64> {
+        match metric_from(resource, name)?.data() {
+            AggregatedMetrics::I64(MetricData::Sum(sum)) => {
+                Some(sum.data_points().map(|point| point.value()).sum())
+            }
+            _ => None,
+        }
+    }
+
+    fn sum_attributes(resource: &ResourceMetrics, name: &str) -> Option<HashMap<String, String>> {
+        match metric_from(resource, name)?.data() {
+            AggregatedMetrics::U64(MetricData::Sum(sum)) => {
+                let point = sum.data_points().next()?;
+                Some(
+                    point
+                        .attributes()
+                        .map(|kv| (kv.key.as_str().to_string(), kv.value.as_str().to_string()))
+                        .collect(),
+                )
+            }
+            _ => None,
+        }
+    }
+
+    fn histogram_stats(
+        resource: &ResourceMetrics,
+        name: &str,
+    ) -> Option<(u64, f64, Vec<f64>, Vec<u64>)> {
+        match metric_from(resource, name)?.data() {
+            AggregatedMetrics::F64(MetricData::Histogram(histogram)) => {
+                let point = histogram.data_points().next()?;
+                Some((
+                    point.count(),
+                    point.sum(),
+                    point.bounds().collect(),
+                    point.bucket_counts().collect(),
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn install_test_metrics(
+        exporter: &InMemoryMetricExporter,
+    ) -> opentelemetry_sdk::metrics::SdkMeterProvider {
+        let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
+            .with_reader(PeriodicReader::builder(exporter.clone()).build())
+            .build();
+        let metrics = RuntimeMetrics::new(
+            provider.clone(),
+            HashSet::new(),
+            Some(Arc::new(PermitPool::new(1))),
+        );
+        let mut registry = registry().write().unwrap();
+        registry.metrics = Some(metrics);
+        registry.initialized = true;
+        drop(registry);
+        provider
+    }
+
+    fn isolated_metrics(
+        exporter: &InMemoryMetricExporter,
+    ) -> (opentelemetry_sdk::metrics::SdkMeterProvider, RuntimeMetrics) {
+        let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
+            .with_reader(PeriodicReader::builder(exporter.clone()).build())
+            .build();
+        let metrics = RuntimeMetrics::new(
+            provider.clone(),
+            HashSet::new(),
+            Some(Arc::new(PermitPool::new(1))),
+        );
+        (provider, metrics)
+    }
 
     #[test]
     fn http_metrics_endpoint_appends_signal_path_once() {
@@ -440,46 +577,110 @@ mod tests {
         shutdown();
 
         let exporter = InMemoryMetricExporter::default();
-        let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
-            .with_reader(PeriodicReader::builder(exporter.clone()).build())
-            .build();
-        let metrics = RuntimeMetrics::new(
-            provider.clone(),
-            HashSet::new(),
-            Some(Arc::new(PermitPool::new(1))),
-        );
-        let mut registry = registry().write().unwrap();
-        registry.metrics = Some(metrics);
-        registry.initialized = true;
-        drop(registry);
+        let provider = install_test_metrics(&exporter);
 
         record_prediction_admitted("predict");
-        record_prediction_terminal("predict", "succeeded", Duration::from_secs(2));
+        record_prediction_terminal("predict", "succeeded", Duration::from_secs(2), true);
         record_prediction_rejected("train", "at_capacity");
         record_setup_duration("succeeded", Duration::from_secs(3));
         provider.force_flush().unwrap();
 
-        let mut names = exporter
+        // Values are asserted in the isolated tests below; concurrent tests
+        // share the global registry, so only instrument presence is stable
+        // here.
+        let names = exporter
             .get_finished_metrics()
             .unwrap()
             .iter()
             .flat_map(|resource| resource.scope_metrics())
             .flat_map(|scope| scope.metrics())
             .map(|metric| metric.name().to_string())
-            .collect::<Vec<_>>();
-        names.sort();
-        assert_eq!(
-            names,
-            vec![
-                "cog.runtime.prediction.active",
-                "cog.runtime.prediction.count",
-                "cog.runtime.prediction.duration",
-                "cog.runtime.prediction.rejected",
-                "cog.runtime.setup.duration",
-                "cog.runtime.slot.count",
-            ]
-        );
+            .collect::<std::collections::BTreeSet<_>>();
+        let expected = [
+            "cog.runtime.prediction.active",
+            "cog.runtime.prediction.count",
+            "cog.runtime.prediction.duration",
+            "cog.runtime.prediction.rejected",
+            "cog.runtime.setup.duration",
+            "cog.runtime.slot.count",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(names, expected);
         shutdown();
+    }
+
+    #[test]
+    fn records_prediction_metric_values_and_attributes() {
+        let exporter = InMemoryMetricExporter::default();
+        let (provider, metrics) = isolated_metrics(&exporter);
+
+        record_prediction_admitted_on(Some(&metrics), "predict");
+        record_prediction_terminal_on(
+            Some(&metrics),
+            "predict",
+            "succeeded",
+            Duration::from_secs(2),
+            true,
+        );
+        record_setup_duration_on(Some(&metrics), "succeeded", Duration::from_secs(3));
+        provider.force_flush().unwrap();
+
+        let finished = exporter.get_finished_metrics().unwrap();
+        let last = finished.last().expect("at least one export batch");
+
+        // prediction.active nets to zero: one admit, one terminal.
+        assert_eq!(sum_i64(last, "cog.runtime.prediction.active"), Some(0));
+        // prediction.count records the terminal status attributes.
+        assert_eq!(sum_u64(last, "cog.runtime.prediction.count"), Some(1));
+        let attributes = sum_attributes(last, "cog.runtime.prediction.count")
+            .expect("prediction.count data point");
+        assert_eq!(
+            attributes.get("operation").map(String::as_str),
+            Some("predict")
+        );
+        assert_eq!(
+            attributes.get("status").map(String::as_str),
+            Some("succeeded")
+        );
+        // duration histogram: one 2.0s sample in the bucket bounded by 2.5.
+        let (count, sum, bounds, bucket_counts) =
+            histogram_stats(last, "cog.runtime.prediction.duration")
+                .expect("prediction.duration data point");
+        assert_eq!(count, 1);
+        assert_eq!(sum, 2.0);
+        let bucket = bounds.iter().position(|bound| *bound >= 2.0).unwrap();
+        assert_eq!(bucket_counts[bucket], 1);
+        // setup duration histogram recorded in seconds.
+        let (count, sum, _, _) =
+            histogram_stats(last, "cog.runtime.setup.duration").expect("setup.duration data point");
+        assert_eq!(count, 1);
+        assert_eq!(sum, 3.0);
+    }
+
+    #[test]
+    fn counts_predictions_ended_before_processing_without_touching_active() {
+        let exporter = InMemoryMetricExporter::default();
+        let (provider, metrics) = isolated_metrics(&exporter);
+
+        // One in-flight prediction keeps the gauge at 1. A second prediction
+        // is canceled while queued (never reached Processing): it counts as
+        // canceled but must not decrement the active gauge.
+        record_prediction_admitted_on(Some(&metrics), "predict");
+        record_prediction_terminal_on(
+            Some(&metrics),
+            "predict",
+            "canceled",
+            Duration::from_millis(10),
+            false,
+        );
+        provider.force_flush().unwrap();
+
+        let finished = exporter.get_finished_metrics().unwrap();
+        let last = finished.last().expect("at least one export batch");
+        assert_eq!(sum_u64(last, "cog.runtime.prediction.count"), Some(1));
+        assert_eq!(sum_i64(last, "cog.runtime.prediction.active"), Some(1));
     }
 
     #[test]
@@ -488,7 +689,9 @@ mod tests {
         let metrics = RuntimeMetrics::new(
             opentelemetry_sdk::metrics::SdkMeterProvider::builder().build(),
             disabled,
-            None,
+            // A real pool proves slot_count is absent because the selector is
+            // disabled, not because no pool was supplied.
+            Some(Arc::new(PermitPool::new(1))),
         );
 
         assert!(metrics.prediction_count.is_none());

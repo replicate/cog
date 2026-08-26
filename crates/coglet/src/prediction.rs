@@ -385,14 +385,12 @@ impl Prediction {
     }
 
     fn record_runtime_metrics_terminal(&self, terminal_status: PredictionStatus) {
-        if self.status != PredictionStatus::Processing {
-            return;
-        }
         #[cfg(feature = "tracing")]
         crate::runtime_metrics::record_prediction_terminal(
             self.operation.as_str(),
             terminal_status.as_str(),
             self.elapsed(),
+            self.status == PredictionStatus::Processing,
         );
         #[cfg(not(feature = "tracing"))]
         let _ = terminal_status;

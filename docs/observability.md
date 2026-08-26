@@ -186,7 +186,7 @@ Import errors, a wrong return type, factory errors, and instrumentation errors f
 | `cog.runtime.setup.duration`      | Histogram       | `s`            | `status`              |
 | `cog.runtime.slot.count`          | ObservableGauge | `{slot}`       | `state`               |
 
-`operation` is `predict` or `train`. Terminal status is `succeeded`, `failed`, or `canceled`. Rejection reasons are `invalid_input`, `not_ready`, and `at_capacity`. Slot state is `available`, `busy`, or `poisoned`.
+`operation` is `predict` or `train`. Prediction terminal status is `succeeded`, `failed`, or `canceled`. Setup status is `succeeded` or `failed`. Rejection reasons are `invalid_input`, `not_ready`, and `at_capacity`. Slot state is `available`, `busy`, or `poisoned`.
 
 Prediction duration starts after readiness validation and permit acquisition. It includes request preparation, worker execution, streaming, and output upload work. Setup duration is measured by the parent from setup start to its terminal result. Runtime metrics have fixed names, units, attributes, and histogram boundaries so dashboard queries remain stable.
 
@@ -212,7 +212,7 @@ Use names outside the reserved `cog.runtime.*` namespace for model instruments. 
 
 ### Runtime metric selection
 
-Models may disable fixed runtime instruments, but cannot rename, relabel, or change their buckets. Put this optional hook in `telemetry.py`:
+Models may disable fixed runtime instruments, but cannot rename, relabel, or change their buckets. This hook is only read when `observability.metrics.enabled` is true in `cog.yaml`; for traces-only images it is ignored. Put this optional hook in `telemetry.py`:
 
 ```python
 from cog.telemetry import RuntimeMetric, RuntimeMetricsConfig

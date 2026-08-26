@@ -238,6 +238,9 @@ Tracing and metrics must first be enabled under `observability` in `cog.yaml`. R
 | `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`  | Trace-specific protocol override.              |
 | `OTEL_EXPORTER_OTLP_METRICS_PROTOCOL` | Metric-specific protocol override.             |
 | `OTEL_EXPORTER_OTLP_HEADERS`          | Collector authentication headers.              |
+| `OTEL_TRACES_EXPORTER`                | Set to `none` to disable trace export.         |
+| `OTEL_METRICS_EXPORTER`               | Set to `none` to disable metric export.        |
+| `OTEL_RESOURCE_ATTRIBUTES`            | Resource attributes as `key=value` pairs.      |
 | `OTEL_SERVICE_NAME`                   | Service name, default `cog`.                   |
 | `OTEL_TRACES_SAMPLER`                 | Runtime sampler override.                      |
 | `OTEL_TRACES_SAMPLER_ARG`             | Ratio for ratio samplers.                      |

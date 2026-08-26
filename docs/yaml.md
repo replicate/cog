@@ -235,7 +235,7 @@ observability:
 
 The boolean forms `traces: true` and `metrics: true` are accepted as shorthand.
 
-`config` is an optional project-relative Python file for customizing Python telemetry providers and selecting Cog runtime metrics. It requires at least one enabled signal. The file may define `create_tracer_provider(resource)`, `create_meter_provider(resource)`, `configure_runtime_metrics()`, and `configure_instrumentation()`. Cog installs selected providers before importing the model and flushes and shuts them down with the worker.
+`config` is an optional project-relative Python file for customizing Python telemetry providers and selecting Cog runtime metrics. It requires at least one enabled signal. The file may define `create_tracer_provider(resource)`, `create_meter_provider(resource)`, `configure_runtime_metrics()`, and `configure_instrumentation()`. Cog installs selected providers before importing the model and flushes and shuts them down with the worker. Note that `configure_runtime_metrics()` is only read when `observability.metrics.enabled` is true; it is ignored silently for traces-only images.
 
 This hook affects model-authored Python spans and metrics only. Cog's Rust parent continues to own fixed runtime metrics. See [Observability](observability.md#custom-python-telemetry) for examples and lifecycle details.
 

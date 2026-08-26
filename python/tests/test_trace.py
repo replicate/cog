@@ -7,7 +7,9 @@ from pathlib import Path
 def _run_script(script: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     for name in list(env):
-        if name.startswith(("COG_OBSERVABILITY_", "COG_TRACE_", "OTEL_")):
+        if name.startswith(
+            ("COG_OBSERVABILITY_", "COG_TRACE_", "COG_METRICS_", "OTEL_")
+        ):
             del env[name]
     return subprocess.run(
         [sys.executable, "-c", script],

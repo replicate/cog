@@ -904,12 +904,12 @@ async fn run_event_loop(
         tokio::select! {
             biased;
 
-            unregister = unregister_rx.recv() => {
-                if let Some(unregister) = unregister {
-                    predictions.remove(&unregister.slot_id);
-                    idle_senders.remove(&unregister.slot_id);
-                    let _ = unregister.unregistered_ack.send(());
-                }
+            // Some(...) keeps this branch disabled once the handle is gone,
+            // otherwise a closed channel here starves every other branch.
+            Some(unregister) = unregister_rx.recv() => {
+                predictions.remove(&unregister.slot_id);
+                idle_senders.remove(&unregister.slot_id);
+                let _ = unregister.unregistered_ack.send(());
             }
 
             ctrl_msg = ctrl_reader.next() => {
