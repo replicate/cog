@@ -1,0 +1,35 @@
+architecture/01-model-source.md
+  s_0ac118db978d30::t_e667053decd38b 39-50
+architecture/04-container-runtime.md
+  s_0ac118db978d30::t_fbc4c2a7cce8bd 388,392-394,400,410-420
+crates/coglet/src/lib.rs
+  s_0ac118db978d30::t_13e503cb20d02f 13-14
+crates/coglet/src/permit/pool.rs
+  s_0ac118db978d30::t_9f7e42fe15e603 6,29,37,42-71,86,98,125,183,315,328,355,371,379-394,419-420,425,442-443,448,460-479,615-646
+docs/environment.md
+  s_0ac118db978d30::t_65a388cfad4d37 225-248
+docs/llms.txt
+  s_0ac118db978d30::t_155dd443cb5fb0 232,1167,1169,1171-1186,1188,1190,2372,2374,2376,2378-2386,2393-2394,2397-2398,2409,2428,2487,2494-2495,2498,2502-2504,2506-2507,2511,2513,2521-2528,2535-2580,2582,2584-2594,2701,2704,2708,2714,2716,3228-3248,3265,4211-4219,4226-4227,4230,4232
+pkg/config/config.go
+  s_0ac118db978d30::t_34960cb568108a 79-88,99-102
+pkg/config/config_file.go
+  s_0ac118db978d30::t_7ec81d28aabba3 69-71,82-153
+uv.lock
+  s_0ac118db978d30::t_fc4f5596c9b5b2 136-141,166-167,169,171,173,180,199,202-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "340265d6167a49a6d0d91a52162d28905992e4b0",
+  "prompts": {},
+  "sessions": {
+    "s_0ac118db978d30": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fc518029affe3kOFcF75aC5HP6",
+        "model": "@cf/deepseek-ai/deepseek-v4-pro-0813"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
