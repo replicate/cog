@@ -1,0 +1,21 @@
+crates/coglet/src/trace/mod.rs
+  s_0ac118db978d30::t_0cbcc4239681e2 10,14,68-110,629-663
+docs/llms.txt
+  s_0ac118db978d30::t_7c1cf2a4698b90 2376,2378,2380,2391-2392,2420-2430,2435-2436,2445,2499,2505,2516,2545,2596,2706,4213,4224-4225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "c914d058924440ba52c82c930ecf0bc5bef6bd40",
+  "prompts": {},
+  "sessions": {
+    "s_0ac118db978d30": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fc518029affe3kOFcF75aC5HP6",
+        "model": "@cf/deepseek-ai/deepseek-v4-pro-0813"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
