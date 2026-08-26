@@ -1,0 +1,19 @@
+docs/llms.txt
+  s_0ac118db978d30::t_247e92ff00786e 2494-2497
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "1ed929b9b14b7ab93534e5b414ca44f26d684d3a",
+  "prompts": {},
+  "sessions": {
+    "s_0ac118db978d30": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fc518029affe3kOFcF75aC5HP6",
+        "model": "@cf/deepseek-ai/deepseek-v4-pro-0813"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
