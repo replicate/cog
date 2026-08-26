@@ -1,0 +1,19 @@
+uv.lock
+  s_0ac118db978d30::t_bf04e8efff0fa3 166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "900b814b470953aa77839df7a7b36aeb8f6253ee",
+  "prompts": {},
+  "sessions": {
+    "s_0ac118db978d30": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fc518029affe3kOFcF75aC5HP6",
+        "model": "@cf/deepseek-ai/deepseek-v4-pro-0813"
+      },
+      "human_author": "Anish Sahoo <anishsahoo2005@gmail.com>"
+    }
+  }
+}
