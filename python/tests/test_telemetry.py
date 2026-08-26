@@ -146,10 +146,6 @@ class Provider(TracerProvider):
 def create_tracer_provider(resource):
     return Provider(shutdown_on_exit=False)
 
-def configure_runtime_metrics():
-    from cog.telemetry import RuntimeMetricsConfig
-    return RuntimeMetricsConfig(enabled=False)
-
 def create_meter_provider(resource):
     raise RuntimeError("meter factory failed")
 """
@@ -166,11 +162,7 @@ os.environ.update({{
 }})
 from cog import _telemetry
 _telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
-try:
-    _telemetry.install_providers()
-except RuntimeError:
-    assert _telemetry.runtime_metrics_config().enabled
-    raise
+_telemetry.install_providers()
 """
     )
     assert result.returncode != 0

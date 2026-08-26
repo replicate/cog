@@ -22,8 +22,6 @@ tracing = [
     "opentelemetry-otlp/reqwest-blocking-client",
     "opentelemetry-otlp/trace",
     "opentelemetry-otlp/metrics",
-    "opentelemetry/metrics",
-    "opentelemetry_sdk/metrics",
 ]
 tracing-grpc = [
     "tracing",

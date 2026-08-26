@@ -463,15 +463,3 @@ func TestObservabilityDockerfileUsesStagedObservabilityConfig(t *testing.T) {
 	assert.Contains(t, dockerfile, `ENV COG_OBSERVABILITY_CONFIG="/.cog/telemetry.py"`)
 	assert.NotContains(t, dockerfile, "config/telemetry.py")
 }
-
-func TestObservabilityDockerfileSupportsMetricsOnly(t *testing.T) {
-	dockerfile := observabilityDockerfile("model:latest", &config.Observability{
-		Config:  "config/telemetry.py",
-		Metrics: &config.Metrics{Enabled: true},
-	}, "")
-
-	assert.Contains(t, dockerfile, "ENV COG_METRICS_CONFIGURED=true")
-	assert.Contains(t, dockerfile, "ENV COG_METRICS_ENABLED=true")
-	assert.Contains(t, dockerfile, "COPY --from=cog_build telemetry.py /.cog/telemetry.py")
-	assert.NotContains(t, dockerfile, "COG_TRACE_CONFIGURED")
-}

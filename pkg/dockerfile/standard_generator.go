@@ -652,10 +652,6 @@ func (g *StandardGenerator) resolveCogWheelConfigs() error {
 // Older SDKs use the built-in Python HTTP server and are incompatible with coglet.
 const cogletMinSDKVersion = "0.17.0"
 
-// observabilityMinSDKVersion is the minimum SDK version that includes Cog's
-// telemetry bootstrap module and provider customization API.
-const observabilityMinSDKVersion = "0.22.1"
-
 // isLegacySDKVersion returns true if the resolved cog SDK version is explicitly
 // pinned below the minimum version that supports coglet. Returns false for
 // unpinned versions (including the "prerelease" sentinel), non-PyPI sources,
@@ -676,29 +672,6 @@ func (g *StandardGenerator) isLegacySDKVersion() bool {
 	return !ver.GreaterOrEqual(version.MustVersion(cogletMinSDKVersion))
 }
 
-func (g *StandardGenerator) validateObservabilitySDKVersion() error {
-	if !g.Config.Observability.AnyTelemetryEnabled() {
-		return nil
-	}
-
-	cfg := g.resolvedCogConfig
-	if cfg == nil || cfg.Source != wheels.WheelSourcePyPI || cfg.Version == "" {
-		return nil
-	}
-	base := cfg.Version
-	if m := wheels.BaseVersionRe.FindString(base); m != "" {
-		base = m
-	}
-	ver, err := version.NewVersion(base)
-	if err != nil || ver.GreaterOrEqual(version.MustVersion(observabilityMinSDKVersion)) {
-		return nil
-	}
-	return fmt.Errorf(
-		"OpenTelemetry tracing and metrics require cog SDK %s or newer; update build.sdk_version or remove the pin",
-		observabilityMinSDKVersion,
-	)
-}
-
 func (g *StandardGenerator) installCog() (string, error) {
 	// Do not install Cog in base images
 	if !g.requiresCog {
@@ -709,9 +682,6 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", err
 	}
 	wheelConfig := g.resolvedCogConfig
-	if err := g.validateObservabilitySDKVersion(); err != nil {
-		return "", err
-	}
 
 	// Determine if we need --pre flag (pre-release SDK implies pre-release coglet too)
 	sdkIsPreRelease := wheelConfig.Source == wheels.WheelSourcePyPI &&

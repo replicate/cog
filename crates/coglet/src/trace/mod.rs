@@ -97,7 +97,6 @@ pub struct TracingConfig {
     protocol: OtlpProtocol,
     sampler: SamplerKind,
     sampler_arg: Option<f64>,
-    service_name: String,
 }
 
 impl TracingConfig {
@@ -167,7 +166,6 @@ impl TracingConfig {
             protocol,
             sampler,
             sampler_arg,
-            service_name: std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "cog".to_string()),
         }))
     }
 
@@ -219,7 +217,6 @@ impl TracingRuntime {
         tracing::info!(
             target: "coglet::trace",
             protocol = ?config.protocol,
-            service_name = %config.service_name,
             role = role.as_str(),
             "OpenTelemetry tracing initialized"
         );
@@ -522,7 +519,6 @@ mod tests {
             protocol: OtlpProtocol::HttpProtobuf,
             sampler: SamplerKind::TraceIdRatio,
             sampler_arg: None,
-            service_name: String::new(),
         };
 
         match config.sdk_sampler() {

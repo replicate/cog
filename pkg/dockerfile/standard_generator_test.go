@@ -1520,20 +1520,6 @@ predict: predict.py:Predictor
 	require.NotContains(t, dockerfile, "cog==")
 }
 
-func TestObservabilityRequiresCurrentSDK(t *testing.T) {
-	gen := &StandardGenerator{
-		Config: &config.Config{
-			Observability: &config.Observability{Metrics: &config.Metrics{Enabled: true}},
-		},
-		resolvedCogConfig: &wheels.WheelConfig{
-			Source:  wheels.WheelSourcePyPI,
-			Version: "0.21.0",
-		},
-	}
-
-	require.ErrorContains(t, gen.validateObservabilitySDKVersion(), "require cog SDK 0.22.1 or newer")
-}
-
 func TestObservabilityConfigUsesStagedPath(t *testing.T) {
 	gen := &StandardGenerator{Config: &config.Config{Observability: &config.Observability{
 		Config: "nested/telemetry.py",

@@ -60,4 +60,4 @@ def create_meter_provider(resource: Resource) -> MeterProvider:
 
 
 def configure_runtime_metrics() -> RuntimeMetricsConfig:
-    return RuntimeMetricsConfig(disabled={RuntimeMetric.SLOT_COUNT})
+    return RuntimeMetricsConfig(disabled={RuntimeMetric.SETUP_DURATION})

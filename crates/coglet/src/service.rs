@@ -772,7 +772,6 @@ impl PredictionService {
                     "Prediction mutex poisoned".to_string(),
                 ));
             };
-            pred.mark_runtime_metrics_admitted();
             pred.set_processing();
             pred.record_trace_slot(slot_id);
         }

@@ -23,7 +23,7 @@ dependencies = [
   "pyyaml>=6.0",
   "structlog>=21.0.0",
   "requests>=2.25.0",
-  "coglet>=0.22.0,<1.0",
+  "coglet>=0.1.0,<1.0",
 ]
 dynamic = ["version"]
 

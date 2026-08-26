@@ -104,10 +104,6 @@ def install_providers() -> RuntimeMetricsConfig:
     return _runtime_metrics_config
 
 
-def runtime_metrics_config() -> RuntimeMetricsConfig:
-    return _runtime_metrics_config
-
-
 def attach(carrier: Mapping[str, str]) -> Token[Context] | None:
     if _tracer_provider is None or not carrier.get("traceparent"):
         return None

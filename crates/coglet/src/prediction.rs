@@ -155,8 +155,8 @@ pub struct Prediction {
     id: String,
     cancel_token: CancellationToken,
     started_at: Instant,
+    #[cfg_attr(not(feature = "tracing"), allow(dead_code))]
     operation: PredictionOperation,
-    runtime_metrics_admitted: bool,
     status: PredictionStatus,
     logs: String,
     outputs: Vec<serde_json::Value>,
@@ -191,7 +191,6 @@ impl Prediction {
             cancel_token: CancellationToken::new(),
             started_at: Instant::now(),
             operation,
-            runtime_metrics_admitted: false,
             status: PredictionStatus::Starting,
             logs: String::new(),
             outputs: Vec::new(),
@@ -214,16 +213,6 @@ impl Prediction {
 
     pub fn cancel_token(&self) -> CancellationToken {
         self.cancel_token.clone()
-    }
-
-    pub fn operation(&self) -> PredictionOperation {
-        self.operation
-    }
-
-    pub fn mark_runtime_metrics_admitted(&mut self) {
-        self.runtime_metrics_admitted = true;
-        #[cfg(feature = "tracing")]
-        crate::runtime_metrics::record_prediction_admitted(self.operation.as_str());
     }
 
     pub fn subscribe_stream(
@@ -299,6 +288,11 @@ impl Prediction {
     }
 
     pub fn set_processing(&mut self) {
+        if self.status != PredictionStatus::Starting {
+            return;
+        }
+        #[cfg(feature = "tracing")]
+        crate::runtime_metrics::record_prediction_admitted(self.operation.as_str());
         self.status = PredictionStatus::Processing;
         self.emit_stream_event(PredictionStreamEvent::Start {
             id: self.id.clone(),
@@ -333,8 +327,8 @@ impl Prediction {
         if self.status.is_terminal() {
             return;
         }
+        self.record_runtime_metrics_terminal(PredictionStatus::Succeeded);
         self.status = PredictionStatus::Succeeded;
-        self.record_runtime_metrics_terminal();
         self.output = Some(output);
         self.finish_trace("succeeded", None);
         self.emit_stream_event(PredictionStreamEvent::Completed {
@@ -354,8 +348,8 @@ impl Prediction {
         if self.status.is_terminal() {
             return;
         }
+        self.record_runtime_metrics_terminal(PredictionStatus::Failed);
         self.status = PredictionStatus::Failed;
-        self.record_runtime_metrics_terminal();
         self.error = Some(error);
         self.finish_trace("failed", Some("prediction_failed"));
         self.emit_stream_event(PredictionStreamEvent::Completed {
@@ -369,8 +363,8 @@ impl Prediction {
         if self.status.is_terminal() {
             return;
         }
+        self.record_runtime_metrics_terminal(PredictionStatus::Canceled);
         self.status = PredictionStatus::Canceled;
-        self.record_runtime_metrics_terminal();
         self.finish_trace("canceled", Some("canceled"));
         self.emit_stream_event(PredictionStreamEvent::Completed {
             payload: self.build_state_snapshot(),
@@ -390,16 +384,18 @@ impl Prediction {
         }
     }
 
-    fn record_runtime_metrics_terminal(&self) {
-        if !self.runtime_metrics_admitted {
+    fn record_runtime_metrics_terminal(&self, terminal_status: PredictionStatus) {
+        if self.status != PredictionStatus::Processing {
             return;
         }
         #[cfg(feature = "tracing")]
         crate::runtime_metrics::record_prediction_terminal(
             self.operation.as_str(),
-            self.status.as_str(),
+            terminal_status.as_str(),
             self.elapsed(),
         );
+        #[cfg(not(feature = "tracing"))]
+        let _ = terminal_status;
     }
 
     pub fn elapsed(&self) -> std::time::Duration {

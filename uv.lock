@@ -163,7 +163,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "coglet", specifier = ">=0.22.0,<1.0" },
+    { name = "coglet", specifier = ">=0.1.0,<1.0" },
     { name = "opentelemetry-api", marker = "extra == 'observability'", specifier = "==1.44.0" },
     { name = "opentelemetry-api", marker = "extra == 'tracing'", specifier = "==1.44.0" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "extra == 'observability'", specifier = "==1.44.0" },

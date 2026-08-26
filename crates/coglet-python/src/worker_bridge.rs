@@ -381,20 +381,9 @@ impl PredictHandler for PythonPredictHandler {
                 let telemetry_module = py
                     .import("cog._telemetry")
                     .map_err(|error| SetupError::setup(error.to_string()))?;
-                let config = match telemetry_module.call_method0("install_providers") {
-                    Ok(config) => config,
-                    Err(error) => {
-                        if let Ok(config) = telemetry_module.call_method0("runtime_metrics_config")
-                            && let Ok(config) = runtime_metrics_config_from_python(&config)
-                        {
-                            *self
-                                .runtime_metrics
-                                .lock()
-                                .expect("runtime_metrics mutex poisoned") = Some(config);
-                        }
-                        return Err(SetupError::setup(error.to_string()));
-                    }
-                };
+                let config = telemetry_module
+                    .call_method0("install_providers")
+                    .map_err(|error| SetupError::setup(error.to_string()))?;
                 *self
                     .runtime_metrics
                     .lock()

@@ -138,7 +138,7 @@ jobs:
           echo "Setting coglet constraint to >=$VERSION,<1.0"
 
           # Update pyproject.toml with lockstep version constraint
-          sed -i "s/coglet>=0\.22\.0,<1\.0/coglet>=$VERSION,<1.0/" pyproject.toml
+          sed -i "s/coglet>=0\.1\.0,<1\.0/coglet>=$VERSION,<1.0/" pyproject.toml
 
           # Verify the change took effect
           grep "coglet>=$VERSION" pyproject.toml
