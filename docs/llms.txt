@@ -2491,8 +2491,10 @@ Set `observability.config` to a project-relative Python file:
 ```yaml
 observability:
   config: telemetry.py
-  traces: true
-  metrics: true
+  traces:
+    enabled: true
+  metrics:
+    enabled: true
 ```
 
 Cog validates the file during configuration, copies it to a fixed path in the image, and loads it before importing the model. Provider factories are optional. A missing factory uses Cog's default provider for that signal. Factories receive Cog's base `Resource` and may merge or replace its attributes.
