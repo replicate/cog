@@ -9,7 +9,7 @@ require (
 	github.com/docker/cli v29.5.2+incompatible
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.6.0
-	github.com/getkin/kin-openapi v0.144.0
+	github.com/getkin/kin-openapi v0.146.0
 	github.com/gofrs/flock v0.13.0
 	github.com/google/go-containerregistry v0.21.5
 	github.com/hashicorp/go-retryablehttp v0.7.8
