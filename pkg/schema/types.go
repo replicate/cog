@@ -99,9 +99,10 @@ func isPathlibModule(module string) bool {
 //	from cog import Path as CogPath   -> unresolvable (wrong; this is cog.Path)
 //
 // Resolve via the import's original name. On inputs, reject pathlib.Path
-// (from pathlib import Path, pathlib.Path, and local re-exports that
-// resolve to pathlib). Outputs keep treating pathlib.Path as a file URI
-// because the worker already uploads os.PathLike.
+// (from pathlib import Path, pathlib.Path, from .types import Path that
+// re-exports pathlib, and import helpers then helpers.Path). Outputs keep
+// treating pathlib.Path as a file URI because the worker already uploads
+// os.PathLike.
 func resolvePrimitiveType(annName string, ctx *ImportContext, rejectPathlib bool) (PrimitiveType, bool, error) {
 	lookupName := annName
 	entry := ImportEntry{}
@@ -338,6 +339,10 @@ const (
 type ImportContext struct {
 	// Names maps local name → (module, original_name)
 	Names *OrderedMap[string, ImportEntry]
+	// ModuleAttrs maps `import helpers` / `import helpers as h` to Path/File/Secret
+	// names found in that local module, after following re-exports.
+	// `h.Path` looks up ModuleAttrs["h"]["Path"].
+	ModuleAttrs map[string]map[string]ImportEntry
 }
 
 // ImportEntry records where a name was imported from.
@@ -348,7 +353,10 @@ type ImportEntry struct {
 
 // NewImportContext creates an empty ImportContext.
 func NewImportContext() *ImportContext {
-	return &ImportContext{Names: NewOrderedMap[string, ImportEntry]()}
+	return &ImportContext{
+		Names:       NewOrderedMap[string, ImportEntry](),
+		ModuleAttrs: map[string]map[string]ImportEntry{},
+	}
 }
 
 // IsCogType returns true if name was imported from the "cog" module.
@@ -431,7 +439,23 @@ func (ctx *ImportContext) ResolveQualifiedName(name string) (string, ImportEntry
 	if !ok {
 		return parts[1], ImportEntry{}, true
 	}
+	if inner, ok := ctx.ModuleAttr(parts[0], parts[1]); ok {
+		return inner.Original, inner, true
+	}
 	return parts[1], entry, true
+}
+
+// ModuleAttr returns a name exported by a locally imported module, if recorded.
+func (ctx *ImportContext) ModuleAttr(alias, attr string) (ImportEntry, bool) {
+	if ctx == nil || ctx.ModuleAttrs == nil {
+		return ImportEntry{}, false
+	}
+	attrs, ok := ctx.ModuleAttrs[alias]
+	if !ok {
+		return ImportEntry{}, false
+	}
+	entry, ok := attrs[attr]
+	return entry, ok
 }
 
 // ResolveFieldType resolves a TypeAnnotation into a FieldType.

@@ -144,6 +144,7 @@ func (ctx *modelParseContext) loadModelsFromModule(sourceDir, module string) sch
 	if pyPath == "" {
 		return nil
 	}
+	pyPath = existingPythonFile(sourceDir, pyPath)
 	cacheKey := filepath.Clean(pyPath)
 	if summary, ok := ctx.loadedModules[cacheKey]; ok {
 		return summary.Models
@@ -296,6 +297,44 @@ func followReexportedFileLikes(imports *schema.ImportContext, loaded map[string]
 	for _, r := range rewrites {
 		imports.Names.Set(r.local, r.entry)
 	}
+	recordImportedModuleFileLikes(imports, loaded, sourcePath)
+}
+
+// recordImportedModuleFileLikes records Path/File/Secret on `import helpers`
+// so `helpers.Path` follows the same pathlib/cog origin as `from helpers import Path`.
+func recordImportedModuleFileLikes(imports *schema.ImportContext, loaded map[string]ModuleSummary, sourcePath string) {
+	if imports.ModuleAttrs == nil {
+		imports.ModuleAttrs = map[string]map[string]schema.ImportEntry{}
+	}
+	imports.Names.Entries(func(localName string, entry schema.ImportEntry) {
+		// parseImport stores Original == Module for `import foo` and `import foo as bar`.
+		if entry.Original != entry.Module {
+			return
+		}
+		if isKnownExternalModule(entry.Module) {
+			return
+		}
+		pyPath := moduleToFilePath(entry.Module, sourcePath)
+		summary, ok := lookupLoaded(loaded, pyPath)
+		if !ok || summary.Imports == nil {
+			return
+		}
+		attrs := map[string]schema.ImportEntry{}
+		summary.Imports.Names.Entries(func(attr string, inner schema.ImportEntry) {
+			resolved := followFileLikeOrigin(inner, loaded, summary.SourcePath, 0)
+			if resolved.Original != "Path" && resolved.Original != "File" && resolved.Original != "Secret" {
+				return
+			}
+			if resolved.Module != "cog" && !strings.HasPrefix(resolved.Module, "cog.") &&
+				resolved.Module != "pathlib" && !strings.HasPrefix(resolved.Module, "pathlib.") {
+				return
+			}
+			attrs[attr] = resolved
+		})
+		if len(attrs) > 0 {
+			imports.ModuleAttrs[localName] = attrs
+		}
+	})
 }
 
 func followFileLikeOrigin(entry schema.ImportEntry, loaded map[string]ModuleSummary, sourcePath string, depth int) schema.ImportEntry {
@@ -315,7 +354,7 @@ func followFileLikeOrigin(entry schema.ImportEntry, loaded map[string]ModuleSumm
 	if pyPath == "" {
 		return entry
 	}
-	summary, ok := loaded[filepath.Clean(pyPath)]
+	summary, ok := lookupLoaded(loaded, pyPath)
 	if !ok || summary.Imports == nil {
 		return entry
 	}
@@ -343,6 +382,32 @@ func refreshLoadedModuleAliases(loadedModules map[string]ModuleSummary) {
 			propagateImportedAliasFrom(localName, entry, imported.Models, summary.Models, imported.TypedDicts, summary.TypedDicts)
 		})
 	}
+}
+
+func lookupLoaded(loaded map[string]ModuleSummary, pyPath string) (ModuleSummary, bool) {
+	if pyPath == "" {
+		return ModuleSummary{}, false
+	}
+	if summary, ok := loaded[filepath.Clean(pyPath)]; ok {
+		return summary, true
+	}
+	initPath := filepath.Join(strings.TrimSuffix(pyPath, ".py"), "__init__.py")
+	summary, ok := loaded[filepath.Clean(initPath)]
+	return summary, ok
+}
+
+func existingPythonFile(sourceDir, pyPath string) string {
+	if sourceDir == "" || pyPath == "" {
+		return pyPath
+	}
+	if _, err := os.Stat(filepath.Join(sourceDir, pyPath)); err == nil {
+		return pyPath
+	}
+	initRel := filepath.Join(strings.TrimSuffix(pyPath, ".py"), "__init__.py")
+	if _, err := os.Stat(filepath.Join(sourceDir, initRel)); err == nil {
+		return initRel
+	}
+	return pyPath
 }
 
 // moduleToFilePath converts a Python module path to a relative .py file path.

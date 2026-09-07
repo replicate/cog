@@ -2461,6 +2461,94 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.TypePath, image.FieldType.Primitive)
 }
 
+func TestImportedModulePathlibPathRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "helpers.py", `
+from pathlib import Path
+`)
+	writeFile(t, dir, "predict.py", `
+import helpers
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, image: helpers.Path) -> str:
+        pass
+`)
+	source, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	_, parseErr := ParsePredictorWithSourcePath(source, "Predictor", schema.ModePredict, dir, "predict.py")
+	require.Error(t, parseErr)
+	var se *schema.SchemaError
+	require.True(t, errors.As(parseErr, &se), "expected *schema.SchemaError, got %T: %v", parseErr, parseErr)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Error(), "pathlib")
+}
+
+func TestImportedModulePathlibPathAliasedRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "helpers.py", `
+from pathlib import Path
+`)
+	writeFile(t, dir, "predict.py", `
+import helpers as h
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, image: h.Path) -> str:
+        pass
+`)
+	source, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	_, parseErr := ParsePredictorWithSourcePath(source, "Predictor", schema.ModePredict, dir, "predict.py")
+	require.Error(t, parseErr)
+	var se *schema.SchemaError
+	require.True(t, errors.As(parseErr, &se), "expected *schema.SchemaError, got %T: %v", parseErr, parseErr)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Error(), "pathlib")
+}
+
+func TestImportedModuleCogPathAccepted(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "helpers.py", `
+from cog import Path
+`)
+	writeFile(t, dir, "predict.py", `
+import helpers
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, image: helpers.Path) -> str:
+        pass
+`)
+	info := parseFile(t, dir, "predict.py", "Predictor")
+	image, ok := info.Inputs.Get("image")
+	require.True(t, ok)
+	require.Equal(t, schema.TypePath, image.FieldType.Primitive)
+}
+
+func TestImportedPackagePathlibPathRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "helpers/__init__.py", `
+from pathlib import Path
+`)
+	writeFile(t, dir, "predict.py", `
+import helpers
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, image: helpers.Path) -> str:
+        pass
+`)
+	source, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	_, parseErr := ParsePredictorWithSourcePath(source, "Predictor", schema.ModePredict, dir, "predict.py")
+	require.Error(t, parseErr)
+	var se *schema.SchemaError
+	require.True(t, errors.As(parseErr, &se), "expected *schema.SchemaError, got %T: %v", parseErr, parseErr)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Error(), "pathlib")
+}
+
 // ---------------------------------------------------------------------------
 // Optional list inputs (list[X] | None)
 // ---------------------------------------------------------------------------
