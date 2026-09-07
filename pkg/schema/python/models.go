@@ -260,6 +260,72 @@ func nestedImportModule(module string, original string) string {
 	return module + "." + original
 }
 
+// followReexportedFileLikes rewrites Path/File/Secret imports that came from a
+// local module so they point at the original cog or pathlib binding.
+//
+//	# types.py
+//	from pathlib import Path
+//	# predict.py
+//	from .types import Path
+//
+// becomes pathlib.Path, which inputs then reject. Unresolved relative imports
+// (no file on disk) are left as file URIs, same as a missing local BaseModel.
+func followReexportedFileLikes(imports *schema.ImportContext, loaded map[string]ModuleSummary, sourcePath string) {
+	if imports == nil || loaded == nil || len(loaded) == 0 {
+		return
+	}
+	type rewrite struct {
+		local string
+		entry schema.ImportEntry
+	}
+	var rewrites []rewrite
+	imports.Names.Entries(func(localName string, entry schema.ImportEntry) {
+		resolved := followFileLikeOrigin(entry, loaded, sourcePath, 0)
+		if resolved == entry {
+			return
+		}
+		if resolved.Original != "Path" && resolved.Original != "File" && resolved.Original != "Secret" {
+			return
+		}
+		if resolved.Module != "cog" && !strings.HasPrefix(resolved.Module, "cog.") &&
+			resolved.Module != "pathlib" && !strings.HasPrefix(resolved.Module, "pathlib.") {
+			return
+		}
+		rewrites = append(rewrites, rewrite{local: localName, entry: resolved})
+	})
+	for _, r := range rewrites {
+		imports.Names.Set(r.local, r.entry)
+	}
+}
+
+func followFileLikeOrigin(entry schema.ImportEntry, loaded map[string]ModuleSummary, sourcePath string, depth int) schema.ImportEntry {
+	if depth > 8 {
+		return entry
+	}
+	if entry.Module == "cog" || strings.HasPrefix(entry.Module, "cog.") {
+		return entry
+	}
+	if entry.Module == "pathlib" || strings.HasPrefix(entry.Module, "pathlib.") {
+		return entry
+	}
+	if isKnownExternalModule(entry.Module) {
+		return entry
+	}
+	pyPath := moduleToFilePath(entry.Module, sourcePath)
+	if pyPath == "" {
+		return entry
+	}
+	summary, ok := loaded[filepath.Clean(pyPath)]
+	if !ok || summary.Imports == nil {
+		return entry
+	}
+	next, ok := summary.Imports.Names.Get(entry.Original)
+	if !ok {
+		return entry
+	}
+	return followFileLikeOrigin(next, loaded, summary.SourcePath, depth+1)
+}
+
 func refreshLoadedModuleAliases(loadedModules map[string]ModuleSummary) {
 	for _, summary := range loadedModules {
 		if summary.Imports == nil || summary.Models == nil {

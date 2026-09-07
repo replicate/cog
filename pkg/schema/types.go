@@ -98,9 +98,10 @@ func isPathlibModule(module string) bool {
 //	from pathlib import Path          -> TypePath (wrong on inputs; runtime will not download)
 //	from cog import Path as CogPath   -> unresolvable (wrong; this is cog.Path)
 //
-// Resolve via the import's original name. On inputs, reject pathlib.Path.
-// Outputs keep treating pathlib.Path as a file URI because the worker
-// already uploads os.PathLike.
+// Resolve via the import's original name. On inputs, reject pathlib.Path
+// (from pathlib import Path, pathlib.Path, and local re-exports that
+// resolve to pathlib). Outputs keep treating pathlib.Path as a file URI
+// because the worker already uploads os.PathLike.
 func resolvePrimitiveType(annName string, ctx *ImportContext, rejectPathlib bool) (PrimitiveType, bool, error) {
 	lookupName := annName
 	entry := ImportEntry{}
@@ -122,10 +123,22 @@ func resolvePrimitiveType(annName string, ctx *ImportContext, rejectPathlib bool
 	if !ok {
 		return 0, false, nil
 	}
-	if rejectPathlib && isCogFileLikePrimitive(lookupName) && imported && isPathlibModule(entry.Module) {
-		return 0, false, errNotCogFileLike(annName, entry.Module, lookupName)
+	if rejectPathlib && isCogFileLikePrimitive(lookupName) && isPathlibAnnotation(annName, entry, imported) {
+		module := entry.Module
+		if module == "" {
+			module = "pathlib"
+		}
+		return 0, false, errNotCogFileLike(annName, module, lookupName)
 	}
 	return prim, true, nil
+}
+
+func isPathlibAnnotation(annName string, entry ImportEntry, imported bool) bool {
+	if imported && isPathlibModule(entry.Module) {
+		return true
+	}
+	// ResolveQualifiedName("pathlib.Path") with no import still unwraps to Path.
+	return annName == "pathlib.Path" || strings.HasPrefix(annName, "pathlib.")
 }
 
 // Repetition describes cardinality of a field.

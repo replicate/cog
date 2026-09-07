@@ -2343,6 +2343,7 @@ class Predictor(BasePredictor):
 }
 
 func TestRelativeTypesPathInput(t *testing.T) {
+	// No types.py on disk, so the re-export cannot be followed. Same as today.
 	source := `
 from .types import Path
 from cog import BasePredictor
@@ -2369,6 +2370,36 @@ class Predictor(BasePredictor):
 	se := parseErr(t, source, "Predictor", schema.ModePredict)
 	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
 	require.Contains(t, se.Error(), "pathlib")
+	require.Contains(t, se.Error(), "from cog import Path")
+	require.NotContains(t, se.Error(), "different name")
+}
+
+func TestQualifiedPathlibPathWithoutImportRejected(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, image: pathlib.Path) -> str:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Error(), "pathlib")
+	require.NotContains(t, se.Error(), "different name")
+}
+
+func TestPathlibImportedAsAliasRejected(t *testing.T) {
+	source := `
+import pathlib as p
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, image: p.Path) -> str:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Error(), "pathlib")
 }
 
 func TestAliasedCogPathAlongsidePathlib(t *testing.T) {
@@ -2383,6 +2414,48 @@ class Predictor(BasePredictor):
         return dest.read_text()
 `
 	info := parse(t, source, "Predictor")
+	image, ok := info.Inputs.Get("image")
+	require.True(t, ok)
+	require.Equal(t, schema.TypePath, image.FieldType.Primitive)
+}
+
+func TestRelativePathlibPathInputRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "types.py", `
+from pathlib import Path
+`)
+	writeFile(t, dir, "predict.py", `
+from .types import Path
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path) -> str:
+        pass
+`)
+	source, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	_, parseErr := ParsePredictorWithSourcePath(source, "Predictor", schema.ModePredict, dir, "predict.py")
+	require.Error(t, parseErr)
+	var se *schema.SchemaError
+	require.True(t, errors.As(parseErr, &se), "expected *schema.SchemaError, got %T: %v", parseErr, parseErr)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Error(), "pathlib")
+}
+
+func TestRelativeCogPathReexportAccepted(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "types.py", `
+from cog import Path
+`)
+	writeFile(t, dir, "predict.py", `
+from .types import Path
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path) -> str:
+        pass
+`)
+	info := parseFile(t, dir, "predict.py", "Predictor")
 	image, ok := info.Inputs.Get("image")
 	require.True(t, ok)
 	require.Equal(t, schema.TypePath, image.FieldType.Primitive)
