@@ -32,7 +32,7 @@ tracing-grpc = [
 [dependencies]
 # Async runtime
 tokio.workspace = true
-tokio-util = { workspace = true, features = ["codec"] }
+tokio-util = { workspace = true, features = ["codec", "io"] }
 futures.workspace = true
 async-trait = "0.1"
 

@@ -8,6 +8,7 @@
 //! 5. On worker crash: fail all predictions, shut down
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -18,6 +19,7 @@ use futures::{SinkExt, StreamExt};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
+use tokio_util::io::ReaderStream;
 use tracing::Instrument as _;
 
 use crate::PredictionOutput;
@@ -41,16 +43,24 @@ const MAX_PENDING_CANCELLATIONS: usize = 1000;
 async fn upload_file(
     endpoint: &str,
     filename: &str,
-    data: &[u8],
+    path: &Path,
     content_type: &str,
 ) -> Result<String, String> {
     let url = format!("{endpoint}{filename}");
+    let file = tokio::fs::File::open(path)
+        .await
+        .map_err(|e| format!("failed to open upload file: {e}"))?;
+    let content_length = file
+        .metadata()
+        .await
+        .map_err(|e| format!("failed to inspect upload file: {e}"))?
+        .len();
     let client = reqwest::Client::new();
     let resp = client
         .put(&url)
         .header("Content-Type", content_type)
-        .body(data.to_vec())
-        .timeout(std::time::Duration::from_secs(25))
+        .header("Content-Length", content_length)
+        .body(reqwest::Body::wrap_stream(ReaderStream::new(file)))
         .send()
         .await
         .map_err(|e| format!("upload request failed: {}", e.without_url()))?;
@@ -1111,15 +1121,15 @@ async fn run_event_loop(
                     }
                     Ok(SlotResponse::FileOutput { filename, kind, mime_type }) => {
                         tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");
-                        let bytes = match std::fs::read(&filename) {
-                            Ok(b) => b,
-                            Err(e) => {
-                                tracing::error!(%slot_id, %filename, error = %e, "Failed to read FileOutput");
-                                continue;
-                            }
-                        };
                         match kind {
                             FileOutputKind::Oversized => {
+                                let bytes = match std::fs::read(&filename) {
+                                    Ok(b) => b,
+                                    Err(e) => {
+                                        tracing::error!(%slot_id, %filename, error = %e, "Failed to read oversized output");
+                                        continue;
+                                    }
+                                };
                                 let output: serde_json::Value = match serde_json::from_slice(&bytes) {
                                     Ok(val) => val,
                                     Err(e) => {
@@ -1160,10 +1170,13 @@ async fn run_event_loop(
                                         .and_then(|n| n.to_str())
                                         .unwrap_or("output")
                                         .to_string();
+                                    let output_bytes = std::fs::metadata(&filename)
+                                        .map(|metadata| metadata.len())
+                                        .unwrap_or(0);
                                     let upload_span = crate::cog_span!(
                                         info_span,
                                         "cog.prediction.upload_output",
-                                        "cog.output.bytes" = bytes.len() as u64,
+                                        "cog.output.bytes" = output_bytes,
                                         "cog.output.mime_type" = %mime,
                                         "otel.kind" = "client"
                                     );
@@ -1171,8 +1184,9 @@ async fn run_event_loop(
                                     if let Some(trace) = trace.as_ref() {
                                         crate::trace::set_parent_from_carrier(&upload_span, trace);
                                     }
+                                    let path = std::path::PathBuf::from(filename);
                                     let handle = tokio::spawn(async move {
-                                        match upload_file(&endpoint, &basename, &bytes, &mime).await {
+                                        match upload_file(&endpoint, &basename, &path, &mime).await {
                                             Ok(url) => {
                                                 if let Some(pred) = pred
                                                     && let Some(mut p) = try_lock_prediction(&pred)
@@ -1189,6 +1203,13 @@ async fn run_event_loop(
                                 } else {
                                     // No upload URL — base64-encode as data URI
                                     use base64::Engine;
+                                    let bytes = match std::fs::read(&filename) {
+                                        Ok(b) => b,
+                                        Err(e) => {
+                                            tracing::error!(%slot_id, %filename, error = %e, "Failed to read FileOutput");
+                                            continue;
+                                        }
+                                    };
                                     let encoded = base64::engine::general_purpose::STANDARD
                                         .encode(&bytes);
                                     let output = serde_json::Value::String(format!(
@@ -1337,6 +1358,40 @@ async fn run_event_loop(
 mod tests {
     use super::*;
     use serde_json::json;
+    use wiremock::matchers::{body_bytes, header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn upload_file_streams_path_with_content_length() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/output.bin"))
+            .and(header("content-type", "application/octet-stream"))
+            .and(header("content-length", "6"))
+            .and(body_bytes(b"abcdef"))
+            .respond_with(ResponseTemplate::new(201).insert_header(
+                "location",
+                format!("{}/files/result?token=secret", server.uri()),
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("output.bin");
+        tokio::fs::write(&output, b"abcdef").await.unwrap();
+
+        let result = upload_file(
+            &format!("{}/", server.uri()),
+            "output.bin",
+            &output,
+            "application/octet-stream",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result, format!("{}/files/result", server.uri()));
+    }
 
     // ── wrap_outputs: schema says array (output_is_array = true) ──
 
