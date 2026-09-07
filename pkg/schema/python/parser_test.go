@@ -2234,6 +2234,145 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.Repeated, files.FieldType.Repetition)
 }
 
+func TestAliasedCogPathInput(t *testing.T) {
+	source := `
+from cog import BasePredictor, Path as CogPath
+
+class Predictor(BasePredictor):
+    def predict(self, image: CogPath) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	image, ok := info.Inputs.Get("image")
+	require.True(t, ok)
+	require.Equal(t, schema.TypePath, image.FieldType.Primitive)
+}
+
+func TestAliasedCogPathOpenAPIIsURI(t *testing.T) {
+	source := []byte(`
+from cog import BasePredictor, Path as CogPath
+
+class Predictor(BasePredictor):
+    def predict(self, image: CogPath) -> str:
+        return "ok"
+`)
+	info, err := ParsePredictor(source, "Predictor", schema.ModePredict, "")
+	require.NoError(t, err)
+
+	out, err := schema.GenerateOpenAPISchema(info)
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(out, &doc))
+	input := doc["components"].(map[string]any)["schemas"].(map[string]any)["Input"].(map[string]any)
+	prop := input["properties"].(map[string]any)["image"].(map[string]any)
+	require.Equal(t, "string", prop["type"])
+	require.Equal(t, "uri", prop["format"])
+}
+
+func TestAliasedCogSecretInput(t *testing.T) {
+	source := `
+from cog import BasePredictor, Secret as Token
+
+class Predictor(BasePredictor):
+    def predict(self, api_key: Token) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	apiKey, ok := info.Inputs.Get("api_key")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeSecret, apiKey.FieldType.Primitive)
+}
+
+func TestCogTypesPathImport(t *testing.T) {
+	source := `
+from cog import BasePredictor
+from cog.types import Path
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	image, ok := info.Inputs.Get("image")
+	require.True(t, ok)
+	require.Equal(t, schema.TypePath, image.FieldType.Primitive)
+}
+
+func TestQualifiedCogPathInput(t *testing.T) {
+	source := `
+import cog
+
+class Predictor(cog.BasePredictor):
+    def predict(self, image: cog.Path) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	image, ok := info.Inputs.Get("image")
+	require.True(t, ok)
+	require.Equal(t, schema.TypePath, image.FieldType.Primitive)
+}
+
+func TestPathlibPathInputRejected(t *testing.T) {
+	source := `
+from pathlib import Path
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path) -> str:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Error(), "pathlib")
+	require.Contains(t, se.Error(), "from cog import Path")
+}
+
+func TestPathlibPathOutputRejected(t *testing.T) {
+	source := `
+from pathlib import Path
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> Path:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Error(), "pathlib")
+}
+
+func TestQualifiedPathlibPathRejected(t *testing.T) {
+	source := `
+import pathlib
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, image: pathlib.Path) -> str:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Error(), "pathlib")
+}
+
+func TestAliasedCogPathAlongsidePathlib(t *testing.T) {
+	source := `
+from pathlib import Path
+from cog import BasePredictor, Path as CogPath
+
+class Predictor(BasePredictor):
+    def predict(self, image: CogPath) -> str:
+        dest = Path("/tmp/out.txt")
+        dest.write_text("ok")
+        return dest.read_text()
+`
+	info := parse(t, source, "Predictor")
+	image, ok := info.Inputs.Get("image")
+	require.True(t, ok)
+	require.Equal(t, schema.TypePath, image.FieldType.Primitive)
+}
+
 // ---------------------------------------------------------------------------
 // Optional list inputs (list[X] | None)
 // ---------------------------------------------------------------------------

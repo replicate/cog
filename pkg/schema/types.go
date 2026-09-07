@@ -82,6 +82,51 @@ func PrimitiveFromName(name string) (PrimitiveType, bool) {
 	}
 }
 
+func isCogFileLikePrimitive(name string) bool {
+	return name == "Path" || name == "File" || name == "Secret"
+}
+
+func isCogTypeModule(module string) bool {
+	return module == "cog" || module == "cog.types"
+}
+
+// resolvePrimitiveType maps an annotation name to a PrimitiveType.
+//
+// Path/File/Secret are cog types. The schema generator used to call
+// PrimitiveFromName on the local identifier, so:
+//
+//	from pathlib import Path          -> TypePath (wrong; runtime will not download)
+//	from cog import Path as CogPath   -> unresolvable (wrong; this is cog.Path)
+//
+// Resolve via the import's original name, and reject file-like names that
+// did not come from cog / cog.types.
+func resolvePrimitiveType(annName string, ctx *ImportContext) (PrimitiveType, bool, error) {
+	lookupName := annName
+	entry := ImportEntry{}
+	imported := false
+
+	if resolved, e, ok := ctx.ResolveQualifiedName(annName); ok {
+		lookupName = resolved
+		if e.Module != "" {
+			entry = e
+			imported = true
+		}
+	} else if e, ok := ctx.Names.Get(annName); ok {
+		lookupName = e.Original
+		entry = e
+		imported = true
+	}
+
+	prim, ok := PrimitiveFromName(lookupName)
+	if !ok {
+		return 0, false, nil
+	}
+	if isCogFileLikePrimitive(lookupName) && imported && !isCogTypeModule(entry.Module) {
+		return 0, false, errNotCogFileLike(annName, entry.Module, lookupName)
+	}
+	return prim, true, nil
+}
+
 // Repetition describes cardinality of a field.
 type Repetition int
 
@@ -402,10 +447,16 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[str
 		if name == "dict" || name == "Dict" {
 			return FieldType{Primitive: TypeAny, Repetition: Required}, nil
 		}
-		prim, ok := PrimitiveFromName(name)
+		prim, ok, err := resolvePrimitiveType(ann.Name, ctx)
+		if err != nil {
+			return FieldType{}, err
+		}
 		if !ok {
 			if qualifiedEntry.Module != "" {
 				return FieldType{}, errUnresolvableImportedType(name, qualifiedEntry.Module)
+			}
+			if entry, imported := ctx.Names.Get(ann.Name); imported {
+				return FieldType{}, errUnresolvableImportedType(ann.Name, entry.Module)
 			}
 			if entry, imported := ctx.Names.Get(name); imported {
 				return FieldType{}, errUnresolvableImportedType(name, entry.Module)
@@ -525,10 +576,16 @@ func resolveInputType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[str
 		if name == "dict" || name == "Dict" {
 			return InputAnyType(), nil
 		}
-		prim, ok := PrimitiveFromName(name)
+		prim, ok, err := resolvePrimitiveType(ann.Name, ctx)
+		if err != nil {
+			return InputType{}, err
+		}
 		if !ok {
 			if qualifiedEntry.Module != "" {
 				return InputType{}, errUnresolvableImportedType(name, qualifiedEntry.Module)
+			}
+			if entry, imported := ctx.Names.Get(ann.Name); imported {
+				return InputType{}, errUnresolvableImportedType(ann.Name, entry.Module)
 			}
 			if entry, imported := ctx.Names.Get(name); imported {
 				return InputType{}, errUnresolvableImportedType(name, entry.Module)

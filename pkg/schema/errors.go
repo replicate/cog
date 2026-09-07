@@ -112,6 +112,16 @@ func errUnresolvableImportedType(name, module string) error {
 	}
 }
 
+func errNotCogFileLike(localName, module, original string) error {
+	return &SchemaError{
+		Kind: ErrUnsupportedType,
+		Message: fmt.Sprintf(
+			"%s is imported from '%s', not cog. File and secret inputs must use cog.%s "+
+				"(`from cog import %s`). If you also need %s.%s, import it under a different name",
+			localName, module, original, original, module, original),
+	}
+}
+
 func errUnresolvableType(name string) error {
 	return &SchemaError{
 		Kind: ErrUnresolvableType,
