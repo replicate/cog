@@ -311,7 +311,7 @@ func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mode
 		return SchemaArrayOf(SchemaAnyType()), nil
 	}
 
-	prim, ok, err := resolvePrimitiveType(ann.Name, ctx)
+	prim, ok, err := resolvePrimitiveType(ann.Name, ctx, false)
 	if err != nil {
 		return SchemaType{}, err
 	}

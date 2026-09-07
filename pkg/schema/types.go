@@ -86,8 +86,8 @@ func isCogFileLikePrimitive(name string) bool {
 	return name == "Path" || name == "File" || name == "Secret"
 }
 
-func isCogTypeModule(module string) bool {
-	return module == "cog" || module == "cog.types"
+func isPathlibModule(module string) bool {
+	return module == "pathlib" || strings.HasPrefix(module, "pathlib.")
 }
 
 // resolvePrimitiveType maps an annotation name to a PrimitiveType.
@@ -95,12 +95,13 @@ func isCogTypeModule(module string) bool {
 // Path/File/Secret are cog types. The schema generator used to call
 // PrimitiveFromName on the local identifier, so:
 //
-//	from pathlib import Path          -> TypePath (wrong; runtime will not download)
+//	from pathlib import Path          -> TypePath (wrong on inputs; runtime will not download)
 //	from cog import Path as CogPath   -> unresolvable (wrong; this is cog.Path)
 //
-// Resolve via the import's original name, and reject file-like names that
-// did not come from cog / cog.types.
-func resolvePrimitiveType(annName string, ctx *ImportContext) (PrimitiveType, bool, error) {
+// Resolve via the import's original name. On inputs, reject pathlib.Path.
+// Outputs keep treating pathlib.Path as a file URI because the worker
+// already uploads os.PathLike.
+func resolvePrimitiveType(annName string, ctx *ImportContext, rejectPathlib bool) (PrimitiveType, bool, error) {
 	lookupName := annName
 	entry := ImportEntry{}
 	imported := false
@@ -121,7 +122,7 @@ func resolvePrimitiveType(annName string, ctx *ImportContext) (PrimitiveType, bo
 	if !ok {
 		return 0, false, nil
 	}
-	if isCogFileLikePrimitive(lookupName) && imported && !isCogTypeModule(entry.Module) {
+	if rejectPathlib && isCogFileLikePrimitive(lookupName) && imported && isPathlibModule(entry.Module) {
 		return 0, false, errNotCogFileLike(annName, entry.Module, lookupName)
 	}
 	return prim, true, nil
@@ -447,7 +448,7 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[str
 		if name == "dict" || name == "Dict" {
 			return FieldType{Primitive: TypeAny, Repetition: Required}, nil
 		}
-		prim, ok, err := resolvePrimitiveType(ann.Name, ctx)
+		prim, ok, err := resolvePrimitiveType(ann.Name, ctx, true)
 		if err != nil {
 			return FieldType{}, err
 		}
@@ -576,7 +577,7 @@ func resolveInputType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[str
 		if name == "dict" || name == "Dict" {
 			return InputAnyType(), nil
 		}
-		prim, ok, err := resolvePrimitiveType(ann.Name, ctx)
+		prim, ok, err := resolvePrimitiveType(ann.Name, ctx, true)
 		if err != nil {
 			return InputType{}, err
 		}

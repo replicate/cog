@@ -2328,7 +2328,7 @@ class Predictor(BasePredictor):
 	require.Contains(t, se.Error(), "from cog import Path")
 }
 
-func TestPathlibPathOutputRejected(t *testing.T) {
+func TestPathlibPathOutputAccepted(t *testing.T) {
 	source := `
 from pathlib import Path
 from cog import BasePredictor
@@ -2337,11 +2337,24 @@ class Predictor(BasePredictor):
     def predict(self, prompt: str) -> Path:
         pass
 `
-	se := parseErr(t, source, "Predictor", schema.ModePredict)
-	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
-	require.Contains(t, se.Error(), "pathlib")
-	require.Contains(t, se.Error(), "from cog import Path")
-	require.NotContains(t, se.Error(), "inputs must use")
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypePath, info.Output.Primitive)
+}
+
+func TestRelativeTypesPathInput(t *testing.T) {
+	source := `
+from .types import Path
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	image, ok := info.Inputs.Get("image")
+	require.True(t, ok)
+	require.Equal(t, schema.TypePath, image.FieldType.Primitive)
 }
 
 func TestQualifiedPathlibPathRejected(t *testing.T) {
