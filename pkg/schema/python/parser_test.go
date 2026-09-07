@@ -2340,6 +2340,8 @@ class Predictor(BasePredictor):
 	se := parseErr(t, source, "Predictor", schema.ModePredict)
 	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
 	require.Contains(t, se.Error(), "pathlib")
+	require.Contains(t, se.Error(), "from cog import Path")
+	require.NotContains(t, se.Error(), "inputs must use")
 }
 
 func TestQualifiedPathlibPathRejected(t *testing.T) {

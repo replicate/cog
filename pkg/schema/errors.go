@@ -116,7 +116,7 @@ func errNotCogFileLike(localName, module, original string) error {
 	return &SchemaError{
 		Kind: ErrUnsupportedType,
 		Message: fmt.Sprintf(
-			"%s is imported from '%s', not cog. File and secret inputs must use cog.%s "+
+			"%s is imported from '%s', not cog. Use cog.%s for file and secret types "+
 				"(`from cog import %s`). If you also need %s.%s, import it under a different name",
 			localName, module, original, original, module, original),
 	}
