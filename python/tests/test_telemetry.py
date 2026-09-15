@@ -121,6 +121,48 @@ assert config.disabled == {{RuntimeMetric.SETUP_DURATION}}
     assert result.returncode == 0, result.stderr
 
 
+def test_custom_meter_provider_shutdown_does_not_force_flush(tmp_path: Path) -> None:
+    marker = tmp_path / "lifecycle.txt"
+    config = tmp_path / "telemetry.py"
+    config.write_text(
+        f"""
+from pathlib import Path
+from opentelemetry.sdk.metrics import MeterProvider
+
+marker = Path({str(marker)!r})
+marker.write_text("")
+
+class Provider(MeterProvider):
+    def force_flush(self, timeout_millis=10000):
+        marker.write_text(marker.read_text() + "flush\\n")
+        return True
+
+    def shutdown(self, *args, **kwargs):
+        marker.write_text(marker.read_text() + "shutdown\\n")
+
+def create_meter_provider(resource):
+    return Provider(shutdown_on_exit=False)
+"""
+    )
+    result = _run_script(
+        f"""
+import os
+os.environ.update({{
+    "COG_METRICS_CONFIGURED": "true",
+    "COG_METRICS_ENABLED": "true",
+    "COG_OBSERVABILITY_CONFIG": {str(config)!r},
+    "OTEL_METRICS_EXPORTER": "none",
+}})
+from cog import _telemetry
+_telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
+_telemetry.install_providers()
+_telemetry.shutdown()
+"""
+    )
+    assert result.returncode == 0, result.stderr
+    assert marker.read_text() == "shutdown\n"
+
+
 def test_invalid_runtime_metrics_configuration_fails_setup(tmp_path: Path) -> None:
     config = tmp_path / "telemetry.py"
     config.write_text("def configure_runtime_metrics():\n    return object()\n")

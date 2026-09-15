@@ -180,9 +180,6 @@ impl RuntimeMetrics {
     }
 
     fn shutdown(self) {
-        if let Err(error) = self.provider.force_flush() {
-            tracing::warn!(target: "coglet::metrics", %error, "Failed to flush metrics provider");
-        }
         if let Err(error) = self.provider.shutdown_with_timeout(Duration::from_secs(5)) {
             tracing::warn!(target: "coglet::metrics", %error, "Failed to shut down metrics provider");
         }
@@ -657,6 +654,23 @@ mod tests {
             histogram_stats(last, "cog.runtime.setup.duration").expect("setup.duration data point");
         assert_eq!(count, 1);
         assert_eq!(sum, 3.0);
+    }
+
+    #[test]
+    fn shutdown_exports_final_metrics_once() {
+        let exporter = InMemoryMetricExporter::default();
+        let (_, metrics) = isolated_metrics(&exporter);
+
+        record_prediction_terminal_on(
+            Some(&metrics),
+            "predict",
+            "succeeded",
+            Duration::from_secs(2),
+            false,
+        );
+        metrics.shutdown();
+
+        assert_eq!(exporter.get_finished_metrics().unwrap().len(), 1);
     }
 
     #[test]

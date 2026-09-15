@@ -134,10 +134,6 @@ def _shutdown_provider(
     if provider is None:
         return
     try:
-        provider.force_flush()
-    except Exception:
-        _logger.exception("Failed to flush Python %s provider", signal)
-    try:
         provider.shutdown()
     except Exception:
         _logger.exception("Failed to shut down Python %s provider", signal)

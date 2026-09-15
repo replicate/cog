@@ -171,7 +171,7 @@ _trace.shutdown()
 
     result = _run_script(script)
     assert result.returncode == 0, result.stderr
-    assert marker.read_text() == "configured\nflush\nshutdown\n"
+    assert marker.read_text() == "configured\nshutdown\n"
 
 
 def test_zero_argument_custom_trace_provider_remains_supported(tmp_path: Path) -> None:
