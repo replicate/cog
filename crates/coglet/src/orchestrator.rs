@@ -23,8 +23,8 @@ use tracing::Instrument as _;
 use crate::PredictionOutput;
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
-    ControlRequest, ControlResponse, FileOutputKind, HealthcheckStatus, SlotId, SlotRequest,
-    SlotResponse,
+    ControlRequest, ControlResponse, FileOutputKind, HealthcheckStatus, RuntimeMetricsConfig,
+    SlotId, SlotRequest, SlotResponse,
 };
 use crate::bridge::transport::create_transport;
 use crate::permit::{InactiveSlotIdleToken, PermitPool, SlotIdleToken};
@@ -248,6 +248,9 @@ pub trait Orchestrator: Send + Sync {
         idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
     );
 
+    /// Remove a prediction that failed before the request reached the worker.
+    async fn unregister_prediction(&self, slot_id: SlotId);
+
     /// Cancel a prediction by its prediction ID.
     ///
     /// The orchestrator resolves the prediction ID to a slot ID and sends
@@ -264,6 +267,8 @@ pub trait Orchestrator: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct WorkerSpawnConfig {
     pub num_slots: usize,
+    pub observability_instance_id: Option<String>,
+    pub observability_service_version: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -283,13 +288,21 @@ pub trait WorkerSpawner: Send + Sync {
 pub struct SimpleSpawner;
 
 impl WorkerSpawner for SimpleSpawner {
-    fn spawn(&self, _config: &WorkerSpawnConfig) -> Result<Child, SpawnError> {
-        let child = Command::new("python")
+    fn spawn(&self, config: &WorkerSpawnConfig) -> Result<Child, SpawnError> {
+        let mut command = Command::new("python");
+        command
             .args(["-c", "import coglet; coglet.server._run_worker()"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
-            .spawn()?;
+            .kill_on_drop(true);
+        if let Some(instance_id) = &config.observability_instance_id {
+            command.env("COG_OBSERVABILITY_INSTANCE_ID", instance_id);
+        }
+        if let Some(service_version) = &config.observability_service_version {
+            command.env("COG_OBSERVABILITY_SERVICE_VERSION", service_version);
+        }
+        let child = command.spawn()?;
         Ok(child)
     }
 }
@@ -352,6 +365,7 @@ impl OrchestratorConfig {
 pub struct OrchestratorReady {
     pub pool: Arc<PermitPool>,
     pub schema: Option<serde_json::Value>,
+    pub runtime_metrics: RuntimeMetricsConfig,
     pub handle: OrchestratorHandle,
     pub setup_logs: String,
 }
@@ -363,11 +377,17 @@ struct RegisterPredictionMessage {
     registered_ack: tokio::sync::oneshot::Sender<()>,
 }
 
+struct UnregisterPredictionMessage {
+    slot_id: SlotId,
+    unregistered_ack: tokio::sync::oneshot::Sender<()>,
+}
+
 pub struct OrchestratorHandle {
     child: tokio::sync::Mutex<Option<Child>>,
     ctrl_writer:
         Arc<tokio::sync::Mutex<FramedWrite<tokio::process::ChildStdin, JsonCodec<ControlRequest>>>>,
     register_tx: mpsc::Sender<RegisterPredictionMessage>,
+    unregister_tx: mpsc::Sender<UnregisterPredictionMessage>,
     healthcheck_tx: mpsc::Sender<tokio::sync::oneshot::Sender<HealthcheckResult>>,
     cancel_tx: mpsc::Sender<String>,
     slot_ids: Vec<SlotId>,
@@ -389,6 +409,18 @@ impl Orchestrator for OrchestratorHandle {
                 prediction,
                 idle_sender,
                 registered_ack: ack_tx,
+            })
+            .await;
+        let _ = ack_rx.await;
+    }
+
+    async fn unregister_prediction(&self, slot_id: SlotId) {
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .unregister_tx
+            .send(UnregisterPredictionMessage {
+                slot_id,
+                unregistered_ack: ack_tx,
             })
             .await;
         let _ = ack_rx.await;
@@ -494,14 +526,28 @@ impl OrchestratorHandle {
 pub enum OrchestratorError {
     #[error("failed to spawn worker: {0}")]
     Spawn(String),
-    #[error("worker setup failed: {0}")]
-    Setup(String),
+    #[error("worker setup failed: {message}")]
+    Setup {
+        message: String,
+        runtime_metrics: Option<RuntimeMetricsConfig>,
+    },
     #[error("worker setup timed out")]
     SetupTimeout,
     #[error("protocol error: {0}")]
     Protocol(String),
     #[error("worker crashed")]
     WorkerCrashed,
+}
+
+impl OrchestratorError {
+    pub fn runtime_metrics_config(&self) -> Option<RuntimeMetricsConfig> {
+        match self {
+            Self::Setup {
+                runtime_metrics, ..
+            } => runtime_metrics.clone(),
+            _ => None,
+        }
+    }
 }
 
 pub async fn spawn_worker(
@@ -517,7 +563,29 @@ pub async fn spawn_worker(
 
     tracing::info!("Spawning worker subprocess");
 
-    let spawn_config = WorkerSpawnConfig { num_slots };
+    let spawn_config = WorkerSpawnConfig {
+        num_slots,
+        observability_instance_id: {
+            #[cfg(feature = "tracing")]
+            {
+                Some(uuid::Uuid::new_v4().to_string())
+            }
+            #[cfg(not(feature = "tracing"))]
+            {
+                None
+            }
+        },
+        observability_service_version: {
+            #[cfg(feature = "tracing")]
+            {
+                Some(crate::COGLET_VERSION.to_string())
+            }
+            #[cfg(not(feature = "tracing"))]
+            {
+                None
+            }
+        },
+    };
     let mut child = config
         .spawner
         .spawn(&spawn_config)
@@ -567,8 +635,12 @@ pub async fn spawn_worker(
     let setup_fut = async {
         loop {
             match ctrl_reader.next().await {
-                Some(Ok(ControlResponse::Ready { slots, schema })) => {
-                    return Ok((slots, schema));
+                Some(Ok(ControlResponse::Ready {
+                    slots,
+                    schema,
+                    runtime_metrics,
+                })) => {
+                    return Ok((slots, schema, runtime_metrics.unwrap_or_default()));
                 }
                 Some(Ok(ControlResponse::Log { source, data })) => {
                     for line in data.lines() {
@@ -594,17 +666,21 @@ pub async fn spawn_worker(
                         interval_secs
                     );
                 }
-                Some(Ok(ControlResponse::Failed { slot, error })) => {
-                    return Err(OrchestratorError::Setup(format!(
-                        "worker setup failed (slot {}): {}",
-                        slot, error
-                    )));
+                Some(Ok(ControlResponse::Failed {
+                    slot,
+                    error,
+                    runtime_metrics,
+                })) => {
+                    return Err(OrchestratorError::Setup {
+                        message: format!("worker setup failed (slot {slot}): {error}"),
+                        runtime_metrics,
+                    });
                 }
                 Some(Ok(ControlResponse::Fatal { reason })) => {
-                    return Err(OrchestratorError::Setup(format!(
-                        "worker fatal: {}",
-                        reason
-                    )));
+                    return Err(OrchestratorError::Setup {
+                        message: format!("worker fatal: {reason}"),
+                        runtime_metrics: None,
+                    });
                 }
                 Some(Ok(other)) => {
                     tracing::warn!(?other, "Unexpected message during setup");
@@ -622,16 +698,16 @@ pub async fn spawn_worker(
         }
     };
 
-    let (slot_ids, schema) = match config.setup_timeout {
+    let (slot_ids, schema, runtime_metrics) = match config.setup_timeout {
         Some(timeout) => {
             tracing::debug!(
                 timeout_secs = timeout.as_secs(),
                 "Waiting for setup with timeout"
             );
             match tokio::time::timeout(timeout, setup_fut).await {
-                Ok(Ok((slots, schema))) => {
+                Ok(Ok((slots, schema, runtime_metrics))) => {
                     tracing::debug!(num_slots = slots.len(), "Setup completed within timeout");
-                    (slots, schema)
+                    (slots, schema, runtime_metrics)
                 }
                 Ok(Err(e)) => {
                     tracing::debug!(error = %e, "Setup failed");
@@ -697,6 +773,7 @@ pub async fn spawn_worker(
     }
 
     let (register_tx, register_rx) = mpsc::channel(num_slots);
+    let (unregister_tx, unregister_rx) = mpsc::channel(num_slots);
     let (healthcheck_tx, healthcheck_rx) = mpsc::channel(1);
     let (cancel_tx, cancel_rx) = mpsc::channel(16);
 
@@ -706,6 +783,7 @@ pub async fn spawn_worker(
         child: tokio::sync::Mutex::new(Some(child)),
         ctrl_writer: Arc::clone(&ctrl_writer),
         register_tx,
+        unregister_tx,
         healthcheck_tx,
         cancel_tx,
         slot_ids: slot_ids.clone(),
@@ -720,6 +798,7 @@ pub async fn spawn_worker(
             ctrl_writer_for_loop,
             slot_readers,
             register_rx,
+            unregister_rx,
             healthcheck_rx,
             cancel_rx,
             pool_for_loop,
@@ -732,6 +811,7 @@ pub async fn spawn_worker(
     Ok(OrchestratorReady {
         pool,
         schema,
+        runtime_metrics,
         handle,
         setup_logs,
     })
@@ -749,6 +829,20 @@ fn record_pending_cancellation(pending_cancellations: &mut HashSet<String>, pred
     pending_cancellations.insert(prediction_id);
 }
 
+fn fail_worker_predictions(
+    pool: &PermitPool,
+    predictions: &mut HashMap<SlotId, Arc<StdMutex<Prediction>>>,
+    error: &str,
+) {
+    pool.poison_all();
+    for (slot, prediction) in predictions.drain() {
+        tracing::warn!(%slot, "Failing prediction because the worker is unavailable");
+        if let Some(mut prediction) = try_lock_prediction(&prediction) {
+            prediction.set_failed(error.to_string());
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_event_loop(
     mut ctrl_reader: FramedRead<tokio::process::ChildStdout, JsonCodec<ControlResponse>>,
@@ -760,6 +854,7 @@ async fn run_event_loop(
         FramedRead<tokio::net::unix::OwnedReadHalf, JsonCodec<SlotResponse>>,
     )>,
     mut register_rx: mpsc::Receiver<RegisterPredictionMessage>,
+    mut unregister_rx: mpsc::Receiver<UnregisterPredictionMessage>,
     mut healthcheck_rx: mpsc::Receiver<tokio::sync::oneshot::Sender<HealthcheckResult>>,
     mut cancel_rx: mpsc::Receiver<String>,
     pool: Arc<PermitPool>,
@@ -809,6 +904,14 @@ async fn run_event_loop(
         tokio::select! {
             biased;
 
+            // Some(...) keeps this branch disabled once the handle is gone,
+            // otherwise a closed channel here starves every other branch.
+            Some(unregister) = unregister_rx.recv() => {
+                predictions.remove(&unregister.slot_id);
+                idle_senders.remove(&unregister.slot_id);
+                let _ = unregister.unregistered_ack.send(());
+            }
+
             ctrl_msg = ctrl_reader.next() => {
                 match ctrl_msg {
                     Some(Ok(ControlResponse::Idle { slot })) => {
@@ -829,7 +932,7 @@ async fn run_event_loop(
                     Some(Ok(ControlResponse::Cancelled { slot })) => {
                         tracing::debug!(%slot, "Slot cancelled (control channel)");
                     }
-                    Some(Ok(ControlResponse::Failed { slot, error })) => {
+                    Some(Ok(ControlResponse::Failed { slot, error, .. })) => {
                         tracing::warn!(%slot, %error, "Slot poisoned");
                         pool.poison(slot);
                         if let Some(pred) = predictions.remove(&slot)
@@ -841,15 +944,7 @@ async fn run_event_loop(
                     }
                     Some(Ok(ControlResponse::Fatal { reason })) => {
                         tracing::error!(%reason, "Worker fatal");
-                        for (slot, pred) in predictions.drain() {
-                            tracing::warn!(%slot, "Failing prediction due to worker fatal error");
-                            pool.poison(slot);
-                            if let Some(mut p) = try_lock_prediction(&pred)
-                                && !p.is_terminal()
-                            {
-                                p.set_failed(reason.clone());
-                            }
-                        }
+                        fail_worker_predictions(&pool, &mut predictions, &reason);
                         let result = HealthcheckResult::unhealthy(&reason);
                         for tx in pending_healthchecks.drain(..) {
                             let _ = tx.send(result.clone());
@@ -906,16 +1001,12 @@ async fn run_event_loop(
                     }
                     Some(Err(e)) => {
                         tracing::error!(error = %e, "Control channel error");
+                        fail_worker_predictions(&pool, &mut predictions, "Control channel error");
                         break;
                     }
                     None => {
                         tracing::warn!("Control channel closed (worker crashed?)");
-                        for (slot, pred) in predictions.drain() {
-                            tracing::warn!(%slot, "Failing prediction due to worker crash");
-                            if let Some(mut p) = try_lock_prediction(&pred) {
-                                p.set_failed("Worker crashed".to_string());
-                            }
-                        }
+                        fail_worker_predictions(&pool, &mut predictions, "Worker crashed");
                         // Fail any pending healthchecks
                         for tx in pending_healthchecks.drain(..) {
                             let _ = tx.send(HealthcheckResult::unhealthy("Worker crashed"));
@@ -1010,7 +1101,12 @@ async fn run_event_loop(
                 tracing::debug!(%slot_id, %prediction_id, "Registered prediction");
                 predictions.insert(slot_id, prediction);
                 let pending_cancel = pending_cancellations.remove(&prediction_id);
-                let _ = registered_ack.send(());
+                if registered_ack.send(()).is_err() {
+                    predictions.remove(&slot_id);
+                    idle_senders.remove(&slot_id);
+                    tracing::debug!(%slot_id, %prediction_id, "Registration caller dropped; rolled back prediction");
+                    continue;
+                }
                 if pending_cancel {
                     tracing::info!(
                         target: "coglet::prediction",
@@ -1316,6 +1412,7 @@ async fn run_event_loop(
                     }
                     Err(e) => {
                         tracing::error!(%slot_id, error = %e, "Slot socket error");
+                        pool.poison(slot_id);
                         if let Some(handles) = pending_uploads.remove(&slot_id) {
                             for h in handles { h.abort(); }
                         }

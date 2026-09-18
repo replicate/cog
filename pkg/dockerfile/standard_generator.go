@@ -30,7 +30,9 @@ const uvCacheMount = "--mount=type=cache,target=/root/.cache/uv"
 const uvPip = "uv pip"
 const observabilityConfigBuildPath = "telemetry.py"
 const observabilityConfigRuntimePath = "/.cog/telemetry.py"
-const PythonTracingRequirements = "opentelemetry-exporter-otlp-proto-http==1.44.0 opentelemetry-exporter-otlp-proto-grpc==1.44.0"
+const PythonObservabilityRequirements = "opentelemetry-api==1.44.0 opentelemetry-sdk==1.44.0 opentelemetry-exporter-otlp-proto-http==1.44.0 opentelemetry-exporter-otlp-proto-grpc==1.44.0"
+const PythonObservabilityCheck = `python -c "import cog._telemetry; from coglet import _impl; raise SystemExit(0 if getattr(_impl, '_supports_observability_metrics', False) else 1)"`
+const PythonObservabilityCheckError = "OpenTelemetry tracing and metrics require matching cog and coglet builds with metrics support"
 const uvBreakSystemPackages = "--break-system-packages"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
@@ -404,15 +406,21 @@ func (g *StandardGenerator) cogEnvVars() []string {
 				fmt.Sprintf(`ENV COG_TRACE_HEADER_FORMAT="%s"`, traces.TraceHeaderFormat),
 			)
 		}
-		if g.Config.Observability.Config != "" {
-			envs = append(envs, `ENV COG_OBSERVABILITY_CONFIG="`+observabilityConfigRuntimePath+`"`)
-		}
+	}
+	if g.Config.Observability.AnyTelemetryEnabled() && g.Config.Observability.Config != "" {
+		envs = append(envs, `ENV COG_OBSERVABILITY_CONFIG="`+observabilityConfigRuntimePath+`"`)
+	}
+	if g.Config.Observability != nil && g.Config.Observability.Metrics != nil && g.Config.Observability.Metrics.Enabled {
+		envs = append(envs,
+			`ENV COG_METRICS_CONFIGURED=true`,
+			`ENV COG_METRICS_ENABLED=true`,
+		)
 	}
 	return envs
 }
 
 func (g *StandardGenerator) observabilityConfigCopy() string {
-	if g.Config.Observability == nil || g.Config.Observability.Traces == nil || !g.Config.Observability.Traces.Enabled || g.Config.Observability.Config == "" {
+	if !g.Config.Observability.AnyTelemetryEnabled() || g.Config.Observability.Config == "" {
 		return ""
 	}
 	return "COPY --from=cog_build " + observabilityConfigBuildPath + " " + observabilityConfigRuntimePath
@@ -748,21 +756,22 @@ func (g *StandardGenerator) installCog() (string, error) {
 		}
 		installLines += cogInstall
 	}
-	if tracingInstall := g.installPythonTracingDependencies(); tracingInstall != "" {
-		installLines += "\n" + tracingInstall
+	if observabilityInstall := g.installPythonObservabilityDependencies(); observabilityInstall != "" {
+		installLines += "\n" + observabilityInstall
 	}
 
 	return installLines, nil
 }
 
-func (g *StandardGenerator) installPythonTracingDependencies() string {
-	if g.Config.Observability == nil || g.Config.Observability.Traces == nil || !g.Config.Observability.Traces.Enabled {
+func (g *StandardGenerator) installPythonObservabilityDependencies() string {
+	if !g.Config.Observability.AnyTelemetryEnabled() {
 		return ""
 	}
-	install := "RUN " + uvCacheMount + " " + uvPip + " install " + g.uvPipInstallFlags("--no-cache") + " " + PythonTracingRequirements
+	install := "RUN " + uvCacheMount + " " + uvPip + " install " + g.uvPipInstallFlags("--no-cache") + " " + PythonObservabilityRequirements
 	if g.strip {
 		install += " && " + StripDebugSymbolsCommand
 	}
+	install += " && (" + PythonObservabilityCheck + " || (echo \"" + PythonObservabilityCheckError + "\" >&2; exit 1))"
 	return install
 }
 

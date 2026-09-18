@@ -21,7 +21,7 @@ use crate::input_validation::InputValidator;
 use crate::orchestrator::{HealthcheckResult, Orchestrator};
 use crate::permit::{PermitPool, PredictionSlot, UnregisteredPredictionSlot};
 use crate::prediction::{
-    CancellationToken, Prediction, PredictionStatus, STREAM_CHANNEL_CAPACITY,
+    CancellationToken, Prediction, PredictionOperation, PredictionStatus, STREAM_CHANNEL_CAPACITY,
     SharedPredictionStreamEvent,
 };
 use crate::predictor::{PredictionError, PredictionOutput, PredictionResult};
@@ -95,6 +95,112 @@ struct PredictionEntry {
     cancel_token: CancellationToken,
     input: serde_json::Value,
     cancel_on_stream_drop: bool,
+}
+
+struct RegisteredPredictionGuard<'a> {
+    service: &'a PredictionService,
+    orchestrator: Arc<dyn Orchestrator>,
+    pool: Arc<PermitPool>,
+    prediction_id: String,
+    slot: Option<PredictionSlot>,
+    send_started: bool,
+}
+
+impl<'a> RegisteredPredictionGuard<'a> {
+    fn new(
+        service: &'a PredictionService,
+        orchestrator: Arc<dyn Orchestrator>,
+        pool: Arc<PermitPool>,
+        prediction_id: String,
+        slot: PredictionSlot,
+    ) -> Self {
+        Self {
+            service,
+            orchestrator,
+            pool,
+            prediction_id,
+            slot: Some(slot),
+            send_started: false,
+        }
+    }
+
+    fn slot_mut(&mut self) -> &mut PredictionSlot {
+        self.slot
+            .as_mut()
+            .expect("registered prediction slot missing before dispatch")
+    }
+
+    fn disarm(mut self) -> PredictionSlot {
+        self.slot
+            .take()
+            .expect("registered prediction slot missing after dispatch")
+    }
+
+    fn mark_send_started(&mut self) {
+        self.send_started = true;
+    }
+
+    fn release_slot(&mut self) {
+        let Some(slot) = self.slot.take() else {
+            return;
+        };
+        release_prediction_slot(&self.pool, slot, self.send_started);
+    }
+
+    async fn fail(&mut self, error: String) {
+        if let Some(slot) = self.slot.as_ref()
+            && let Some(mut prediction) = try_lock_prediction(&slot.prediction())
+        {
+            prediction.set_failed(error);
+        }
+        self.service.remove_prediction(&self.prediction_id);
+        let slot_id = self
+            .slot
+            .as_ref()
+            .map(PredictionSlot::slot_id)
+            .expect("registered prediction slot missing during failure cleanup");
+        self.orchestrator.unregister_prediction(slot_id).await;
+        self.release_slot();
+    }
+}
+
+impl Drop for RegisteredPredictionGuard<'_> {
+    fn drop(&mut self) {
+        let Some(slot) = self.slot.as_ref() else {
+            return;
+        };
+
+        if let Some(mut prediction) = try_lock_prediction(&slot.prediction()) {
+            prediction.set_failed("Prediction dispatch aborted".to_string());
+        }
+        self.service.remove_prediction(&self.prediction_id);
+        let orchestrator = Arc::clone(&self.orchestrator);
+        let slot_id = slot.slot_id();
+        let slot = self
+            .slot
+            .take()
+            .expect("registered prediction slot missing during drop cleanup");
+        let pool = Arc::clone(&self.pool);
+        let send_started = self.send_started;
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                orchestrator.unregister_prediction(slot_id).await;
+                release_prediction_slot(&pool, slot, send_started);
+            });
+        } else {
+            pool.poison(slot_id);
+            drop(slot);
+        }
+    }
+}
+
+fn release_prediction_slot(pool: &PermitPool, slot: PredictionSlot, send_started: bool) {
+    if send_started {
+        pool.poison(slot.slot_id());
+        drop(slot);
+    } else {
+        slot.release_unstarted();
+    }
 }
 
 /// Handle to a submitted prediction for cancellation on disconnect.
@@ -518,6 +624,24 @@ impl PredictionService {
         webhook: Option<WebhookSender>,
         cancel_on_stream_drop: bool,
     ) -> Result<(PredictionHandle, UnregisteredPredictionSlot), CreatePredictionError> {
+        self.submit_prediction_with_operation(
+            id,
+            input,
+            webhook,
+            cancel_on_stream_drop,
+            PredictionOperation::Predict,
+        )
+        .await
+    }
+
+    pub async fn submit_prediction_with_operation(
+        &self,
+        id: String,
+        input: serde_json::Value,
+        webhook: Option<WebhookSender>,
+        cancel_on_stream_drop: bool,
+        operation: PredictionOperation,
+    ) -> Result<(PredictionHandle, UnregisteredPredictionSlot), CreatePredictionError> {
         let health = *self.health.read().await;
         if health != Health::Ready {
             return Err(CreatePredictionError::NotReady);
@@ -531,7 +655,7 @@ impl PredictionService {
             .try_acquire()
             .ok_or(CreatePredictionError::AtCapacity)?;
 
-        let prediction = Prediction::new(id.clone(), webhook);
+        let prediction = Prediction::new_with_operation(id.clone(), webhook, operation);
         let cancel_token = prediction.cancel_token();
         let (idle_tx, idle_rx) = tokio::sync::oneshot::channel();
         let slot = PredictionSlot::new(prediction, permit, idle_rx);
@@ -541,13 +665,12 @@ impl PredictionService {
         self.predictions.insert(
             id.clone(),
             PredictionEntry {
-                prediction: prediction_arc,
+                prediction: Arc::clone(&prediction_arc),
                 cancel_token: cancel_token.clone(),
                 input,
                 cancel_on_stream_drop,
             },
         );
-
         let handle = PredictionHandle { id, cancel_token };
 
         Ok((handle, UnregisteredPredictionSlot::new(slot, idle_tx)))
@@ -636,13 +759,15 @@ impl PredictionService {
         let state = state
             .ok_or_else(|| PredictionError::Failed("No orchestrator configured".to_string()))?;
 
-        let (idle_tx, mut slot) = unregistered_slot.into_parts();
+        let (idle_tx, slot) = unregistered_slot.into_parts();
         let prediction_id = slot.id();
         let slot_id = slot.slot_id();
 
         {
             let prediction = slot.prediction();
             let Some(mut pred) = try_lock_prediction(&prediction) else {
+                self.remove_prediction(&prediction_id);
+                slot.release_unstarted();
                 return Err(PredictionError::Failed(
                     "Prediction mutex poisoned".to_string(),
                 ));
@@ -653,6 +778,13 @@ impl PredictionService {
 
         // Register for response routing in event loop
         let prediction_arc = slot.prediction();
+        let mut registration = RegisteredPredictionGuard::new(
+            self,
+            Arc::clone(&state.orchestrator),
+            Arc::clone(&state.pool),
+            prediction_id.clone(),
+            slot,
+        );
         state
             .orchestrator
             .register_prediction(slot_id, Arc::clone(&prediction_arc), idle_tx)
@@ -663,12 +795,18 @@ impl PredictionService {
             std::path::PathBuf::from("/tmp/coglet/predictions").join(&prediction_id);
         let output_dir = prediction_dir.join("outputs");
         let input_dir = prediction_dir.join("inputs");
-        std::fs::create_dir_all(&output_dir)
-            .map_err(|e| PredictionError::Failed(format!("Failed to create output dir: {}", e)))?;
-        std::fs::create_dir_all(&input_dir)
-            .map_err(|e| PredictionError::Failed(format!("Failed to create input dir: {}", e)))?;
+        if let Err(error) = std::fs::create_dir_all(&output_dir) {
+            let message = format!("Failed to create output dir: {error}");
+            registration.fail(message.clone()).await;
+            return Err(PredictionError::Failed(message));
+        }
+        if let Err(error) = std::fs::create_dir_all(&input_dir) {
+            let message = format!("Failed to create input dir: {error}");
+            registration.fail(message.clone()).await;
+            return Err(PredictionError::Failed(message));
+        }
 
-        let request = build_slot_request(
+        let request = match build_slot_request(
             prediction_id.clone(),
             input,
             output_dir
@@ -678,26 +816,39 @@ impl PredictionService {
             &input_dir,
             context,
             trace,
-        )
-        .map_err(|e| PredictionError::Failed(format!("Failed to build slot request: {}", e)))?;
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                let message = format!("Failed to build slot request: {error}");
+                registration.fail(message.clone()).await;
+                return Err(PredictionError::Failed(message));
+            }
+        };
 
         // permit_mut returns None if permit isn't InUse (shouldn't happen here)
-        let permit = slot
-            .permit_mut()
-            .ok_or_else(|| PredictionError::Failed("Permit not in use".to_string()))?;
+        if registration.slot_mut().permit_mut().is_none() {
+            let message = "Permit not in use".to_string();
+            registration.fail(message.clone()).await;
+            return Err(PredictionError::Failed(message));
+        }
 
-        if let Err(e) = permit.send(request).await {
+        registration.mark_send_started();
+        if let Err(e) = registration
+            .slot_mut()
+            .permit_mut()
+            .expect("permit checked before send")
+            .send(request)
+            .await
+        {
             tracing::error!(%slot_id, error = %e, "Failed to send prediction request");
             // Broken socket means the slot is dead — poison it at the pool level.
             state.pool.poison(slot_id);
-            if let Some(mut pred) = try_lock_prediction(&prediction_arc) {
-                pred.set_failed(format!("Failed to send request: {}", e));
-            }
-            return Err(PredictionError::Failed(format!(
-                "Failed to send request: {}",
-                e
-            )));
+            let message = format!("Failed to send request: {e}");
+            registration.fail(message.clone()).await;
+            return Err(PredictionError::Failed(message));
         }
+
+        let slot = registration.disarm();
 
         let was_cancelled_before_send = try_lock_prediction(&prediction_arc)
             .map(|p| p.is_canceled())
@@ -929,6 +1080,8 @@ mod tests {
             }
         }
 
+        async fn unregister_prediction(&self, _slot_id: SlotId) {}
+
         async fn cancel_by_prediction_id(
             &self,
             _prediction_id: &str,
@@ -972,6 +1125,8 @@ mod tests {
             _idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
         ) {
         }
+
+        async fn unregister_prediction(&self, _slot_id: SlotId) {}
 
         async fn cancel_by_prediction_id(
             &self,
@@ -1021,6 +1176,8 @@ mod tests {
             *self.prediction.lock().unwrap() = Some(prediction);
             let _ = idle_sender.send(InactiveSlotIdleToken::new(slot_id).activate());
         }
+
+        async fn unregister_prediction(&self, _slot_id: SlotId) {}
 
         async fn cancel_by_prediction_id(
             &self,
@@ -1198,6 +1355,74 @@ mod tests {
 
         assert_eq!(handle.id(), "test-1");
         assert!(svc.prediction_exists("test-1"));
+    }
+
+    #[tokio::test]
+    async fn registered_guard_drop_finishes_prediction_and_releases_permit() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator: Arc<dyn Orchestrator> = Arc::new(MockOrchestrator::new());
+        svc.set_orchestrator(Arc::clone(&pool), Arc::clone(&orchestrator))
+            .await;
+        svc.set_health(Health::Ready).await;
+
+        let (handle, unregistered) = svc
+            .submit_prediction("test-guard".to_string(), serde_json::json!({}), None, false)
+            .await
+            .unwrap();
+        let (_idle_tx, slot) = unregistered.into_parts();
+        let prediction = slot.prediction();
+
+        drop(RegisteredPredictionGuard::new(
+            &svc,
+            orchestrator,
+            Arc::clone(&pool),
+            handle.id().to_string(),
+            slot,
+        ));
+
+        assert_eq!(
+            prediction.lock().unwrap().status(),
+            PredictionStatus::Failed
+        );
+        assert!(!svc.prediction_exists(handle.id()));
+        tokio::task::yield_now().await;
+        assert_eq!(pool.available(), 1);
+    }
+
+    #[tokio::test]
+    async fn registered_guard_drop_after_send_starts_poisons_permit() {
+        let svc = PredictionService::new_no_pool();
+        let (pool, slot_ids) = create_test_pool_with_slots(1).await;
+        let orchestrator: Arc<dyn Orchestrator> = Arc::new(MockOrchestrator::new());
+        svc.set_orchestrator(Arc::clone(&pool), Arc::clone(&orchestrator))
+            .await;
+        svc.set_health(Health::Ready).await;
+
+        let (handle, unregistered) = svc
+            .submit_prediction(
+                "test-send-guard".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        let (_idle_tx, slot) = unregistered.into_parts();
+        let mut guard = RegisteredPredictionGuard::new(
+            &svc,
+            orchestrator,
+            Arc::clone(&pool),
+            handle.id().to_string(),
+            slot,
+        );
+        guard.mark_send_started();
+        drop(guard);
+
+        assert_eq!(pool.available(), 0);
+        tokio::task::yield_now().await;
+        assert!(pool.is_poisoned(slot_ids[0]));
+        assert_eq!(pool.available(), 0);
     }
 
     #[tokio::test]

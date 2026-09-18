@@ -214,7 +214,7 @@ func Build(
 		if err := addConcurrencyToCustomDockerfileImage(ctx, dockerCommand, tmpImageId, dockerfileCfg.Concurrency, progressOutput, bp.buildDir); err != nil {
 			return "", err
 		}
-		if err := addTracingToCustomDockerfileImage(ctx, dockerCommand, tmpImageId, dockerfileCfg.Observability, progressOutput, bp.buildDir); err != nil {
+		if err := addObservabilityToCustomDockerfileImage(ctx, dockerCommand, tmpImageId, dockerfileCfg.Observability, progressOutput, bp.buildDir); err != nil {
 			return "", err
 		}
 	} else {
@@ -527,8 +527,8 @@ func addConcurrencyToCustomDockerfileImage(ctx context.Context, dockerCommand co
 	return nil
 }
 
-func addTracingToCustomDockerfileImage(ctx context.Context, dockerCommand command.Command, imageName string, observability *config.Observability, progressOutput string, buildCacheDir string) error {
-	if observability == nil || observability.Traces == nil || !observability.Traces.Enabled {
+func addObservabilityToCustomDockerfileImage(ctx context.Context, dockerCommand command.Command, imageName string, observability *config.Observability, progressOutput string, buildCacheDir string) error {
+	if !observability.AnyTelemetryEnabled() {
 		return nil
 	}
 	imageInfo, err := dockerCommand.Inspect(ctx, imageName)
@@ -540,14 +540,14 @@ func addTracingToCustomDockerfileImage(ctx context.Context, dockerCommand comman
 		imageUser = imageInfo.Config.User
 	}
 	buildOpts := command.ImageBuildOptions{
-		DockerfileContents: tracingDockerfile(imageName, observability, imageUser),
+		DockerfileContents: observabilityDockerfile(imageName, observability, imageUser),
 		ImageName:          imageName,
 		ProgressOutput:     progressOutput,
 		BuildCacheDir:      buildCacheDir,
 		BuildContexts:      map[string]string{cogBuildContextName: buildCacheDir},
 	}
 	if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
-		return fmt.Errorf("Failed to add tracing configuration to Docker image: %w", err)
+		return fmt.Errorf("Failed to add observability configuration to Docker image: %w", err)
 	}
 	return nil
 }
@@ -655,23 +655,29 @@ func concurrencyDockerfile(baseImage string, maxConcurrency int) string {
 	return fmt.Sprintf("FROM %s\nENV COG_MAX_CONCURRENCY=%d\n", baseImage, maxConcurrency)
 }
 
-func tracingDockerfile(baseImage string, observability *config.Observability, imageUser string) string {
+func observabilityDockerfile(baseImage string, observability *config.Observability, imageUser string) string {
 	var b strings.Builder
-	traces := observability.Traces
 	fmt.Fprintf(&b, "FROM %s\n", baseImage)
 	if imageUser != "" {
 		fmt.Fprintln(&b, "USER root")
 	}
-	fmt.Fprintf(&b, "RUN python -m pip install --no-cache-dir --break-system-packages %s\n", dockerfile.PythonTracingRequirements)
+	fmt.Fprintf(&b, "RUN python -m pip install --no-cache-dir --break-system-packages %s\n", dockerfile.PythonObservabilityRequirements)
+	fmt.Fprintf(&b, "RUN (%s || (echo \"%s\" >&2; exit 1))\n", dockerfile.PythonObservabilityCheck, dockerfile.PythonObservabilityCheckError)
 	if imageUser != "" {
 		fmt.Fprintf(&b, "USER %s\n", strconv.Quote(imageUser))
 	}
-	fmt.Fprintf(&b, "ENV COG_TRACE_CONFIGURED=true\nENV COG_TRACE_ENABLED=true\nENV COG_TRACE_SAMPLER=\"%s\"\n", traces.Sampler)
-	if traces.SamplerArg != "" {
-		fmt.Fprintf(&b, "ENV COG_TRACE_SAMPLER_ARG=\"%s\"\n", traces.SamplerArg)
+	if observability.Traces != nil && observability.Traces.Enabled {
+		traces := observability.Traces
+		fmt.Fprintf(&b, "ENV COG_TRACE_CONFIGURED=true\nENV COG_TRACE_ENABLED=true\nENV COG_TRACE_SAMPLER=\"%s\"\n", traces.Sampler)
+		if traces.SamplerArg != "" {
+			fmt.Fprintf(&b, "ENV COG_TRACE_SAMPLER_ARG=\"%s\"\n", traces.SamplerArg)
+		}
+		if traces.TraceHeader != "" {
+			fmt.Fprintf(&b, "ENV COG_TRACE_HEADER=\"%s\"\nENV COG_TRACE_HEADER_FORMAT=\"%s\"\n", traces.TraceHeader, traces.TraceHeaderFormat)
+		}
 	}
-	if traces.TraceHeader != "" {
-		fmt.Fprintf(&b, "ENV COG_TRACE_HEADER=\"%s\"\nENV COG_TRACE_HEADER_FORMAT=\"%s\"\n", traces.TraceHeader, traces.TraceHeaderFormat)
+	if observability.Metrics != nil && observability.Metrics.Enabled {
+		fmt.Fprint(&b, "ENV COG_METRICS_CONFIGURED=true\nENV COG_METRICS_ENABLED=true\n")
 	}
 	if observability.Config != "" {
 		fmt.Fprintf(&b, "COPY --from=%s telemetry.py /.cog/telemetry.py\nENV COG_OBSERVABILITY_CONFIG=\"/.cog/telemetry.py\"\n", cogBuildContextName)
@@ -680,7 +686,7 @@ func tracingDockerfile(baseImage string, observability *config.Observability, im
 }
 
 func stageObservabilityConfig(projectDir string, observability *config.Observability, buildDir string) error {
-	if observability == nil || observability.Traces == nil || !observability.Traces.Enabled || observability.Config == "" {
+	if !observability.AnyTelemetryEnabled() || observability.Config == "" {
 		return nil
 	}
 

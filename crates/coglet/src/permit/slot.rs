@@ -89,6 +89,13 @@ impl PredictionSlot {
         self.slot_id
     }
 
+    /// Releases a permit before dispatching a request to the worker.
+    pub fn release_unstarted(mut self) {
+        if let Some(AnyPermit::InUse(permit)) = self.permit.take() {
+            drop(permit.into_idle());
+        }
+    }
+
     /// Mark the slot as idle - permit will return to pool on drop (unless the slot has
     /// been poisoned at the pool level). Awaits until the idle token is received, which
     /// ensures the slot has been confirmed idle by the worker. If the idle token is not

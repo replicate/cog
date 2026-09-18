@@ -7,7 +7,9 @@ from pathlib import Path
 def _run_script(script: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     for name in list(env):
-        if name.startswith(("COG_OBSERVABILITY_", "COG_TRACE_", "OTEL_")):
+        if name.startswith(
+            ("COG_OBSERVABILITY_", "COG_TRACE_", "COG_METRICS_", "OTEL_")
+        ):
             del env[name]
     return subprocess.run(
         [sys.executable, "-c", script],
@@ -145,7 +147,7 @@ class Provider(TracerProvider):
     def shutdown(self):
         marker.write_text(marker.read_text() + "shutdown\\n")
 
-def create_tracer_provider():
+def create_tracer_provider(resource):
     return Provider(shutdown_on_exit=False)
 
 def configure_instrumentation():
@@ -169,25 +171,54 @@ _trace.shutdown()
 
     result = _run_script(script)
     assert result.returncode == 0, result.stderr
-    assert marker.read_text() == "configured\nflush\nshutdown\n"
+    assert marker.read_text() == "configured\nshutdown\n"
+
+
+def test_zero_argument_custom_trace_provider_remains_supported(tmp_path: Path) -> None:
+    config = tmp_path / "telemetry.py"
+    config.write_text(
+        """
+from opentelemetry.sdk.trace import TracerProvider
+
+def create_tracer_provider():
+    return TracerProvider(shutdown_on_exit=False)
+"""
+    )
+    script = f"""
+import os
+os.environ.update({{
+    "COG_TRACE_CONFIGURED": "true",
+    "COG_TRACE_ENABLED": "true",
+    "COG_OBSERVABILITY_CONFIG": {str(config)!r},
+    "OTEL_TRACES_EXPORTER": "none",
+}})
+from cog import _trace
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+_trace._CUSTOM_CONFIG_PATH = {str(config)!r}
+_trace.install_provider()
+assert isinstance(trace.get_tracer_provider(), TracerProvider)
+"""
+
+    result = _run_script(script)
+    assert result.returncode == 0, result.stderr
 
 
 def test_custom_trace_provider_errors(tmp_path: Path) -> None:
     tests = {
-        "missing factory": ("value = True\n", "must define create_tracer_provider"),
         "wrong provider": (
-            "def create_tracer_provider():\n    return object()\n",
+            "def create_tracer_provider(resource):\n    return object()\n",
             "must return TracerProvider",
         ),
         "invalid instrumentation": (
             "from opentelemetry.sdk.trace import TracerProvider\n"
-            "def create_tracer_provider():\n    return TracerProvider(shutdown_on_exit=False)\n"
+            "def create_tracer_provider(resource):\n    return TracerProvider(shutdown_on_exit=False)\n"
             "configure_instrumentation = True\n",
             "configure_instrumentation must be callable",
         ),
         "instrumentation failure": (
             "from opentelemetry.sdk.trace import TracerProvider\n"
-            "def create_tracer_provider():\n    return TracerProvider(shutdown_on_exit=False)\n"
+            "def create_tracer_provider(resource):\n    return TracerProvider(shutdown_on_exit=False)\n"
             "def configure_instrumentation():\n    raise RuntimeError('instrumentation failed')\n",
             "instrumentation failed",
         ),
