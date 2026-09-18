@@ -1637,6 +1637,26 @@ We can bake your model's code, the trained weights, and the Docker environment i
 
 By default, Cog builds on top of a [prebuilt base image](base-images.md) that includes Python and common system libraries. This significantly reduces cold boot times when deploying your model.
 
+### Exclude files with `.dockerignore`
+
+When Cog builds an image, it uses your project directory as the Docker build context. Files in that context can be copied into the image, including local files that your model does not need at runtime.
+
+Add a `.dockerignore` file next to `cog.yaml` to exclude files and directories from the build context. Cog uses the standard [Docker ignore-file syntax](https://docs.docker.com/build/concepts/context/#dockerignore-files). For example:
+
+```dockerignore
+# Local Python environments and caches
+.venv/
+__pycache__/
+
+# Development-only data and generated output
+test-data/
+outputs/
+```
+
+Excluding unnecessary files makes the build context smaller, can speed up builds, and prevents those files from increasing the final image size. `cog init` creates a `.dockerignore` with common defaults for new projects.
+
+Do not exclude source files, requirements files, or model weights that your model needs at build time or runtime. Files excluded by `.dockerignore` are not available to commands in the `build.run` section of `cog.yaml` either.
+
 ```bash
 cog build -t resnet
 # Building Docker image...
