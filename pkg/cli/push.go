@@ -27,17 +27,28 @@ func newPushCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "push [TARGET]",
 		Short: "Build and push model in current directory to a Docker registry",
-		Long: `Build a Docker image from cog.yaml and push it to a container registry.
+		Long: `Build from cog.yaml and push to an OCI-compliant registry. Run 'cog login'
+first when pushing to Replicate's registry (r8.im).
 
-Cog can push to any OCI-compliant registry. When pushing to Replicate's
-registry (r8.im), run 'cog login' first to authenticate.`,
-		Example: `  # Push to Replicate
+TARGET overrides the configured destination and all COG_MODEL* environment
+variables. It doesn't change the project format: projects configured with
+'image' push an image, while projects configured with 'model' push an OCI
+bundle. Push targets must use tags, not digests. Untagged image targets use
+Docker's default 'latest' tag; untagged bundle targets get a timestamp tag.
+
+With --json, Cog writes one versioned JSON result to stdout after the entire
+push succeeds. Progress, warnings, and diagnostics continue on stderr. Every
+reference in the result is digest-pinned.`,
+		Example: `  # Push an image to Replicate
   cog push r8.im/your-username/my-model
 
-  # Push to any OCI registry
+  # Push an image to any OCI registry
   cog push registry.example.com/your-username/model-name
 
-  # Push with model weights in a separate layer (Replicate only)
+  # Push a bundle project and print its immutable references as JSON
+  cog push registry.example.com/your-username/model-name:v1 --json
+
+  # Push with model weights in a separate image layer (Replicate only)
   cog push r8.im/your-username/my-model --separate-weights`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return push(cmd, args, jsonOutput)
