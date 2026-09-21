@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/docker/docker/api/types/image"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
@@ -273,10 +274,30 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 		if weightErr != nil {
 			return nil, weightErr
 		}
-		m.Weights = weights
+		m.Weights, weightErr = orderWeightsByConfig(weights, src.Config.Weights)
+		if weightErr != nil {
+			return nil, weightErr
+		}
 	}
 
 	return m, nil
+}
+
+func orderWeightsByConfig(weights []Weight, configured []config.WeightSource) ([]Weight, error) {
+	byName := make(map[string]Weight, len(weights))
+	for _, weight := range weights {
+		byName[weight.Name] = weight
+	}
+
+	ordered := make([]Weight, len(configured))
+	for i, configuredWeight := range configured {
+		weight, ok := byName[configuredWeight.Name]
+		if !ok {
+			return nil, fmt.Errorf("weight %q is missing from weights.lock; re-run 'cog weights import'", configuredWeight.Name)
+		}
+		ordered[i] = weight
+	}
+	return ordered, nil
 }
 
 // Push pushes a Model to a container registry and returns an
@@ -305,21 +326,32 @@ func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) (*Model
 	if opts.OnFallback != nil {
 		imagePushOpts = append(imagePushOpts, WithOnFallback(opts.OnFallback))
 	}
-	if err := r.imagePusher.Push(ctx, imgArtifact, imagePushOpts...); err != nil {
+	imageResult, err := r.imagePusher.PushWithResult(ctx, imgArtifact, imagePushOpts...)
+	if err != nil {
 		return nil, err
 	}
 
-	// Enrich the image artifact with the pushed digest. On registries
-	// that don't support HEAD on tags, the legacy path falls back to the
-	// original Model rather than failing a successful push. Callers that
-	// require an immutable result can make the lookup failure fatal.
-	desc, err := r.registry.GetDescriptor(ctx, imgArtifact.Reference)
-	if err != nil {
-		if opts.RequireDigest {
-			return nil, fmt.Errorf("resolve pushed image digest: %w", err)
+	// Prefer the digest reported by the upload itself. This pins the result to
+	// the manifest Cog pushed even if another process immediately moves the tag.
+	var desc v1.Descriptor
+	if imageResult.Digest != "" {
+		digest, digestErr := v1.NewHash(imageResult.Digest)
+		if digestErr != nil {
+			return nil, fmt.Errorf("image upload reported invalid manifest digest %q: %w", imageResult.Digest, digestErr)
 		}
-		console.Debugf("post-push HEAD on %q failed; returning Model without digest enrichment: %v", imgArtifact.Reference, err)
-		return m, nil
+		desc = v1.Descriptor{Digest: digest, Size: imageResult.Size}
+	} else {
+		// Older or alternate command implementations may not expose Docker's
+		// push result. Preserve the legacy non-JSON tag lookup fallback, but
+		// callers requiring immutable output fail rather than trusting it.
+		if opts.RequireDigest {
+			return nil, fmt.Errorf("resolve pushed image digest: the upload did not report the manifest digest")
+		}
+		desc, err = r.registry.GetDescriptor(ctx, imgArtifact.Reference)
+		if err != nil {
+			console.Debugf("post-push HEAD on %q failed; returning Model without digest enrichment: %v", imgArtifact.Reference, err)
+			return m, nil
+		}
 	}
 
 	enrichedImage := imgArtifact.WithDigest(repoFromReference(imgArtifact.Reference), desc)

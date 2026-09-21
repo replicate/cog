@@ -112,6 +112,18 @@ func TestResolvePushDestination(t *testing.T) {
 			wantErr:     "digest-pinned",
 		},
 		{
+			name:        "positional bundle reserved tag rejected",
+			configModel: "registry.example.com/config/model",
+			args:        []string{"registry.example.com/target/model:cog-image.v2"},
+			wantErr:     "reserved prefix",
+		},
+		{
+			name:        "positional bundle tag outside OCI grammar rejected",
+			configModel: "registry.example.com/config/model",
+			args:        []string{"registry.example.com/target/model:-invalid"},
+			wantErr:     "OCI tag regex",
+		},
+		{
 			name:        "environment bundle digest rejected",
 			configModel: "registry.example.com/config/model",
 			env:         map[string]string{model.EnvModel: digestTarget},

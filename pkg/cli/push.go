@@ -289,6 +289,9 @@ func resolvedBundleTarget(target string) (*model.ResolvedRef, error) {
 	if parsed.IsDigest() {
 		return nil, fmt.Errorf("cannot push to digest-pinned target %q: use a tag instead", target)
 	}
+	if err := model.ValidateTag(parsed.Tag()); err != nil {
+		return nil, fmt.Errorf("invalid bundle push target %q: tag %q: %w", target, parsed.Tag(), err)
+	}
 	return &model.ResolvedRef{
 		Registry: parsed.Registry(),
 		Repo:     parsed.Repository(),

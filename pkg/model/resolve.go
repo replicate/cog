@@ -244,17 +244,25 @@ func validateRepoEnv(v string) error {
 	return nil
 }
 
-// validateTagEnv checks that COG_MODEL_TAG is a valid OCI tag and
-// does not use the reserved "cog-" prefix.
-func validateTagEnv(v string) error {
-	if v == "" {
+// ValidateTag checks that a user-supplied bundle tag follows the OCI tag
+// grammar and doesn't use Cog's reserved "cog-" prefix.
+func ValidateTag(tag string) error {
+	if tag == "" {
 		return nil
 	}
-	if IsReservedTag(v) {
-		return fmt.Errorf("invalid %s %q: %q is a reserved prefix — choose a different tag", EnvModelTag, v, ReservedTagPrefix)
+	if IsReservedTag(tag) {
+		return fmt.Errorf("uses reserved prefix %q — choose a different tag", ReservedTagPrefix)
 	}
-	if !tagRegex.MatchString(v) {
-		return fmt.Errorf("invalid %s %q: must match OCI tag regex %s", EnvModelTag, v, tagRegex.String())
+	if !tagRegex.MatchString(tag) {
+		return fmt.Errorf("doesn't match OCI tag regex %s", tagRegex.String())
+	}
+	return nil
+}
+
+// validateTagEnv adds the environment variable name and value to tag errors.
+func validateTagEnv(v string) error {
+	if err := ValidateTag(v); err != nil {
+		return fmt.Errorf("invalid %s %q: %w", EnvModelTag, v, err)
 	}
 	return nil
 }

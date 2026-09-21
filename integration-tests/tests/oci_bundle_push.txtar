@@ -22,8 +22,10 @@ exec sh -c 'printf AAAA > weights-alpha/data.bin'
 exec sh -c 'printf BBBB > weights-beta/data.bin'
 
 # Step 1: import generates weights.lock and pushes weight manifests.
-# cog push later requires the lockfile to already exist.
+# cog push later requires the lockfile to already exist. Reverse the lockfile
+# entries afterward to prove output follows cog.yaml rather than lockfile order.
 cog weights import
+exec python3 -c 'import json; p="weights.lock"; d=json.load(open(p)); d["weights"].reverse(); open(p, "w").write(json.dumps(d, indent=2) + "\n")'
 
 # Step 2: use the positional target to override a deliberately wrong
 # COG_MODEL while keeping the configured bundle format. The positional
@@ -45,6 +47,52 @@ stdout 'run.cog.weight.name.*alpha'
 stdout 'run.cog.weight.name.*beta'
 stdout 'run.cog.weight.set-digest'
 
+# Positional bundle targets also work without --json. The existing reference
+# tree stays on stderr and stdout stays empty.
+cog push $TEST_REGISTRY/test/bundle-model:v2
+! stdout .
+stderr 'model   localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}'
+stderr 'weight  alpha.*localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}'
+stderr 'weight  beta.*localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}'
+
+# Untagged bundle targets receive a generated timestamp tag while JSON still
+# returns immutable digest references.
+cog push $TEST_REGISTRY/test/bundle-model --json
+stderr 'Pushing to localhost:[0-9]+/test/bundle-model:[0-9]{8}T[0-9]{6}Z'
+stdout '^\{"version":1,"model":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}","image":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}","weights":\[\{"name":"alpha","reference":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}"\},\{"name":"beta","reference":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}"\}\]\}$'
+
+# A different repository can't reuse managed weight manifests. Verification
+# fails before the model image is pushed and emits no JSON document.
+! cog push $TEST_REGISTRY/test/wrong-repository:v1 --json
+! stdout .
+stderr 'not found in target repository'
+stderr 'cog weights import'
+! registry-inspect $TEST_REGISTRY/test/wrong-repository:cog-image.v1
+
+# Digest-pinned, reserved, and OCI-invalid positional bundle tags all fail
+# before a build starts and leave stdout empty.
+! cog push $TEST_REGISTRY/test/bundle-model@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
+! stdout .
+stderr 'digest-pinned'
+
+! cog push $TEST_REGISTRY/test/bundle-model:cog-image.user --json
+! stdout .
+stderr 'reserved prefix'
+
+! cog push $TEST_REGISTRY/test/bundle-model:-invalid --json
+! stdout .
+stderr 'OCI tag regex'
+
+# Command-level output covers one managed weight and no managed weights too.
+# Re-importing with the one-weight config updates weights.lock to match it.
+env COG_MODEL=$TEST_REGISTRY/test/bundle-model:v1
+cog weights import -f cog-one.yaml
+cog push $TEST_REGISTRY/test/bundle-model:one-weight --json -f cog-one.yaml
+stdout '^\{"version":1,"model":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}","image":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}","weights":\[\{"name":"alpha","reference":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}"\}\]\}$'
+
+cog push $TEST_REGISTRY/test/bundle-model:no-weights --json -f cog-zero.yaml
+stdout '^\{"version":1,"model":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}","image":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}"\}$'
+
 -- cog.yaml --
 # 'model:' satisfies the schema requirement that weight-bearing configs
 # declare a model ref. The full registry/repo:tag target is overridden
@@ -62,6 +110,23 @@ weights:
     target: /src/weights-beta
     source:
       uri: file://./weights-beta
+
+-- cog-one.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+model: test/bundle-model
+weights:
+  - name: alpha
+    target: /src/weights-alpha
+    source:
+      uri: file://./weights-alpha
+
+-- cog-zero.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+model: test/bundle-model
 
 -- predict.py --
 from cog import BasePredictor
