@@ -226,14 +226,23 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	// errors (malformed COG_MODEL_TAG, reserved prefix, image:+env
 	// mode mix-up, etc.) surface before kicking off a Docker build.
 	// ErrNoModelRef just means there's no model field — fall back to
-	// FormatImage.
-	format := FormatImage
-	ref, err := ResolveModelRef(src.Config.Image, src.Config.Model)
-	if err != nil && !errors.Is(err, ErrNoModelRef) {
-		return nil, err
+	// FormatImage. Push can supply an already-resolved format and ref
+	// so a positional target overrides every COG_MODEL* variable.
+	format := opts.Format
+	ref := opts.ModelRef
+	if format == 0 {
+		format = FormatImage
+		var err error
+		ref, err = ResolveModelRef(src.Config.Image, src.Config.Model)
+		if err != nil && !errors.Is(err, ErrNoModelRef) {
+			return nil, err
+		}
+		if ref != nil {
+			format = FormatBundle
+		}
 	}
-	if ref != nil {
-		format = FormatBundle
+	if format == FormatBundle && ref == nil {
+		return nil, fmt.Errorf("bundle build requires a model ref")
 	}
 
 	ib := NewImageBuilder(r.factory, r.docker, src, opts)
@@ -301,11 +310,14 @@ func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) (*Model
 	}
 
 	// Enrich the image artifact with the pushed digest. On registries
-	// that don't support HEAD on tags, fall back to the original Model
-	// rather than failing a successful push. FormatImage is the legacy
-	// single-image path; bundle pushes surface HEAD failures as errors.
+	// that don't support HEAD on tags, the legacy path falls back to the
+	// original Model rather than failing a successful push. Callers that
+	// require an immutable result can make the lookup failure fatal.
 	desc, err := r.registry.GetDescriptor(ctx, imgArtifact.Reference)
 	if err != nil {
+		if opts.RequireDigest {
+			return nil, fmt.Errorf("resolve pushed image digest: %w", err)
+		}
 		console.Debugf("post-push HEAD on %q failed; returning Model without digest enrichment: %v", imgArtifact.Reference, err)
 		return m, nil
 	}

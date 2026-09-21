@@ -8,11 +8,9 @@
 
 registry-start
 
-# Drive both weight import and the final push to the same model ref.
-# COG_MODEL pins the full ref (registry + repo + tag) so the bundle
-# lands at $TEST_REGISTRY/test/bundle-model:v1 deterministically;
-# without an explicit tag, ResolveModelRef would append a fresh
-# timestamp and break registry-inspect below.
+# Import the weights into the repository that the positional push target
+# will use. The tag doesn't affect weight manifests, but keeping it explicit
+# makes the setup deterministic.
 env COG_MODEL=$TEST_REGISTRY/test/bundle-model:v1
 
 # Two weight directories. Each holds a single small file; the packer
@@ -27,19 +25,17 @@ exec sh -c 'printf BBBB > weights-beta/data.bin'
 # cog push later requires the lockfile to already exist.
 cog weights import
 
-# Step 2: cog push assembles the OCI index (image + weight manifests)
-# and uploads it to the same model ref. Positional [IMAGE] args are
-# rejected in model mode, so the ref comes entirely from COG_MODEL.
-cog push
+# Step 2: use the positional target to override a deliberately wrong
+# COG_MODEL while keeping the configured bundle format. The positional
+# target's repository contains the manifests imported above.
+env COG_MODEL=$TEST_REGISTRY/test/ignored:v9
+cog push $TEST_REGISTRY/test/bundle-model:v1 --json
 
-# Push prints a structured ref tree on success: the bundle (model)
-# digest plus each contained artifact. Weights were already pushed
-# during `cog weights import`, so they only show up in the tree.
+# Progress stays on stderr. Stdout is one versioned document containing
+# only complete digest references, with weights in cog.yaml order.
 stderr 'Pushing to localhost'
-stderr 'model   localhost'
-stderr 'image   localhost'
-stderr 'weight  alpha  localhost'
-stderr 'weight  beta   localhost'
+! stderr 'model   localhost'
+stdout '^\{"version":1,"model":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}","image":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}","weights":\[\{"name":"alpha","reference":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}"\},\{"name":"beta","reference":"localhost:[0-9]+/test/bundle-model@sha256:[0-9a-f]{64}"\}\]\}$'
 
 # Resolve the pushed ref and verify the top-level index shape.
 registry-inspect $TEST_REGISTRY/test/bundle-model:v1

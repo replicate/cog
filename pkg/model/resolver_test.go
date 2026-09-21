@@ -1324,6 +1324,38 @@ func TestResolver_Build_InvalidEnvVarSurfaces(t *testing.T) {
 	require.Contains(t, err.Error(), "reserved prefix")
 }
 
+func TestResolver_Build_ExplicitFormatIgnoresModelEnvironment(t *testing.T) {
+	clearModelEnv(t)
+	t.Setenv(EnvModel, "invalid target")
+	resolver, src := newFormatTestResolver(t)
+	src.Config.Image = "registry.example.com/user/image"
+
+	m, err := resolver.Build(context.Background(), src, BuildOptions{
+		ImageName: "registry.example.com/target/image",
+		Format:    FormatImage,
+	})
+	require.NoError(t, err)
+	require.Equal(t, FormatImage, m.Format)
+	require.Nil(t, m.Ref)
+}
+
+func TestResolver_Build_ExplicitBundleRefIgnoresModelEnvironment(t *testing.T) {
+	clearModelEnv(t)
+	t.Setenv(EnvModelTag, "cog-reserved")
+	resolver, src := newFormatTestResolver(t)
+	src.Config.Model = "registry.example.com/user/model"
+	ref := &ResolvedRef{Registry: "registry.example.com", Repo: "target/model", Tag: "v2"}
+
+	m, err := resolver.Build(context.Background(), src, BuildOptions{
+		ImageName: "registry.example.com/target/model:v2",
+		Format:    FormatBundle,
+		ModelRef:  ref,
+	})
+	require.NoError(t, err)
+	require.Equal(t, FormatBundle, m.Format)
+	require.Same(t, ref, m.Ref)
+}
+
 func TestIndexDetectionHelpers(t *testing.T) {
 	t.Run("findImageManifest", func(t *testing.T) {
 		manifests := []registry.PlatformManifest{

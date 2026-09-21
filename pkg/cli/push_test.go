@@ -1,6 +1,10 @@
 package cli
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -9,6 +13,7 @@ import (
 
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/model/modeltest"
+	"github.com/replicate/cog/pkg/provider"
 )
 
 // Refs are full 64-char digests so the assertions exercise the
@@ -21,94 +26,371 @@ const (
 	testWeightRef2  = testRepo + "@sha256:e4f5a60000000000000000000000000000000000000000000000000000000000"
 )
 
-func TestValidatePushArgs(t *testing.T) {
-	const bundleModel = "registry.example.com/user/model"
+func TestResolvePushDestination(t *testing.T) {
+	const digestTarget = "registry.example.com/user/model@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 	tests := []struct {
-		name        string
-		configImage string
-		configModel string
-		envRepo     string // COG_MODEL_REPO override
-		envTag      string // COG_MODEL_TAG override
-		args        []string
-		errContains []string // empty = expect no error
-		wantRef     bool     // expect a non-nil ResolvedRef (FormatBundle path)
+		name         string
+		configImage  string
+		configModel  string
+		env          map[string]string
+		args         []string
+		wantFormat   model.Format
+		wantTarget   string
+		wantTargetRE string
+		wantRef      bool
+		wantErr      string
 	}{
 		{
-			// cog.yaml `model:` means FormatBundle. The legacy
-			// positional IMAGE arg is ambiguous here — error message
-			// must direct the user to the env var overrides instead.
-			name:        "FormatBundle with positional arg rejected with helpful message",
-			configModel: bundleModel,
-			args:        []string{"some/other:tag"},
-			errContains: []string{"positional image argument not supported", model.EnvModel, model.EnvModelTag},
-		},
-		{
-			name:        "FormatBundle with no args proceeds and returns the ref",
-			configModel: bundleModel,
+			name:        "tagged positional bundle target replaces full environment override",
+			configModel: "registry.example.com/config/model",
+			env:         map[string]string{model.EnvModel: "invalid target"},
+			args:        []string{"registry.example.com/target/model:v2"},
+			wantFormat:  model.FormatBundle,
+			wantTarget:  "registry.example.com/target/model:v2",
 			wantRef:     true,
 		},
 		{
-			// FormatImage path: positional arg is the legacy way to
-			// specify the image ref and must keep working.
-			name: "FormatImage with positional arg proceeds",
-			args: []string{"r8.im/user/model"},
+			name:        "positional bundle target replaces partial environment overrides",
+			configModel: "registry.example.com/config/model",
+			env: map[string]string{
+				model.EnvModelRegistry: "invalid/registry",
+				model.EnvModelRepo:     "invalid:repo",
+				model.EnvModelTag:      "invalid tag",
+			},
+			args:       []string{"registry.example.com/target/model:v3"},
+			wantFormat: model.FormatBundle,
+			wantTarget: "registry.example.com/target/model:v3",
+			wantRef:    true,
 		},
 		{
-			// validatePushArgs is not responsible for the "no image:
-			// and no arg" error — that's the downstream caller's job.
-			name: "FormatImage with no args proceeds",
+			name:         "untagged positional bundle target gets timestamp tag",
+			configModel:  "registry.example.com/config/model",
+			args:         []string{"registry.example.com/target/model"},
+			wantFormat:   model.FormatBundle,
+			wantTargetRE: `^registry\.example\.com/target/model:[0-9]{8}T[0-9]{6}Z$`,
+			wantRef:      true,
 		},
 		{
-			// COG_MODEL_REPO alone is enough to flip to FormatBundle —
-			// the CI override path. Same rejection applies.
-			name:        "env var promotion to FormatBundle rejects positional arg",
-			envRepo:     "user/model",
-			args:        []string{"r8.im/user/model"},
-			errContains: []string{"positional image argument not supported"},
+			name:        "tagged positional image target replaces model environment",
+			configImage: "registry.example.com/config/image",
+			env:         map[string]string{model.EnvModel: "registry.example.com/env/model:v1"},
+			args:        []string{"registry.example.com/target/image:v2"},
+			wantFormat:  model.FormatImage,
+			wantTarget:  "registry.example.com/target/image:v2",
 		},
 		{
-			// Validation errors surface fast, even with no positional
-			// arg — the whole point of the pre-flight check.
-			name:        "invalid env var surfaces before positional check",
-			configModel: bundleModel,
-			envTag:      "cog-reserved",
-			errContains: []string{"reserved prefix"},
+			name:        "untagged positional image target stays untagged",
+			configImage: "registry.example.com/config/image",
+			args:        []string{"registry.example.com/target/image"},
+			wantFormat:  model.FormatImage,
+			wantTarget:  "registry.example.com/target/image",
 		},
 		{
-			// Smoke test that the image:+env mode-mix rejection
-			// propagates through the CLI boundary. The full matrix
-			// lives in TestResolveModelRef_ImageModelEnvConflict.
-			name:        "image: in cog.yaml + COG_MODEL_REPO is rejected",
-			configImage: "ghcr.io/owner/repo",
-			envRepo:     "acct/model",
-			errContains: []string{"'image' in cog.yaml cannot be combined with COG_MODEL"},
+			name:        "existing configured image behavior",
+			configImage: "registry.example.com/config/image",
+			wantFormat:  model.FormatImage,
+			wantTarget:  "registry.example.com/config/image",
+		},
+		{
+			name:         "existing configured bundle behavior",
+			configModel:  "registry.example.com/config/model",
+			wantFormat:   model.FormatBundle,
+			wantRef:      true,
+			wantTargetRE: `^registry\.example\.com/config/model:[0-9]{8}T[0-9]{6}Z$`,
+		},
+		{
+			name:        "positional image digest rejected",
+			configImage: "registry.example.com/config/image",
+			args:        []string{digestTarget},
+			wantErr:     "digest-pinned",
+		},
+		{
+			name:        "positional bundle digest rejected",
+			configModel: "registry.example.com/config/model",
+			args:        []string{digestTarget},
+			wantErr:     "digest-pinned",
+		},
+		{
+			name:        "environment bundle digest rejected",
+			configModel: "registry.example.com/config/model",
+			env:         map[string]string{model.EnvModel: digestTarget},
+			wantErr:     "digest-pinned",
+		},
+		{
+			name:        "invalid environment still fails without positional target",
+			configModel: "registry.example.com/config/model",
+			env:         map[string]string{model.EnvModelTag: "cog-reserved"},
+			wantErr:     "reserved prefix",
+		},
+		{
+			name:        "image and model environment conflict remains without positional target",
+			configImage: "registry.example.com/config/image",
+			env:         map[string]string{model.EnvModelRepo: "acct/model"},
+			wantErr:     "'image' in cog.yaml cannot be combined with COG_MODEL",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			modeltest.ClearEnv(t)
-			if tt.envRepo != "" {
-				t.Setenv(model.EnvModelRepo, tt.envRepo)
-			}
-			if tt.envTag != "" {
-				t.Setenv(model.EnvModelTag, tt.envTag)
+			for key, value := range tt.env {
+				t.Setenv(key, value)
 			}
 
-			ref, err := validatePushArgs(tt.configImage, tt.configModel, tt.args)
-			if len(tt.errContains) == 0 {
-				require.NoError(t, err)
-				if tt.wantRef {
-					require.NotNil(t, ref, "FormatBundle path should return a resolved ref")
-				} else {
-					require.Nil(t, ref, "FormatImage path should return nil ref")
-				}
+			destination, err := resolvePushDestination(tt.configImage, tt.configModel, tt.args)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
 				return
 			}
-			require.Error(t, err)
-			for _, s := range tt.errContains {
-				assert.Contains(t, err.Error(), s)
+			require.NoError(t, err)
+			require.NotNil(t, destination)
+			assert.Equal(t, tt.wantFormat, destination.format)
+			if tt.wantTarget != "" {
+				assert.Equal(t, tt.wantTarget, destination.target)
+			}
+			if tt.wantTargetRE != "" {
+				assert.Regexp(t, regexp.MustCompile(tt.wantTargetRE), destination.target)
+			}
+			if tt.wantRef {
+				assert.NotNil(t, destination.modelRef)
+			} else {
+				assert.Nil(t, destination.modelRef)
+			}
+		})
+	}
+}
+
+func TestMarshalPushOutput(t *testing.T) {
+	bundle := func(weights []model.Weight) *model.Model {
+		img := &model.ImageArtifact{Reference: testImageRef}
+		return &model.Model{
+			Format: model.FormatBundle,
+			Ref: &model.ResolvedRef{
+				Registry: "registry.example.com",
+				Repo:     "acct/resnet-50",
+				Digest:   testModelDigest,
+			},
+			Image:     img,
+			Artifacts: []model.Artifact{img},
+			Weights:   weights,
+		}
+	}
+
+	tests := []struct {
+		name        string
+		model       *model.Model
+		wantJSON    string
+		wantWeights []PushWeightOutput
+	}{
+		{
+			name: "ordinary image",
+			model: func() *model.Model {
+				img := &model.ImageArtifact{Reference: testImageRef}
+				return &model.Model{Format: model.FormatImage, Image: img, Artifacts: []model.Artifact{img}}
+			}(),
+			wantJSON: `{"version":1,"image":"` + testImageRef + `"}`,
+		},
+		{
+			name:     "bundle without weights omits weights",
+			model:    bundle(nil),
+			wantJSON: `{"version":1,"model":"` + testRepo + `@` + testModelDigest + `","image":"` + testImageRef + `"}`,
+		},
+		{
+			name: "bundle with one weight",
+			model: bundle([]model.Weight{
+				{Name: "transformer", Reference: testWeightRef1},
+			}),
+			wantWeights: []PushWeightOutput{
+				{Name: "transformer", Reference: testWeightRef1},
+			},
+		},
+		{
+			name: "bundle preserves multiple weight order",
+			model: bundle([]model.Weight{
+				{Name: "transformer", Reference: testWeightRef1},
+				{Name: "text-encoder", Reference: testWeightRef2},
+			}),
+			wantWeights: []PushWeightOutput{
+				{Name: "transformer", Reference: testWeightRef1},
+				{Name: "text-encoder", Reference: testWeightRef2},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := marshalPushOutput(tt.model)
+			require.NoError(t, err)
+
+			if tt.wantJSON != "" {
+				assert.JSONEq(t, tt.wantJSON, string(data))
+			}
+			var got PushOutput
+			require.NoError(t, json.Unmarshal(data, &got))
+			assert.Equal(t, 1, got.Version)
+			assert.Equal(t, tt.wantWeights, got.Weights)
+			assert.NotContains(t, string(data), "\n", "output must be one JSON document on one line")
+		})
+	}
+}
+
+func TestMarshalPushOutput_RejectsIncompleteReferences(t *testing.T) {
+	tests := []struct {
+		name    string
+		model   *model.Model
+		wantErr string
+	}{
+		{name: "nil model", wantErr: "without a model result"},
+		{
+			name:    "missing image",
+			model:   &model.Model{Format: model.FormatImage},
+			wantErr: "no image artifact",
+		},
+		{
+			name: "tagged image",
+			model: func() *model.Model {
+				img := &model.ImageArtifact{Reference: testRepo + ":latest"}
+				return &model.Model{Format: model.FormatImage, Image: img, Artifacts: []model.Artifact{img}}
+			}(),
+			wantErr: "not digest-pinned",
+		},
+		{
+			name: "bundle without model ref",
+			model: func() *model.Model {
+				img := &model.ImageArtifact{Reference: testImageRef}
+				return &model.Model{Format: model.FormatBundle, Image: img, Artifacts: []model.Artifact{img}}
+			}(),
+			wantErr: "no model reference",
+		},
+		{
+			name: "weight without digest ref",
+			model: func() *model.Model {
+				img := &model.ImageArtifact{Reference: testImageRef}
+				return &model.Model{
+					Format:    model.FormatBundle,
+					Ref:       &model.ResolvedRef{Registry: "registry.example.com", Repo: "acct/resnet-50", Digest: testModelDigest},
+					Image:     img,
+					Artifacts: []model.Artifact{img},
+					Weights:   []model.Weight{{Name: "transformer", Reference: testRepo + ":cog-weight.transformer"}},
+				}
+			}(),
+			wantErr: `weight "transformer" reference`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := marshalPushOutput(tt.model)
+			require.ErrorContains(t, err, tt.wantErr)
+			assert.Nil(t, data)
+		})
+	}
+}
+
+func TestNewPushCommand_JSONFlag(t *testing.T) {
+	cmd := newPushCommand()
+	flag := cmd.Flags().Lookup("json")
+	require.NotNil(t, flag)
+	assert.Equal(t, "false", flag.DefValue)
+}
+
+type pushTestProvider struct {
+	postPush func(pushErr error) error
+}
+
+func (p *pushTestProvider) Name() string { return "test" }
+
+func (p *pushTestProvider) MatchesRegistry(string) bool { return true }
+
+func (p *pushTestProvider) Login(context.Context, provider.LoginOptions) error { return nil }
+
+func (p *pushTestProvider) PostPush(_ context.Context, _ provider.PushOptions, pushErr error) error {
+	return p.postPush(pushErr)
+}
+
+func TestCompletePush_JSONOutputWaitsForFullSuccess(t *testing.T) {
+	validImage := func() *model.Model {
+		img := &model.ImageArtifact{Reference: testImageRef}
+		return &model.Model{Format: model.FormatImage, Image: img, Artifacts: []model.Artifact{img}}
+	}
+
+	tests := []struct {
+		name            string
+		pushed          *model.Model
+		pushErr         error
+		providerErr     error
+		wantErr         string
+		wantProviderErr string
+		wantOutput      bool
+	}{
+		{
+			name:       "success",
+			pushed:     validImage(),
+			wantOutput: true,
+		},
+		{
+			name:            "push failure",
+			pushErr:         errors.New("registry rejected push"),
+			wantErr:         "registry rejected push",
+			wantProviderErr: "registry rejected push",
+		},
+		{
+			name:        "provider failure",
+			pushed:      validImage(),
+			providerErr: errors.New("provider post-processing failed"),
+			wantErr:     "provider post-processing failed",
+		},
+		{
+			name:            "digest validation failure",
+			pushed:          &model.Model{Format: model.FormatImage},
+			wantErr:         "no image artifact",
+			wantProviderErr: "no image artifact",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			providerCalled := false
+			providerDone := false
+			var providerPushErr error
+			p := &pushTestProvider{postPush: func(pushErr error) error {
+				providerCalled = true
+				providerPushErr = pushErr
+				providerDone = true
+				return tt.providerErr
+			}}
+			var outputs []string
+
+			err := completePush(
+				context.Background(),
+				p,
+				provider.PushOptions{},
+				tt.pushed,
+				tt.pushErr,
+				true,
+				func(output string) {
+					assert.True(t, providerDone, "JSON must be emitted after provider post-processing")
+					outputs = append(outputs, output)
+				},
+			)
+
+			assert.True(t, providerCalled)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			if tt.wantProviderErr != "" {
+				require.ErrorContains(t, providerPushErr, tt.wantProviderErr)
+			} else {
+				assert.NoError(t, providerPushErr)
+			}
+			if tt.wantOutput {
+				require.Len(t, outputs, 1)
+				assert.JSONEq(t, `{"version":1,"image":"`+testImageRef+`"}`, outputs[0])
+			} else {
+				assert.Empty(t, outputs)
 			}
 		})
 	}

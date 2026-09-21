@@ -19,6 +19,11 @@ type PushOptions struct {
 	// Default: linux/amd64
 	Platform *Platform
 
+	// RequireDigest makes a post-push digest lookup failure fatal.
+	// Bundle pushes always require digests; this controls the legacy
+	// image fallback for callers that need immutable output.
+	RequireDigest bool
+
 	// ImageProgressFn is an optional callback for reporting push progress.
 	// It receives both phase transitions (Phase set, byte fields zero) and
 	// per-layer byte progress (Phase empty, Complete/Total set).
@@ -251,8 +256,8 @@ func (p *BundlePusher) verifyWeights(
 			desc, err := p.registry.GetDescriptor(ctx, ref)
 			if err != nil {
 				return fmt.Errorf(
-					"weight %q not found in registry (%s); run 'cog weights import' to push weights first: %w",
-					w.Name, ref, err,
+					"weight %q from weights.lock was not found in target repository %q (%s); run 'cog weights import' for that repository before pushing: %w",
+					w.Name, repo, ref, err,
 				)
 			}
 			if desc.Digest.String() != w.Digest {

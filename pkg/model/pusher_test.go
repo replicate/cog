@@ -408,7 +408,8 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "w1")
-		require.Contains(t, err.Error(), "not found in registry")
+		require.Contains(t, err.Error(), "not found in target repository")
+		require.Contains(t, err.Error(), testRepo)
 		require.Contains(t, err.Error(), "cog weights import")
 		require.Contains(t, err.Error(), "manifest unknown")
 	})
@@ -620,6 +621,31 @@ func TestResolver_Push(t *testing.T) {
 		require.True(t, dockerPushed)
 		require.Same(t, m, pushed,
 			"on HEAD failure, Push should return the input Model unchanged")
+	})
+
+	t.Run("FormatImage returns digest lookup error when required", func(t *testing.T) {
+		var dockerPushed bool
+		docker := &mockDocker{
+			pushFunc: func(ctx context.Context, ref string) error {
+				dockerPushed = true
+				return nil
+			},
+		}
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				return v1.Descriptor{}, errors.New("HEAD unsupported")
+			},
+		}
+		resolver := NewResolver(docker, reg)
+
+		img := &ImageArtifact{name: "model", Reference: testImageRef}
+		m := &Model{Format: FormatImage, Image: img, Artifacts: []Artifact{img}}
+
+		pushed, err := resolver.Push(context.Background(), m, PushOptions{RequireDigest: true})
+		require.ErrorContains(t, err, "resolve pushed image digest")
+		require.ErrorContains(t, err, "HEAD unsupported")
+		require.Nil(t, pushed)
+		require.True(t, dockerPushed)
 	})
 
 	t.Run("FormatBundle with no weights produces a single-entry index", func(t *testing.T) {
