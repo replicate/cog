@@ -1,0 +1,64 @@
+# Exercise JSON and human `cog push` output for legacy image projects against
+# the local registry. Repeated pushes reuse the Docker build cache.
+
+[short] skip 'requires local registry'
+
+registry-start
+
+# A positional target keeps the configured image format and ignores every
+# COG_MODEL* override, even one that would otherwise conflict with image:.
+env COG_MODEL=invalid-target
+cog push $TEST_REGISTRY/test/image-model:v1 --json
+
+# JSON is the only stdout output. Progress remains on stderr and the result is
+# the digest reported by the upload, without bundle-only fields.
+stderr 'Pushing to localhost'
+stdout '^\{"version":1,"image":"localhost:[0-9]+/test/image-model@sha256:[0-9a-f]{64}"\}$'
+registry-inspect $TEST_REGISTRY/test/image-model:v1
+stdout 'application/vnd.(docker.distribution.manifest.v2|oci.image.manifest.v1)\+json'
+
+# Untagged image targets retain Docker's :latest behavior.
+cog push $TEST_REGISTRY/test/image-untagged --json
+stdout '^\{"version":1,"image":"localhost:[0-9]+/test/image-untagged@sha256:[0-9a-f]{64}"\}$'
+registry-inspect $TEST_REGISTRY/test/image-untagged:latest
+stdout 'application/vnd.(docker.distribution.manifest.v2|oci.image.manifest.v1)\+json'
+
+# Existing non-JSON output stays on stderr and stdout remains empty.
+cog push $TEST_REGISTRY/test/image-model:v2
+! stdout .
+stderr 'image  localhost:[0-9]+/test/image-model@sha256:[0-9a-f]{64}'
+
+# Invalid destinations fail without a success document.
+! cog push $TEST_REGISTRY/test/image-model@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
+! stdout .
+stderr 'digest-pinned'
+
+# Build failures are command failures too -- no partial result reaches stdout.
+! cog push $TEST_REGISTRY/test/image-model:build-failure --json -f cog-invalid.yaml
+! stdout .
+stderr 'missing.py'
+
+# A registry push failure also leaves stdout empty. The preceding builds warm
+# the cache, so this reaches the push without rebuilding every layer.
+! cog push localhost:1/test/image-model:v1 --json
+! stdout .
+stderr 'failed to push image|connection refused|server misbehaving'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+image: registry.invalid/configured/image
+
+-- cog-invalid.yaml --
+build:
+  python_version: "3.12"
+predict: "missing.py:Predictor"
+image: registry.invalid/configured/image
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return f"processed: {text}"

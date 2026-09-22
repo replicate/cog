@@ -8,6 +8,18 @@ import (
 	"github.com/docker/docker/api/types/image"
 )
 
+// PushResult identifies the manifest uploaded by a Docker push.
+type PushResult struct {
+	Digest string
+	Size   int64
+}
+
+// PushResultCommand is implemented by Docker commands that can return the
+// manifest digest reported by the daemon's push stream.
+type PushResultCommand interface {
+	PushWithResult(ctx context.Context, ref string) (PushResult, error)
+}
+
 type Command interface {
 	// Pull pulls an image from a remote registry and returns the inspect response for the local image.
 	// If the image already exists, it will return the inspect response for the local image without pulling.

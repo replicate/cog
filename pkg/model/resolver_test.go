@@ -20,11 +20,14 @@ import (
 	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
+const testDockerPushDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
 // mockDocker implements command.Command for testing.
 type mockDocker struct {
 	inspectFunc   func(ctx context.Context, ref string) (*image.InspectResponse, error)
 	pullFunc      func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error)
 	pushFunc      func(ctx context.Context, ref string) error
+	pushResult    *command.PushResult
 	tagFunc       func(ctx context.Context, source, target string) error
 	removeFunc    func(ctx context.Context, ref string) error
 	imageSaveFunc func(ctx context.Context, imageRef string) (io.ReadCloser, error)
@@ -49,6 +52,16 @@ func (m *mockDocker) Push(ctx context.Context, ref string) error {
 		return m.pushFunc(ctx, ref)
 	}
 	return errors.New("mockDocker.Push not implemented")
+}
+
+func (m *mockDocker) PushWithResult(ctx context.Context, ref string) (command.PushResult, error) {
+	if err := m.Push(ctx, ref); err != nil {
+		return command.PushResult{}, err
+	}
+	if m.pushResult != nil {
+		return *m.pushResult, nil
+	}
+	return command.PushResult{Digest: testDockerPushDigest}, nil
 }
 
 func (m *mockDocker) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
@@ -1176,6 +1189,22 @@ func TestResolver_Build_PopulatesWeights(t *testing.T) {
 	require.True(t, m.IsBundle())
 }
 
+func TestOrderWeightsByConfig(t *testing.T) {
+	weights := []Weight{
+		{Name: "beta", Digest: "sha256:bbbb"},
+		{Name: "alpha", Digest: "sha256:aaaa"},
+	}
+	configured := []config.WeightSource{
+		{Name: "alpha"},
+		{Name: "beta"},
+	}
+
+	ordered, err := orderWeightsByConfig(weights, configured)
+	require.NoError(t, err)
+	require.Equal(t, []string{"alpha", "beta"}, []string{ordered[0].Name, ordered[1].Name})
+	require.Equal(t, []string{"sha256:aaaa", "sha256:bbbb"}, []string{ordered[0].Digest, ordered[1].Digest})
+}
+
 func TestResolver_Build_WithWeightsIsBundle(t *testing.T) {
 	clearModelEnv(t)
 	imageDigest := "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
@@ -1322,6 +1351,38 @@ func TestResolver_Build_InvalidEnvVarSurfaces(t *testing.T) {
 	_, err := resolver.Build(context.Background(), src, BuildOptions{ImageName: "test-image:latest"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "reserved prefix")
+}
+
+func TestResolver_Build_ExplicitFormatIgnoresModelEnvironment(t *testing.T) {
+	clearModelEnv(t)
+	t.Setenv(EnvModel, "invalid target")
+	resolver, src := newFormatTestResolver(t)
+	src.Config.Image = "registry.example.com/user/image"
+
+	m, err := resolver.Build(context.Background(), src, BuildOptions{
+		ImageName: "registry.example.com/target/image",
+		Format:    FormatImage,
+	})
+	require.NoError(t, err)
+	require.Equal(t, FormatImage, m.Format)
+	require.Nil(t, m.Ref)
+}
+
+func TestResolver_Build_ExplicitBundleRefIgnoresModelEnvironment(t *testing.T) {
+	clearModelEnv(t)
+	t.Setenv(EnvModelTag, "cog-reserved")
+	resolver, src := newFormatTestResolver(t)
+	src.Config.Model = "registry.example.com/user/model"
+	ref := &ResolvedRef{Registry: "registry.example.com", Repo: "target/model", Tag: "v2"}
+
+	m, err := resolver.Build(context.Background(), src, BuildOptions{
+		ImageName: "registry.example.com/target/model:v2",
+		Format:    FormatBundle,
+		ModelRef:  ref,
+	})
+	require.NoError(t, err)
+	require.Equal(t, FormatBundle, m.Format)
+	require.Same(t, ref, m.Ref)
 }
 
 func TestIndexDetectionHelpers(t *testing.T) {

@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -20,22 +22,37 @@ import (
 )
 
 func newPushCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "push [IMAGE]",
-		Short: "Build and push model in current directory to a Docker registry",
-		Long: `Build a Docker image from cog.yaml and push it to a container registry.
+	var jsonOutput bool
 
-Cog can push to any OCI-compliant registry. When pushing to Replicate's
-registry (r8.im), run 'cog login' first to authenticate.`,
-		Example: `  # Push to Replicate
+	cmd := &cobra.Command{
+		Use:   "push [TARGET]",
+		Short: "Build and push model in current directory to a Docker registry",
+		Long: `Build from cog.yaml and push to an OCI-compliant registry. Run 'cog login'
+first when pushing to Replicate's registry (r8.im).
+
+TARGET overrides the configured destination and all COG_MODEL* environment
+variables. It doesn't change the project format: projects configured with
+'image' push an image, while projects configured with 'model' push an OCI
+bundle. Push targets must use tags, not digests. Untagged image targets use
+Docker's default 'latest' tag; untagged bundle targets get a timestamp tag.
+
+With --json, Cog writes one versioned JSON result to stdout after the entire
+push succeeds. Progress, warnings, and diagnostics continue on stderr. Every
+reference in the result is digest-pinned.`,
+		Example: `  # Push an image to Replicate
   cog push r8.im/your-username/my-model
 
-  # Push to any OCI registry
+  # Push an image to any OCI registry
   cog push registry.example.com/your-username/model-name
 
-  # Push with model weights in a separate layer (Replicate only)
+  # Push a bundle project and print its immutable references as JSON
+  cog push registry.example.com/your-username/model-name:v1 --json
+
+  # Push with model weights in a separate image layer (Replicate only)
   cog push r8.im/your-username/my-model --separate-weights`,
-		RunE: push,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return push(cmd, args, jsonOutput)
+		},
 		Args: cobra.MaximumNArgs(1),
 	}
 	addSecretsFlag(cmd)
@@ -49,11 +66,12 @@ registry (r8.im), run 'cog login' first to authenticate.`,
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
 	addConfigFlag(cmd)
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output the pushed references as JSON")
 
 	return cmd
 }
 
-func push(cmd *cobra.Command, args []string) error {
+func push(cmd *cobra.Command, args []string, jsonOutput bool) error {
 	ctx := cmd.Context()
 
 	// Initialize the provider registry
@@ -74,28 +92,14 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Resolve up front so user-input errors (malformed COG_MODEL_TAG,
-	// image:+env mode mix-up, bad positional arg) fail in seconds
-	// rather than after a multi-minute Docker build. We also need the
-	// resolved ref before Resolver.Build so the provider lookup below
-	// can drive credential selection from the correct host even when
-	// Build fails (the build-error path calls p.PostPush(...) for
-	// Replicate-specific guidance).
-	modelRef, err := validatePushArgs(src.Config.Image, src.Config.Model, args)
+	// Resolve up front so malformed destinations fail before a
+	// multi-minute Docker build. The resolved destination is also passed
+	// into Build so it can't disagree on a generated timestamp tag.
+	destination, err := resolvePushDestination(src.Config.Image, src.Config.Model, args)
 	if err != nil {
 		return err
 	}
-	var pushTarget string
-	switch {
-	case modelRef != nil:
-		pushTarget = modelRef.String()
-	case len(args) > 0:
-		pushTarget = args[0]
-	case src.Config.Image != "":
-		pushTarget = src.Config.Image
-	default:
-		return errors.New("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.example.com/your-username/model-name'")
-	}
+	pushTarget := destination.target
 
 	// Look up the provider for the target registry
 	p := provider.DefaultRegistry().ForImage(pushTarget)
@@ -123,6 +127,8 @@ func push(cmd *cobra.Command, args []string) error {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", console.Bold(pushTarget))
 	console.Info("")
 	buildOpts := buildOptionsFromFlags(cmd, pushTarget, annotations)
+	buildOpts.Format = destination.format
+	buildOpts.ModelRef = destination.modelRef
 	m, err := resolver.Build(ctx, src, buildOpts)
 	if err != nil {
 		// Call PostPush to handle error logging/analytics
@@ -150,6 +156,7 @@ func push(cmd *cobra.Command, args []string) error {
 	defer pw.Close()
 
 	pushed, pushErr := resolver.Push(ctx, m, model.PushOptions{
+		RequireDigest: jsonOutput,
 		ImageProgressFn: func(prog model.PushProgress) {
 			if prog.Phase != "" {
 				switch prog.Phase {
@@ -173,52 +180,195 @@ func push(cmd *cobra.Command, args []string) error {
 
 	pw.Close()
 
-	// Bypass console.InfoUnformatted: it wraps at terminal width and
-	// would hard-break the digest refs we want to be copy-pasteable.
-	if pushErr == nil && pushed != nil {
-		if tree := formatPushResult(pushed); tree != "" {
-			_, _ = fmt.Fprintln(os.Stderr)
-			_, _ = fmt.Fprintln(os.Stderr, tree)
+	return completePush(ctx, p, pushOpts, pushed, pushErr, jsonOutput, console.Output)
+}
+
+func completePush(
+	ctx context.Context,
+	p provider.Provider,
+	pushOpts provider.PushOptions,
+	pushed *model.Model,
+	pushErr error,
+	jsonOutput bool,
+	output func(string),
+) error {
+	var jsonResult []byte
+	resultErr := pushErr
+	if pushErr == nil {
+		if jsonOutput {
+			jsonResult, resultErr = marshalPushOutput(pushed)
+		} else if pushed != nil {
+			// Bypass console.InfoUnformatted: it wraps at terminal width and
+			// would hard-break the digest refs we want to be copy-pasteable.
+			if tree := formatPushResult(pushed); tree != "" {
+				_, _ = fmt.Fprintln(os.Stderr)
+				_, _ = fmt.Fprintln(os.Stderr, tree)
+			}
 		}
 	}
 
-	// PostPush: the provider handles formatting errors and any
-	// provider-specific success output (e.g. the Replicate model URL).
-	if err := p.PostPush(ctx, pushOpts, pushErr); err != nil {
+	// PostPush may add provider-specific diagnostics and success output.
+	// JSON stays buffered until it returns successfully.
+	if err := p.PostPush(ctx, pushOpts, resultErr); err != nil {
 		return err
 	}
 
-	// If there was a push error but PostPush didn't return one,
-	// return a generic error
-	if pushErr != nil {
-		return fmt.Errorf("failed to push image: %w", pushErr)
+	if resultErr != nil {
+		return fmt.Errorf("failed to push image: %w", resultErr)
 	}
 
+	if jsonOutput {
+		output(string(jsonResult))
+	}
 	return nil
 }
 
-// validatePushArgs resolves the model ref and runs the push-specific
-// user-input checks before any Docker work. Returns the resolved ref
-// (or nil for FormatImage paths) so the caller can drive the provider
-// lookup and push target from the same resolution — avoiding a second
-// call to ResolveModelRef that could disagree on the timestamp tag.
-//
-// The positional [IMAGE] arg is rejected in FormatBundle mode where
-// its meaning is ambiguous; it's still valid for FormatImage models,
-// so the rejection is conditional on a resolvable model ref.
-func validatePushArgs(configImage, configModel string, args []string) (*model.ResolvedRef, error) {
+type pushDestination struct {
+	target   string
+	format   model.Format
+	modelRef *model.ResolvedRef
+}
+
+// PushOutput is the versioned machine-readable result of a successful push.
+type PushOutput struct {
+	Version int                `json:"version"`
+	Model   string             `json:"model,omitempty"`
+	Image   string             `json:"image"`
+	Weights []PushWeightOutput `json:"weights,omitempty"`
+}
+
+// PushWeightOutput identifies one managed weight manifest.
+type PushWeightOutput struct {
+	Name      string `json:"name"`
+	Reference string `json:"reference"`
+}
+
+// resolvePushDestination resolves and validates the destination before any
+// Docker work. A positional target replaces all COG_MODEL* destinations, but
+// the configured image/model field still decides the artifact format.
+func resolvePushDestination(configImage, configModel string, args []string) (*pushDestination, error) {
+	if len(args) > 0 {
+		target := args[0]
+		if configModel != "" {
+			ref, err := resolvedBundleTarget(target)
+			if err != nil {
+				return nil, err
+			}
+			return &pushDestination{target: ref.String(), format: model.FormatBundle, modelRef: ref}, nil
+		}
+		if err := validatePushTarget(target); err != nil {
+			return nil, err
+		}
+		return &pushDestination{target: target, format: model.FormatImage}, nil
+	}
+
 	ref, err := model.ResolveModelRef(configImage, configModel)
 	if err != nil && !errors.Is(err, model.ErrNoModelRef) {
 		return nil, err
 	}
-	if ref != nil && len(args) > 0 {
-		return nil, errors.New(
-			"positional image argument not supported with 'model' config\n" +
-				"  use COG_MODEL to override the full reference\n" +
-				"  use COG_MODEL_TAG to override just the tag",
-		)
+	if ref != nil {
+		if ref.Digest != "" {
+			return nil, fmt.Errorf("cannot push to digest-pinned target %q: use a tag instead", ref.String())
+		}
+		return &pushDestination{target: ref.String(), format: model.FormatBundle, modelRef: ref}, nil
 	}
-	return ref, nil
+	if configImage == "" {
+		return nil, errors.New("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.example.com/your-username/model-name'")
+	}
+	if err := validatePushTarget(configImage); err != nil {
+		return nil, err
+	}
+	return &pushDestination{target: configImage, format: model.FormatImage}, nil
+}
+
+func resolvedBundleTarget(target string) (*model.ResolvedRef, error) {
+	parsed, err := model.ParseRef(target, model.Insecure(), model.WithDefaultTag(model.GenerateTimestampTag()))
+	if err != nil {
+		return nil, err
+	}
+	if parsed.IsDigest() {
+		return nil, fmt.Errorf("cannot push to digest-pinned target %q: use a tag instead", target)
+	}
+	if err := model.ValidateTag(parsed.Tag()); err != nil {
+		return nil, fmt.Errorf("invalid bundle push target %q: tag %q: %w", target, parsed.Tag(), err)
+	}
+	return &model.ResolvedRef{
+		Registry: parsed.Registry(),
+		Repo:     parsed.Repository(),
+		Tag:      parsed.Tag(),
+	}, nil
+}
+
+func validatePushTarget(target string) error {
+	parsed, err := model.ParseRef(target, model.Insecure())
+	if err != nil {
+		return err
+	}
+	if parsed.IsDigest() {
+		return fmt.Errorf("cannot push to digest-pinned target %q: use a tag instead", target)
+	}
+	return nil
+}
+
+func marshalPushOutput(m *model.Model) ([]byte, error) {
+	out, err := newPushOutput(m)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("serialize push result: %w", err)
+	}
+	return data, nil
+}
+
+func newPushOutput(m *model.Model) (*PushOutput, error) {
+	if m == nil {
+		return nil, errors.New("push completed without a model result")
+	}
+	img := m.GetImageArtifact()
+	if img == nil {
+		return nil, errors.New("push result has no image artifact")
+	}
+	if err := validateDigestReference("image", img.Reference); err != nil {
+		return nil, err
+	}
+
+	out := &PushOutput{Version: 1, Image: img.Reference}
+	if m.Format == model.FormatBundle {
+		if m.Ref == nil {
+			return nil, errors.New("bundle push result has no model reference")
+		}
+		out.Model = m.Ref.String()
+		if err := validateDigestReference("model", out.Model); err != nil {
+			return nil, err
+		}
+	}
+
+	if len(m.Weights) > 0 {
+		out.Weights = make([]PushWeightOutput, len(m.Weights))
+		for i, weight := range m.Weights {
+			if err := validateDigestReference(fmt.Sprintf("weight %q", weight.Name), weight.Reference); err != nil {
+				return nil, err
+			}
+			out.Weights[i] = PushWeightOutput{Name: weight.Name, Reference: weight.Reference}
+		}
+	}
+	return out, nil
+}
+
+func validateDigestReference(kind, ref string) error {
+	if ref == "" {
+		return fmt.Errorf("%s reference is empty", kind)
+	}
+	parsed, err := model.ParseRef(ref, model.Insecure())
+	if err != nil {
+		return fmt.Errorf("invalid %s reference %q: %w", kind, ref, err)
+	}
+	if !parsed.IsDigest() {
+		return fmt.Errorf("%s reference %q is not digest-pinned", kind, ref)
+	}
+	return nil
 }
 
 // formatPushResult renders a tree of the digest-pinned refs published

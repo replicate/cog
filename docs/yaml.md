@@ -265,7 +265,21 @@ If you don't set this, then a name will be generated from the directory name.
 
 If you set this, then you can run `cog push` without specifying the model name.
 
-If you specify an image name argument when pushing (like `cog push your-username/custom-model-name`), the argument will be used and the value of `image` in cog.yaml will be ignored.
+If you specify a target when pushing (like `cog push your-username/custom-model-name`), the target will be used and the value of `image` in cog.yaml will be ignored. See [Push to a registry](deploy.md#push-to-a-registry) for target precedence, tagging, and machine-readable output.
+
+## `model`
+
+The repository where Cog publishes an OCI bundle containing the model image and any managed weights. `model` must be a bare repository without a tag or digest, and it can't be set together with `image`.
+
+For example:
+
+```yaml
+model: "r8.im/your-username/your-model"
+```
+
+`cog push` generates a timestamp tag unless you select another tag with a positional target or a [`COG_MODEL*` environment variable](environment.md#model-reference-and-registry-variables). A positional target changes the destination but still publishes a bundle.
+
+Managed weights require `model`. Run `cog weights import` before pushing so the target repository contains the required weight manifests. See [Push to a registry](deploy.md#push-to-a-registry) for the repository requirement and output behavior.
 
 ## `run`
 
