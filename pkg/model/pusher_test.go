@@ -31,6 +31,10 @@ var (
 	testModelRef    = testRepo + ":" + testModelTag
 )
 
+type commandWithoutPushResult struct {
+	command.Command
+}
+
 // Valid 64-char hex digests for use in test fixtures. v1.NewHash
 // rejects non-hex strings, so the verifyWeights digest-equality check
 // requires real-looking digests.
@@ -149,38 +153,52 @@ func TestBundlePusher_Push(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("falls back to tag lookup when upload digest is unavailable", func(t *testing.T) {
-		docker := &mockDocker{
-			pushFunc:   func(ctx context.Context, ref string) error { return nil },
-			pushResult: &command.PushResult{},
-		}
-
-		imageHash, err := v1.NewHash(testDockerPushDigest)
-		require.NoError(t, err)
-		imgDesc := v1.Descriptor{
-			MediaType: types.OCIManifestSchema1,
-			Size:      1234,
-			Digest:    imageHash,
-		}
-
-		reg := &mockRegistry{
-			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
-				require.Equal(t, testCogImageRef, ref)
-				return imgDesc, nil
+	for _, test := range []struct {
+		name   string
+		docker command.Command
+	}{
+		{
+			name: "empty upload digest",
+			docker: &mockDocker{
+				pushFunc:   func(ctx context.Context, ref string) error { return nil },
+				pushResult: &command.PushResult{},
 			},
-			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
-				idxManifest, err := idx.IndexManifest()
-				require.NoError(t, err)
-				require.Equal(t, imgDesc.Digest, idxManifest.Manifests[0].Digest)
-				return nil
-			},
-		}
+		},
+		{
+			name: "command without push result support",
+			docker: commandWithoutPushResult{Command: &mockDocker{
+				pushFunc: func(ctx context.Context, ref string) error { return nil },
+			}},
+		},
+	} {
+		t.Run("falls back to tag lookup for "+test.name, func(t *testing.T) {
+			imageHash, err := v1.NewHash(testDockerPushDigest)
+			require.NoError(t, err)
+			imgDesc := v1.Descriptor{
+				MediaType: types.OCIManifestSchema1,
+				Size:      1234,
+				Digest:    imageHash,
+			}
 
-		pushed, err := NewBundlePusher(docker, reg).Push(context.Background(), testBundleModel(), PushOptions{})
+			reg := &mockRegistry{
+				getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+					require.Equal(t, testCogImageRef, ref)
+					return imgDesc, nil
+				},
+				pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
+					idxManifest, err := idx.IndexManifest()
+					require.NoError(t, err)
+					require.Equal(t, imgDesc.Digest, idxManifest.Manifests[0].Digest)
+					return nil
+				},
+			}
 
-		require.NoError(t, err)
-		require.Equal(t, testRepo+"@"+testDockerPushDigest, pushed.Image.Reference)
-	})
+			pushed, err := NewBundlePusher(test.docker, reg).Push(context.Background(), testBundleModel(), PushOptions{})
+
+			require.NoError(t, err)
+			require.Equal(t, testRepo+"@"+testDockerPushDigest, pushed.Image.Reference)
+		})
+	}
 
 	t.Run("requires upload digest when requested", func(t *testing.T) {
 		docker := &mockDocker{
@@ -189,11 +207,11 @@ func TestBundlePusher_Push(t *testing.T) {
 		}
 		reg := &mockRegistry{
 			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
-				t.Fatal("descriptor lookup must not fall back to a mutable tag when a digest is required")
+				require.FailNow(t, "descriptor lookup must not fall back to a mutable tag when a digest is required")
 				return v1.Descriptor{}, nil
 			},
 			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
-				t.Fatal("index must not be pushed without an upload digest")
+				require.FailNow(t, "index must not be pushed without an upload digest")
 				return nil
 			},
 		}
@@ -463,7 +481,7 @@ func TestBundlePusher_Push(t *testing.T) {
 				return v1.Descriptor{Digest: mismatchedDigest}, nil
 			},
 			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
-				t.Fatal("index must not be pushed with a mismatched image descriptor")
+				require.FailNow(t, "index must not be pushed with a mismatched image descriptor")
 				return nil
 			},
 		}
@@ -648,7 +666,7 @@ func TestResolver_Push(t *testing.T) {
 		}
 		reg := &mockRegistry{
 			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
-				t.Fatalf("image result must use the digest reported by push, not HEAD mutable tag %q", ref)
+				require.Failf(t, "unexpected descriptor lookup", "image result must use the digest reported by push, not HEAD mutable tag %q", ref)
 				return v1.Descriptor{}, nil
 			},
 		}
