@@ -96,8 +96,8 @@ document. JSON mode suppresses the human-readable reference tree.
 Any build, push, digest-resolution, provider, or serialization failure exits
 nonzero without writing a JSON document to stdout. JSON mode requires Cog to
 resolve every published reference to an immutable digest, so it can report
-failure even when an image was pushed successfully. Non-JSON pushes keep their
-existing fallback when a registry can't resolve the pushed image's digest.
+failure even when an image was pushed successfully. Non-JSON image pushes keep
+their existing fallback when a registry can't resolve the pushed image's digest.
 
 ## Run the model
 

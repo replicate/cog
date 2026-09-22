@@ -149,6 +149,64 @@ func TestBundlePusher_Push(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("falls back to tag lookup when upload digest is unavailable", func(t *testing.T) {
+		docker := &mockDocker{
+			pushFunc:   func(ctx context.Context, ref string) error { return nil },
+			pushResult: &command.PushResult{},
+		}
+
+		imageHash, err := v1.NewHash(testDockerPushDigest)
+		require.NoError(t, err)
+		imgDesc := v1.Descriptor{
+			MediaType: types.OCIManifestSchema1,
+			Size:      1234,
+			Digest:    imageHash,
+		}
+
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				require.Equal(t, testCogImageRef, ref)
+				return imgDesc, nil
+			},
+			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
+				idxManifest, err := idx.IndexManifest()
+				require.NoError(t, err)
+				require.Equal(t, imgDesc.Digest, idxManifest.Manifests[0].Digest)
+				return nil
+			},
+		}
+
+		pushed, err := NewBundlePusher(docker, reg).Push(context.Background(), testBundleModel(), PushOptions{})
+
+		require.NoError(t, err)
+		require.Equal(t, testRepo+"@"+testDockerPushDigest, pushed.Image.Reference)
+	})
+
+	t.Run("requires upload digest when requested", func(t *testing.T) {
+		docker := &mockDocker{
+			pushFunc:   func(ctx context.Context, ref string) error { return nil },
+			pushResult: &command.PushResult{},
+		}
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				t.Fatal("descriptor lookup must not fall back to a mutable tag when a digest is required")
+				return v1.Descriptor{}, nil
+			},
+			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
+				t.Fatal("index must not be pushed without an upload digest")
+				return nil
+			},
+		}
+
+		_, err := NewBundlePusher(docker, reg).Push(
+			context.Background(),
+			testBundleModel(),
+			PushOptions{RequireDigest: true},
+		)
+
+		require.ErrorContains(t, err, "upload did not report the manifest digest")
+	})
+
 	t.Run("full push flow succeeds with single weight", func(t *testing.T) {
 		w := Weight{
 			Name:      "model-v1",

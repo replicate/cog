@@ -19,9 +19,8 @@ type PushOptions struct {
 	// Default: linux/amd64
 	Platform *Platform
 
-	// RequireDigest makes a post-push digest lookup failure fatal.
-	// Bundle pushes always require digests; this controls the legacy
-	// image fallback for callers that need immutable output.
+	// RequireDigest rejects tag-based fallback when an image push doesn't
+	// report its manifest digest.
 	RequireDigest bool
 
 	// ImageProgressFn is an optional callback for reporting push progress.
@@ -150,20 +149,30 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) (*M
 	if err != nil {
 		return nil, fmt.Errorf("push image %q: %w", imageRef, err)
 	}
-	if imageResult.Digest == "" {
-		return nil, fmt.Errorf("push image %q: the upload did not report the manifest digest", imageRef)
-	}
-	if _, err := v1.NewHash(imageResult.Digest); err != nil {
-		return nil, fmt.Errorf("push image %q: the upload reported invalid manifest digest %q: %w", imageRef, imageResult.Digest, err)
-	}
+	var imgDesc v1.Descriptor
+	switch {
+	case imageResult.Digest != "":
+		if _, err := v1.NewHash(imageResult.Digest); err != nil {
+			return nil, fmt.Errorf("push image %q: the upload reported invalid manifest digest %q: %w", imageRef, imageResult.Digest, err)
+		}
 
-	imageDigestRef := repo + "@" + imageResult.Digest
-	imgDesc, err := p.registry.GetDescriptor(ctx, imageDigestRef)
-	if err != nil {
-		return nil, fmt.Errorf("get uploaded image descriptor %q: %w", imageDigestRef, err)
-	}
-	if imgDesc.Digest.String() != imageResult.Digest {
-		return nil, fmt.Errorf("registry returned digest %s for uploaded image %s", imgDesc.Digest.String(), imageResult.Digest)
+		imageDigestRef := repo + "@" + imageResult.Digest
+		imgDesc, err = p.registry.GetDescriptor(ctx, imageDigestRef)
+		if err != nil {
+			return nil, fmt.Errorf("get uploaded image descriptor %q: %w", imageDigestRef, err)
+		}
+		if imgDesc.Digest.String() != imageResult.Digest {
+			return nil, fmt.Errorf("registry returned digest %s for uploaded image %s", imgDesc.Digest.String(), imageResult.Digest)
+		}
+	case opts.RequireDigest:
+		return nil, fmt.Errorf("push image %q: the upload did not report the manifest digest", imageRef)
+	default:
+		// Older or alternate Docker commands may not expose the upload digest.
+		// Preserve the previous non-JSON lookup by tag.
+		imgDesc, err = p.registry.GetDescriptor(ctx, imageRef)
+		if err != nil {
+			return nil, fmt.Errorf("get image descriptor %q: %w", imageRef, err)
+		}
 	}
 
 	platform := opts.Platform
