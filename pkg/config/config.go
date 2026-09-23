@@ -76,8 +76,16 @@ type Concurrency struct {
 }
 
 type Observability struct {
-	Config string   `json:"config,omitempty" yaml:"config,omitempty"`
-	Traces *Tracing `json:"traces,omitempty" yaml:"traces,omitempty"`
+	Config  string   `json:"config,omitempty" yaml:"config,omitempty"`
+	Traces  *Tracing `json:"traces,omitempty" yaml:"traces,omitempty"`
+	Metrics *Metrics `json:"metrics,omitempty" yaml:"metrics,omitempty"`
+}
+
+// AnyTelemetryEnabled reports whether this image opts into an OpenTelemetry signal.
+func (o *Observability) AnyTelemetryEnabled() bool {
+	return o != nil &&
+		((o.Traces != nil && o.Traces.Enabled) ||
+			(o.Metrics != nil && o.Metrics.Enabled))
 }
 
 type Tracing struct {
@@ -86,6 +94,10 @@ type Tracing struct {
 	SamplerArg        string `json:"sampler_arg,omitempty" yaml:"sampler_arg,omitempty"`
 	TraceHeader       string `json:"trace_header,omitempty" yaml:"trace_header,omitempty"`
 	TraceHeaderFormat string `json:"trace_header_format,omitempty" yaml:"trace_header_format,omitempty"`
+}
+
+type Metrics struct {
+	Enabled bool `json:"enabled" yaml:"enabled"`
 }
 
 // WeightSourceConfig describes where to import weights from.

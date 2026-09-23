@@ -22,7 +22,7 @@ class CustomProvider(TracerProvider):
     pass
 
 
-def create_tracer_provider() -> TracerProvider:
+def create_tracer_provider(resource) -> TracerProvider:
     return CustomProvider(shutdown_on_exit=False)
 
 

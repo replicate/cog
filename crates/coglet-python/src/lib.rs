@@ -419,6 +419,8 @@ fn serve_impl(
         if let Some(runtime) = trace_runtime.as_ref() {
             runtime.shutdown();
         }
+        #[cfg(feature = "tracing")]
+        coglet_core::runtime_metrics::shutdown();
         return result;
     };
 
@@ -437,6 +439,8 @@ fn serve_impl(
     if let Some(runtime) = trace_runtime.as_ref() {
         runtime.shutdown();
     }
+    #[cfg(feature = "tracing")]
+    coglet_core::runtime_metrics::shutdown();
     result
 }
 
@@ -491,7 +495,7 @@ fn serve_subprocess(
 
             let setup_service = Arc::clone(&service_clone);
             let setup_span = coglet_core::cog_span!(info_span, "cog.setup");
-            tokio::spawn(
+            let setup_task = tokio::spawn(
                 async move {
                     info!("Spawning worker subprocess");
                     let spawn_start = std::time::Instant::now();
@@ -503,6 +507,17 @@ fn serve_subprocess(
                             debug!(
                                 elapsed_ms = spawn_elapsed.as_millis() as u64,
                                 "Worker ready, configuring service"
+                            );
+
+                            #[cfg(feature = "tracing")]
+                            coglet_core::runtime_metrics::install(
+                                ready.runtime_metrics.clone(),
+                                Some(Arc::clone(&ready.pool)),
+                            );
+                            #[cfg(feature = "tracing")]
+                            coglet_core::runtime_metrics::record_setup_duration(
+                                "succeeded",
+                                spawn_elapsed,
                             );
 
                             let num_slots = ready.handle.slot_ids().len();
@@ -549,6 +564,16 @@ fn serve_subprocess(
                                 "Worker initialization failed"
                             );
                             debug!("Transitioning health to SetupFailed");
+                            #[cfg(feature = "tracing")]
+                            coglet_core::runtime_metrics::install(
+                                e.runtime_metrics_config().unwrap_or_default(),
+                                None,
+                            );
+                            #[cfg(feature = "tracing")]
+                            coglet_core::runtime_metrics::record_setup_duration(
+                                "failed",
+                                spawn_elapsed,
+                            );
                             setup_service.set_health(Health::SetupFailed).await;
                             setup_service
                                 .set_setup_result(setup_result.failed(e.to_string()))
@@ -559,9 +584,18 @@ fn serve_subprocess(
                 .instrument(setup_span),
             );
 
-            http_serve(config, service_clone)
+            let server_result = http_serve(config, service_clone)
                 .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()));
+            if !setup_task.is_finished() {
+                setup_task.abort();
+            }
+            if let Err(error) = setup_task.await
+                && !error.is_cancelled()
+            {
+                tracing::error!(%error, "Setup task failed");
+            }
+            server_result
         })
     })
 }
@@ -665,6 +699,7 @@ fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Static metadata
     m.add("__version__", env!("COGLET_PEP440_VERSION"))?;
     m.add("__build__", BuildInfo::new())?;
+    m.add("_supports_observability_metrics", true)?;
 
     // Frozen server object
     m.add("server", CogletServer {})?;

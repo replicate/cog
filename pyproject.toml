@@ -28,12 +28,13 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-tracing = [
+observability = [
   "opentelemetry-api==1.44.0",
   "opentelemetry-sdk==1.44.0",
   "opentelemetry-exporter-otlp-proto-http==1.44.0",
   "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
 ]
+tracing = ["cog[observability]"]
 
 [dependency-groups]
 dev = [

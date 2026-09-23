@@ -1,0 +1,37 @@
+# A metrics-only image loads a custom MeterProvider before model import.
+cog run -e OTEL_METRICS_EXPORTER=none -i value=hello
+stdout 'hello from CustomMeterProvider'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+run: "predict.py:Runner"
+observability:
+  config: telemetry.py
+  metrics:
+    enabled: true
+
+-- telemetry.py --
+from opentelemetry.sdk.metrics import MeterProvider
+
+
+class CustomMeterProvider(MeterProvider):
+    pass
+
+
+def create_meter_provider(resource) -> MeterProvider:
+    return CustomMeterProvider(resource=resource, shutdown_on_exit=False)
+
+
+-- predict.py --
+import os
+
+from opentelemetry import metrics
+
+from cog import BaseRunner
+
+class Runner(BaseRunner):
+    def run(self, value: str) -> str:
+        provider_name = type(metrics.get_meter_provider()).__name__
+        metrics.get_meter(__name__).create_counter("model.requests").add(1)
+        return f"{value} from {provider_name}"

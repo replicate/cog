@@ -1530,9 +1530,9 @@ func TestObservabilityConfigUsesStagedPath(t *testing.T) {
 	require.Contains(t, gen.cogEnvVars(), `ENV COG_OBSERVABILITY_CONFIG="/.cog/telemetry.py"`)
 }
 
-func TestPythonTracingDependenciesAreOptIn(t *testing.T) {
+func TestPythonObservabilityDependenciesAreOptIn(t *testing.T) {
 	disabled := &StandardGenerator{Config: &config.Config{Build: &config.Build{}}}
-	require.Empty(t, disabled.installPythonTracingDependencies())
+	require.Empty(t, disabled.installPythonObservabilityDependencies())
 
 	enabled := &StandardGenerator{Config: &config.Config{
 		Build: &config.Build{},
@@ -1540,8 +1540,18 @@ func TestPythonTracingDependenciesAreOptIn(t *testing.T) {
 			Traces: &config.Tracing{Enabled: true},
 		},
 	}}
-	require.Contains(t, enabled.installPythonTracingDependencies(), PythonTracingRequirements)
+	require.Contains(t, enabled.installPythonObservabilityDependencies(), PythonObservabilityRequirements)
+	require.Contains(t, enabled.installPythonObservabilityDependencies(), PythonObservabilityCheck)
+	require.Contains(t, enabled.installPythonObservabilityDependencies(), PythonObservabilityCheckError)
 
 	enabled.strip = true
-	require.Contains(t, enabled.installPythonTracingDependencies(), StripDebugSymbolsCommand)
+	require.Contains(t, enabled.installPythonObservabilityDependencies(), StripDebugSymbolsCommand)
+
+	metricsOnly := &StandardGenerator{Config: &config.Config{
+		Build: &config.Build{},
+		Observability: &config.Observability{
+			Metrics: &config.Metrics{Enabled: true},
+		},
+	}}
+	require.Contains(t, metricsOnly.installPythonObservabilityDependencies(), PythonObservabilityRequirements)
 }
