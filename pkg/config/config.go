@@ -522,13 +522,20 @@ func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage s
 	if isLocalPackageArtifactRequirement(pkg) {
 		return pkg, []string{}, []string{}, nil
 	}
-	name, version, findLinksList, extraIndexURLs, err := requirements.SplitPinnedPythonRequirement(pkg)
+	pkgWithoutMarker, marker := requirements.SplitMarker(pkg)
+	name, version, findLinksList, extraIndexURLs, err := requirements.SplitPinnedPythonRequirement(pkgWithoutMarker)
 	if err != nil {
 		// It's not pinned, so just return the line verbatim
 		return pkg, []string{}, []string{}, nil
 	}
+	// Keep the environment marker so a package pinned for another platform or Python
+	// version (e.g. `pywin32==306 ; sys_platform == "win32"`) is not installed everywhere.
+	markerSuffix := ""
+	if marker != "" {
+		markerSuffix = " ; " + marker
+	}
 	if len(extraIndexURLs) > 0 {
-		return name + "==" + version, findLinksList, extraIndexURLs, nil
+		return name + "==" + version + markerSuffix, findLinksList, extraIndexURLs, nil
 	}
 
 	extraIndexURL := ""
@@ -577,7 +584,7 @@ func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage s
 	if findLinks != "" {
 		findLinksList = []string{findLinks}
 	}
-	return pkgWithVersion, findLinksList, extraIndexURLs, nil
+	return pkgWithVersion + markerSuffix, findLinksList, extraIndexURLs, nil
 }
 
 func validateCudaVersion(cudaVersion string) error {
