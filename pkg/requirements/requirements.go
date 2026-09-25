@@ -100,7 +100,8 @@ func scanLinesWithContinuations(data []byte, atEOF bool) (advance int, token []b
 // SplitPinnedPythonRequirement returns the name, version, findLinks, and extraIndexURLs from a requirements.txt line
 // in the form name==version [--find-links=<findLink>] [-f <findLink>] [--extra-index-url=<extraIndexURL>]
 func SplitPinnedPythonRequirement(requirement string) (name string, version string, findLinks []string, extraIndexURLs []string, err error) {
-	pinnedPackageRe := regexp.MustCompile(`(?:([a-zA-Z0-9\-_]+)==([^ ]+)|--find-links=([^\s]+)|-f\s+([^\s]+)|--extra-index-url=([^\s]+))`)
+	// Package names may contain dots (e.g. ruamel.yaml, zope.interface), so "." is part of the name.
+	pinnedPackageRe := regexp.MustCompile(`(?:([a-zA-Z0-9\-_.]+)==([^ ]+)|--find-links=([^\s]+)|-f\s+([^\s]+)|--extra-index-url=([^\s]+))`)
 
 	matches := pinnedPackageRe.FindAllStringSubmatch(requirement, -1)
 	if matches == nil {
