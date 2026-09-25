@@ -87,3 +87,45 @@ func TestParseDefaultValueRejectsUnresolvableExpressions(t *testing.T) {
 	_, ok := parseDefaultValue(node, source)
 	require.False(t, ok)
 }
+
+func TestParseStringLiteralDecodesPythonStrings(t *testing.T) {
+	tests := []struct {
+		name string
+		expr string
+		want string
+	}{
+		{name: "plain", expr: `"hello"`, want: "hello"},
+		{name: "newline escape", expr: `"line1\nline2"`, want: "line1\nline2"},
+		{name: "escaped backslash", expr: `"^\\d+$"`, want: `^\d+$`},
+		{name: "escaped quote", expr: `'it\'s'`, want: "it's"},
+		{name: "unicode escape", expr: `"café"`, want: "café"},
+		{name: "unknown escape kept", expr: `"a\d"`, want: `a\d`},
+		{name: "raw string", expr: `r"^\d+$"`, want: `^\d+$`},
+		{name: "raw triple-quoted string", expr: `r"""^\d+$"""`, want: `^\d+$`},
+		{name: "unicode prefix", expr: `u"hello"`, want: "hello"},
+		{name: "implicit concatenation", expr: "(\"First part. \"\n    \"Second part.\")", want: "First part. Second part."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source, node := requireAssignmentRight(t, tt.expr)
+			if node.Type() == "parenthesized_expression" {
+				node = node.NamedChild(0)
+			}
+			value, ok := parseDefaultValue(node, source)
+			require.True(t, ok)
+			require.Equal(t, schema.DefaultString, value.Kind)
+			require.Equal(t, tt.want, value.Str)
+		})
+	}
+}
+
+func TestParseStringLiteralRejectsBytesAndFStrings(t *testing.T) {
+	for _, expr := range []string{`b"data"`, `f"{name}"`} {
+		t.Run(expr, func(t *testing.T) {
+			source, node := requireAssignmentRight(t, expr)
+			_, ok := parseStringLiteral(node, source)
+			require.False(t, ok)
+		})
+	}
+}
