@@ -19,6 +19,10 @@ type PushOptions struct {
 	// Default: linux/amd64
 	Platform *Platform
 
+	// RequireDigest rejects tag-based fallback when an image push doesn't
+	// report its manifest digest.
+	RequireDigest bool
+
 	// ImageProgressFn is an optional callback for reporting push progress.
 	// It receives both phase transitions (Phase set, byte fields zero) and
 	// per-layer byte progress (Phase empty, Complete/Total set).
@@ -66,7 +70,8 @@ func NewBundlePusher(docker command.Command, reg registry.Client) *BundlePusher 
 //     the image manifest lands at a stable, namespaced tag in the
 //     registry, independent of whatever tag the model index will
 //     carry. Push from that tag.
-//  3. HEAD the image to capture its registry-side digest.
+//  3. Capture the manifest digest reported by the upload and HEAD that
+//     digest-pinned reference to obtain the descriptor without racing the tag.
 //  4. Build and push the OCI index at the model ref; capture its
 //     descriptor locally from the index bytes (content-addressed —
 //     no second registry round-trip needed).
@@ -140,13 +145,34 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) (*M
 	if opts.OnFallback != nil {
 		imagePushOpts = append(imagePushOpts, WithOnFallback(opts.OnFallback))
 	}
-	if err := p.imagePusher.Push(ctx, pushedImage, imagePushOpts...); err != nil {
+	imageResult, err := p.imagePusher.PushWithResult(ctx, pushedImage, imagePushOpts...)
+	if err != nil {
 		return nil, fmt.Errorf("push image %q: %w", imageRef, err)
 	}
+	var imgDesc v1.Descriptor
+	switch {
+	case imageResult.Digest != "":
+		if _, err := v1.NewHash(imageResult.Digest); err != nil {
+			return nil, fmt.Errorf("push image %q: the upload reported invalid manifest digest %q: %w", imageRef, imageResult.Digest, err)
+		}
 
-	imgDesc, err := p.registry.GetDescriptor(ctx, imageRef)
-	if err != nil {
-		return nil, fmt.Errorf("get image descriptor: %w", err)
+		imageDigestRef := repo + "@" + imageResult.Digest
+		imgDesc, err = p.registry.GetDescriptor(ctx, imageDigestRef)
+		if err != nil {
+			return nil, fmt.Errorf("get uploaded image descriptor %q: %w", imageDigestRef, err)
+		}
+		if imgDesc.Digest.String() != imageResult.Digest {
+			return nil, fmt.Errorf("registry returned digest %s for uploaded image %s", imgDesc.Digest.String(), imageResult.Digest)
+		}
+	case opts.RequireDigest:
+		return nil, fmt.Errorf("push image %q: the upload did not report the manifest digest", imageRef)
+	default:
+		// Older or alternate Docker commands may not expose the upload digest.
+		// Preserve the previous non-JSON lookup by tag.
+		imgDesc, err = p.registry.GetDescriptor(ctx, imageRef)
+		if err != nil {
+			return nil, fmt.Errorf("get image descriptor %q: %w", imageRef, err)
+		}
 	}
 
 	platform := opts.Platform
@@ -251,8 +277,8 @@ func (p *BundlePusher) verifyWeights(
 			desc, err := p.registry.GetDescriptor(ctx, ref)
 			if err != nil {
 				return fmt.Errorf(
-					"weight %q not found in registry (%s); run 'cog weights import' to push weights first: %w",
-					w.Name, ref, err,
+					"weight %q from weights.lock was not found in target repository %q (%s); run 'cog weights import' for that repository before pushing: %w",
+					w.Name, repo, ref, err,
 				)
 			}
 			if desc.Digest.String() != w.Digest {

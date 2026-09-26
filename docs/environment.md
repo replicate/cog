@@ -137,7 +137,7 @@ Overrides the full model reference used by commands that need a model destinatio
 
 The value is parsed as a complete model reference (`registry/repo`, `registry/repo:tag`, or `registry/repo@digest`). If no tag is supplied, Cog generates a timestamp tag.
 
-When `COG_MODEL` is set, it takes precedence over `COG_MODEL_REGISTRY`, `COG_MODEL_REPO`, and `COG_MODEL_TAG`.
+When `COG_MODEL` is set, it takes precedence over `COG_MODEL_REGISTRY`, `COG_MODEL_REPO`, and `COG_MODEL_TAG`. A positional target passed to `cog push` takes precedence over all four variables. Although commands that inspect existing artifacts accept a digest, `cog push` rejects digest-pinned destinations because a push requires a tag.
 
 ```console
 $ COG_MODEL=r8.im/acme/my-model:v1 cog push
