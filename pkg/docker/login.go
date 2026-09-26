@@ -45,7 +45,8 @@ func saveAuthToCredentialsStore(ctx context.Context, credsStore string, registry
 	}
 	cmd := exec.CommandContext(ctx, binary, "store") //nolint:gosec // G702: binary is from Docker config, not user input
 	cmd.Env = os.Environ()
-	cmd.Stderr = os.Stderr
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("Failed to connect stdin to %s: %w", binary, err)
@@ -61,6 +62,13 @@ func saveAuthToCredentialsStore(ctx context.Context, credsStore string, registry
 		return fmt.Errorf("Failed to close stdin to %s: %w", binary, err)
 	}
 	if err := cmd.Wait(); err != nil {
+		output := strings.TrimSpace(stderr.String())
+		if strings.Contains(strings.ToLower(output), "pass not initialized") {
+			return fmt.Errorf("failed to store Docker credentials because `pass` is not initialized; create a GPG key with `gpg --generate-key`, initialize the password store with `pass init <gpg-id>`, then run `cog login` again")
+		}
+		if output != "" {
+			return fmt.Errorf("Failed to run %s: %s", binary, output)
+		}
 		return fmt.Errorf("Failed to run %s: %w", binary, err)
 	}
 	return nil
