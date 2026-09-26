@@ -311,7 +311,10 @@ func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mode
 		return SchemaArrayOf(SchemaAnyType()), nil
 	}
 
-	prim, ok := PrimitiveFromName(name)
+	prim, ok, err := resolvePrimitiveType(ann.Name, ctx, false)
+	if err != nil {
+		return SchemaType{}, err
+	}
 	if !ok {
 		if qualified && qualifiedEntry.Module != "" {
 			return SchemaType{}, errUnresolvableImportedType(name, qualifiedEntry.Module)
@@ -319,6 +322,9 @@ func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mode
 		// Check if this name was imported from an external package
 		if qualifiedEntry.Module != "" {
 			return SchemaType{}, errUnresolvableImportedType(name, qualifiedEntry.Module)
+		}
+		if entry, imported := ctx.Names.Get(ann.Name); imported {
+			return SchemaType{}, errUnresolvableImportedType(ann.Name, entry.Module)
 		}
 		if entry, imported := ctx.Names.Get(name); imported {
 			return SchemaType{}, errUnresolvableImportedType(name, entry.Module)
