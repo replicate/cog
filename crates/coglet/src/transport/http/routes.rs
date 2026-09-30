@@ -26,7 +26,7 @@ use crate::bridge::protocol::TraceCarrier;
 #[cfg(test)]
 use crate::health::Health;
 use crate::health::{HealthResponse, SetupResult};
-use crate::prediction::SharedPredictionStreamEvent;
+use crate::prediction::{PredictionOperation, SharedPredictionStreamEvent};
 use crate::predictor::PredictionError;
 use crate::service::{
     CreatePredictionError, HealthSnapshot, PredictionService, PredictionStreamSubscription,
@@ -430,6 +430,11 @@ async fn create_prediction_with_id(
     trace_context: TraceContext,
     is_training: bool,
 ) -> Response {
+    let operation = if is_training {
+        PredictionOperation::Train
+    } else {
+        PredictionOperation::Predict
+    };
     let prediction_span = if is_training {
         crate::cog_span!(
             info_span,
@@ -491,6 +496,8 @@ async fn create_prediction_with_id(
         );
     }
     if let Err(errors) = validation_result {
+        #[cfg(feature = "tracing")]
+        crate::runtime_metrics::record_prediction_rejected(operation.as_str(), "invalid_input");
         prediction_span.record("cog.prediction.status", "failed");
         prediction_span.record("error.type", "validation_error");
         prediction_span.record("otel.status_code", "ERROR");
@@ -542,16 +549,19 @@ async fn create_prediction_with_id(
 
     // Submit prediction: creates Prediction, acquires slot, registers in service
     let (handle, unregistered_slot) = match service
-        .submit_prediction(
+        .submit_prediction_with_operation(
             prediction_id.clone(),
             input.clone(),
             webhook_sender,
             response_mode == PredictionResponseMode::AsyncSse,
+            operation,
         )
         .await
     {
         Ok(r) => r,
         Err(CreatePredictionError::NotReady) => {
+            #[cfg(feature = "tracing")]
+            crate::runtime_metrics::record_prediction_rejected(operation.as_str(), "not_ready");
             prediction_span.record("cog.prediction.status", "failed");
             prediction_span.record("error.type", "not_ready");
             prediction_span.record("otel.status_code", "ERROR");
@@ -566,6 +576,8 @@ async fn create_prediction_with_id(
                 .into_response();
         }
         Err(CreatePredictionError::AtCapacity) => {
+            #[cfg(feature = "tracing")]
+            crate::runtime_metrics::record_prediction_rejected(operation.as_str(), "at_capacity");
             prediction_span.record("cog.prediction.status", "failed");
             prediction_span.record("error.type", "at_capacity");
             prediction_span.record("otel.status_code", "ERROR");
@@ -1242,6 +1254,8 @@ mod tests {
                 pred.set_succeeded(PredictionOutput::Single(serde_json::json!("mock output")));
             }
         }
+
+        async fn unregister_prediction(&self, _slot_id: SlotId) {}
 
         async fn cancel_by_prediction_id(
             &self,

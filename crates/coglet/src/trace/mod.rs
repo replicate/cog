@@ -1,3 +1,4 @@
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -6,10 +7,11 @@ use std::collections::HashMap;
 use axum::http::HeaderMap;
 use opentelemetry::propagation::{Extractor, Injector, TextMapPropagator as _};
 use opentelemetry::trace::{TraceContextExt as _, TracerProvider as _};
-use opentelemetry::{Context, KeyValue};
+use opentelemetry::{Context, Key, KeyValue, Value};
 use opentelemetry_otlp::{Protocol, SpanExporter, WithExportConfig as _};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::resource::{EnvResourceDetector, TelemetryResourceDetector};
 use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider};
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
@@ -26,12 +28,87 @@ pub enum ProcessRole {
 }
 
 impl ProcessRole {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Parent => "parent",
             Self::Worker => "worker",
         }
     }
+}
+
+pub fn base_resource(role: ProcessRole) -> Resource {
+    static PARENT_RESOURCE: OnceLock<Resource> = OnceLock::new();
+    static WORKER_RESOURCE: OnceLock<Resource> = OnceLock::new();
+
+    let resource = match role {
+        ProcessRole::Parent => PARENT_RESOURCE.get_or_init(|| new_base_resource(role)),
+        ProcessRole::Worker => WORKER_RESOURCE.get_or_init(|| new_base_resource(role)),
+    };
+    resource.clone()
+}
+
+pub fn process_instance_id(role: ProcessRole) -> &'static str {
+    static PARENT_INSTANCE_ID: OnceLock<String> = OnceLock::new();
+    static WORKER_INSTANCE_ID: OnceLock<String> = OnceLock::new();
+
+    match role {
+        ProcessRole::Parent => PARENT_INSTANCE_ID
+            .get_or_init(|| uuid::Uuid::new_v4().to_string())
+            .as_str(),
+        ProcessRole::Worker => WORKER_INSTANCE_ID
+            .get_or_init(|| {
+                std::env::var("COG_OBSERVABILITY_INSTANCE_ID")
+                    .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string())
+            })
+            .as_str(),
+    }
+}
+
+fn new_base_resource(role: ProcessRole) -> Resource {
+    build_base_resource(
+        role,
+        Resource::builder_empty()
+            .with_detectors(&[
+                Box::new(TelemetryResourceDetector),
+                Box::new(EnvResourceDetector::new()),
+            ])
+            .build(),
+        std::env::var("OTEL_SERVICE_NAME")
+            .ok()
+            .filter(|value| !value.is_empty()),
+    )
+}
+
+fn build_base_resource(
+    role: ProcessRole,
+    detected: Resource,
+    service_name: Option<String>,
+) -> Resource {
+    let mut attributes = HashMap::<Key, Value>::from([
+        (Key::new("service.name"), Value::from("cog")),
+        (
+            Key::new("service.version"),
+            Value::from(crate::COGLET_VERSION),
+        ),
+        (
+            Key::new("service.instance.id"),
+            Value::from(process_instance_id(role).to_string()),
+        ),
+    ]);
+    for (key, value) in detected.iter() {
+        attributes.insert(key.clone(), value.clone());
+    }
+    if let Some(service_name) = service_name {
+        attributes.insert(Key::new("service.name"), Value::from(service_name));
+    }
+    attributes.insert(Key::new("cog.process.role"), Value::from(role.as_str()));
+    Resource::builder_empty()
+        .with_attributes(
+            attributes
+                .into_iter()
+                .map(|(key, value)| KeyValue::new(key, value)),
+        )
+        .build()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -57,7 +134,6 @@ pub struct TracingConfig {
     protocol: OtlpProtocol,
     sampler: SamplerKind,
     sampler_arg: Option<f64>,
-    service_name: String,
 }
 
 impl TracingConfig {
@@ -127,7 +203,6 @@ impl TracingConfig {
             protocol,
             sampler,
             sampler_arg,
-            service_name: std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "cog".to_string()),
         }))
     }
 
@@ -168,13 +243,7 @@ impl TracingRuntime {
         };
 
         let exporter = build_exporter(&config)?;
-        let resource = Resource::builder()
-            .with_service_name(config.service_name.clone())
-            .with_attributes([
-                KeyValue::new("service.version", crate::COGLET_VERSION),
-                KeyValue::new("cog.process.role", role.as_str()),
-            ])
-            .build();
+        let resource = base_resource(role);
         let provider = SdkTracerProvider::builder()
             .with_resource(resource)
             .with_sampler(config.sdk_sampler())
@@ -185,7 +254,6 @@ impl TracingRuntime {
         tracing::info!(
             target: "coglet::trace",
             protocol = ?config.protocol,
-            service_name = %config.service_name,
             role = role.as_str(),
             "OpenTelemetry tracing initialized"
         );
@@ -488,7 +556,6 @@ mod tests {
             protocol: OtlpProtocol::HttpProtobuf,
             sampler: SamplerKind::TraceIdRatio,
             sampler_arg: None,
-            service_name: String::new(),
         };
 
         match config.sdk_sampler() {
@@ -541,6 +608,57 @@ mod tests {
         assert_eq!(
             caller_attributes(&context),
             vec![("caller.model.name".to_string(), "example".to_string())]
+        );
+    }
+
+    #[test]
+    fn process_instance_id_is_stable_per_role() {
+        assert_eq!(
+            process_instance_id(ProcessRole::Parent),
+            process_instance_id(ProcessRole::Parent)
+        );
+        assert_eq!(
+            process_instance_id(ProcessRole::Worker),
+            process_instance_id(ProcessRole::Worker)
+        );
+        assert_ne!(
+            process_instance_id(ProcessRole::Parent),
+            process_instance_id(ProcessRole::Worker)
+        );
+    }
+
+    #[test]
+    fn resource_attributes_override_cog_defaults() {
+        let detected = Resource::builder_empty()
+            .with_attributes([
+                KeyValue::new("service.name", "resource-service"),
+                KeyValue::new("service.version", "resource-version"),
+                KeyValue::new("service.instance.id", "resource-instance"),
+            ])
+            .build();
+
+        let resource = build_base_resource(ProcessRole::Parent, detected, None);
+        assert_eq!(
+            resource.get(&Key::new("service.name")),
+            Some(Value::from("resource-service"))
+        );
+        assert_eq!(
+            resource.get(&Key::new("service.version")),
+            Some(Value::from("resource-version"))
+        );
+        assert_eq!(
+            resource.get(&Key::new("service.instance.id")),
+            Some(Value::from("resource-instance"))
+        );
+
+        let resource = build_base_resource(
+            ProcessRole::Parent,
+            resource,
+            Some("service-name-override".to_string()),
+        );
+        assert_eq!(
+            resource.get(&Key::new("service.name")),
+            Some(Value::from("service-name-override"))
         );
     }
 }

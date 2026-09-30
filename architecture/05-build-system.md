@@ -86,7 +86,7 @@ flowchart LR
 
 The generator produces a Dockerfile from the validated config.
 
-When `observability.config` is set, build orchestration validates the project-local file and stages it in the private `cog_build` context. Generated and custom-Dockerfile wrapper layers copy that artifact to `/.cog/telemetry.py`; the original user path is never exposed to runtime path resolution.
+When tracing or metrics is enabled, build orchestration installs the aligned OpenTelemetry Python packages and writes per-signal image markers. If `observability.config` is set, it validates the project-local file and stages it in the private `cog_build` context. Generated and custom-Dockerfile wrapper layers copy that artifact to `/.cog/telemetry.py`; the original user path is never exposed to runtime path resolution.
 
 #### Generated Dockerfile Sections
 

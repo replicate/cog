@@ -212,32 +212,62 @@
         "config": {
           "type": "string",
           "minLength": 1,
-          "pattern": "\\.py$"
+          "pattern": "\\.py$",
+          "description": "An optional Python module that customizes OpenTelemetry providers and runtime metrics."
         },
         "traces": {
           "$id": "#/properties/observability/properties/traces",
-          "type": "object",
-          "required": ["enabled"],
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean"
-            },
-            "sampler": {
-              "type": "string",
-              "enum": ["always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_always_off", "parentbased_traceidratio"]
-            },
-            "sampler_arg": {
-              "type": "string"
-            },
-            "trace_header": {
-              "type": "string"
-            },
-            "trace_header_format": {
-              "type": "string",
-              "enum": ["w3c", "jaeger"]
+          "description": "Enables OpenTelemetry tracing. Use true for defaults or an object to configure trace sampling and propagation.",
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "required": ["enabled"],
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether to enable tracing in this image."
+                },
+                "sampler": {
+                  "type": "string",
+                  "description": "The OpenTelemetry trace sampler.",
+                  "enum": ["always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_always_off", "parentbased_traceidratio"]
+                },
+                "sampler_arg": {
+                  "type": "string",
+                  "description": "The sampling ratio for ratio-based samplers."
+                },
+                "trace_header": {
+                  "type": "string",
+                  "description": "An optional HTTP header that carries an upstream trace context."
+                },
+                "trace_header_format": {
+                  "type": "string",
+                  "description": "The format of the custom trace header.",
+                  "enum": ["w3c", "jaeger"]
+                }
+              }
             }
-          }
+          ]
+        },
+        "metrics": {
+          "$id": "#/properties/observability/properties/metrics",
+          "description": "Enables OpenTelemetry runtime and model metrics. Use true for defaults or an object to control enablement.",
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "required": ["enabled"],
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether to enable metrics in this image."
+                }
+              }
+            }
+          ]
         }
       }
     },

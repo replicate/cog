@@ -72,6 +72,51 @@ pub struct TraceCarrier {
     pub tracestate: Option<String>,
 }
 
+/// Stable selectors for Cog's parent-owned runtime metrics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeMetric {
+    PredictionCount,
+    PredictionRejected,
+    PredictionActive,
+    PredictionDuration,
+    SetupDuration,
+    SlotCount,
+}
+
+impl RuntimeMetric {
+    pub const ALL: [Self; 6] = [
+        Self::PredictionCount,
+        Self::PredictionRejected,
+        Self::PredictionActive,
+        Self::PredictionDuration,
+        Self::SetupDuration,
+        Self::SlotCount,
+    ];
+}
+
+/// Worker-selected configuration for parent-owned runtime metrics.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeMetricsConfig {
+    #[serde(default = "default_runtime_metrics_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub disabled: Vec<RuntimeMetric>,
+}
+
+fn default_runtime_metrics_enabled() -> bool {
+    true
+}
+
+impl Default for RuntimeMetricsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            disabled: Vec::new(),
+        }
+    }
+}
+
 /// Control messages from parent to worker.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -108,6 +153,8 @@ pub enum ControlResponse {
         slots: Vec<SlotId>,
         #[serde(skip_serializing_if = "Option::is_none")]
         schema: Option<serde_json::Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        runtime_metrics: Option<RuntimeMetricsConfig>,
     },
 
     /// Setup-phase logs (before slots are active).
@@ -136,6 +183,8 @@ pub enum ControlResponse {
     Failed {
         slot: SlotId,
         error: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        runtime_metrics: Option<RuntimeMetricsConfig>,
     },
 
     /// Worker unrecoverable error - parent should poison all slots and fail all
@@ -206,7 +255,11 @@ impl SlotOutcome {
     pub fn into_control_response(self) -> ControlResponse {
         match self {
             Self::Idle(slot) => ControlResponse::Idle { slot },
-            Self::Poisoned { slot, error } => ControlResponse::Failed { slot, error },
+            Self::Poisoned { slot, error } => ControlResponse::Failed {
+                slot,
+                error,
+                runtime_metrics: None,
+            },
         }
     }
 }
@@ -483,6 +536,7 @@ mod tests {
         let resp = ControlResponse::Ready {
             slots: vec![test_slot_id()],
             schema: None,
+            runtime_metrics: None,
         };
         insta::assert_json_snapshot!(resp);
     }
@@ -495,8 +549,26 @@ mod tests {
                 "openapi": "3.0.2",
                 "info": {"title": "Cog", "version": "0.1.0"}
             })),
+            runtime_metrics: None,
         };
         insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn control_ready_without_runtime_metrics_deserializes() {
+        let response = serde_json::from_value::<ControlResponse>(json!({
+            "type": "ready",
+            "slots": [test_slot_id()],
+            "schema": null,
+        }))
+        .unwrap();
+
+        match response {
+            ControlResponse::Ready {
+                runtime_metrics, ..
+            } => assert_eq!(runtime_metrics, None),
+            other => panic!("expected Ready, got {other:?}"),
+        }
     }
 
     #[test]
@@ -520,8 +592,31 @@ mod tests {
         let resp = ControlResponse::Failed {
             slot: test_slot_id(),
             error: "segfault".to_string(),
+            runtime_metrics: None,
         };
         insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn control_failed_preserves_runtime_metrics_config() {
+        let config = RuntimeMetricsConfig {
+            enabled: false,
+            disabled: vec![RuntimeMetric::SetupDuration],
+        };
+        let response = ControlResponse::Failed {
+            slot: test_slot_id(),
+            error: "setup failed".to_string(),
+            runtime_metrics: Some(config.clone()),
+        };
+
+        let serialized = serde_json::to_vec(&response).unwrap();
+        let decoded = serde_json::from_slice::<ControlResponse>(&serialized).unwrap();
+        match decoded {
+            ControlResponse::Failed {
+                runtime_metrics, ..
+            } => assert_eq!(runtime_metrics, Some(config)),
+            other => panic!("expected Failed, got {other:?}"),
+        }
     }
 
     #[test]

@@ -14,6 +14,6 @@ mod slot;
 
 pub use pool::{
     AnyPermit, InactiveSlotIdleToken, PermitError, PermitIdle, PermitInUse, PermitPoisoned,
-    PermitPool, SlotIdleToken,
+    PermitPool, SlotIdleToken, SlotState,
 };
 pub use slot::{PredictionSlot, UnregisteredPredictionSlot};
