@@ -68,6 +68,37 @@ cog build [flags]
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
 
+## `cog debug`
+
+Generate and print the Dockerfile that Cog would use to build the
+current model. This is useful for inspecting generated build steps and
+troubleshooting build failures without building the image.
+
+```
+cog debug [flags]
+```
+
+**Examples**
+
+```
+  # Print the generated Dockerfile
+  cog debug
+
+  # Save it for inspection
+  cog debug > Dockerfile
+```
+
+**Options**
+
+```
+  -f, --file string                  The name of the config file. (default "cog.yaml")
+  -h, --help                         help for debug
+      --image-name string            The image name to use for the generated Dockerfile
+      --separate-weights             Separate model weights from code in image layers
+      --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
+      --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
+```
+
 ## `cog doctor`
 
 Diagnose and fix common issues in your Cog project.
