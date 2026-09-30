@@ -78,6 +78,7 @@ Tasks follow a consistent naming pattern:
 - `mise run build:coglet:wheel` - Build coglet wheel (native platform)
 - `mise run build:coglet:wheel:linux-x64` - Build for Linux x86_64
 - `mise run build:coglet:wheel:linux-arm64` - Build for Linux ARM64
+- `mise run build:coglet:binary` - Build static coglet binaries for Linux x86_64 and ARM64
 - `mise run build:sdk` - Build SDK wheel
 
 **Install:**
