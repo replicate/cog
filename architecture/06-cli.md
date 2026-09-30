@@ -14,7 +14,7 @@ The Cog CLI is a Go binary that provides commands for the full model lifecycle: 
 | `cog exec`       | Run arbitrary commands in a container |
 | `cog serve`      | Start HTTP server in a container      |
 | `cog playground` | Open a local UI for a model API       |
-| `cog push`       | Deploy to Replicate                   |
+| `cog push`       | Publish to an OCI registry            |
 | `cog login`      | Authenticate with Replicate           |
 
 ## Development Commands
@@ -146,21 +146,19 @@ Key flags:
 
 ### cog push
 
-**Job**: Build and push to Replicate.
+**Job**: Build and publish an image or model bundle to an OCI registry.
 
 ```bash
-cog push r8.im/username/model-name
+cog push registry.example.com/username/model-name:v1
 ```
 
-What happens:
+The `image` or `model` field in `cog.yaml` selects the artifact format. A positional target changes the destination without changing that format. Image projects publish one container image. Bundle projects publish an OCI image index containing the model image and any managed weight manifests.
 
-1. Builds image (like `cog build`)
-2. Pushes to Replicate's registry
-3. Registers model with Replicate API
+Pushes attempt to resolve the published artifacts to digest-pinned references, which the normal terminal output renders as a tree. `--json` makes digest resolution mandatory and emits one versioned document to stdout after the push and registry-provider post-processing succeed; progress and diagnostics remain on stderr. This lets automation consume immutable references without hiding a long-running push's live output.
 
-The image tag must be a Replicate model reference (`r8.im/owner/name`).
+Registry-specific authentication, diagnostics, and post-push work sit behind the provider boundary. Replicate is one provider, not a requirement of the push path.
 
-**Code**: `pkg/cli/push.go`, `pkg/web/`
+**Code**: `pkg/cli/` owns the command and output contract; `pkg/model/` owns image and bundle publication; `pkg/registry/` and `pkg/provider/` own registry operations and provider-specific behavior.
 
 ---
 

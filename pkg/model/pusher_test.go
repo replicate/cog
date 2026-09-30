@@ -12,6 +12,8 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/docker/command"
 )
 
 const (
@@ -28,6 +30,10 @@ var (
 	testCogImageRef = testRepo + ":" + ImageTag(testModelTag)
 	testModelRef    = testRepo + ":" + testModelTag
 )
+
+type commandWithoutPushResult struct {
+	command.Command
+}
 
 // Valid 64-char hex digests for use in test fixtures. v1.NewHash
 // rejects non-hex strings, so the verifyWeights digest-equality check
@@ -118,10 +124,12 @@ func TestBundlePusher_Push(t *testing.T) {
 			pushFunc: func(ctx context.Context, ref string) error { return nil },
 		}
 
+		imageHash, err := v1.NewHash(testDockerPushDigest)
+		require.NoError(t, err)
 		imgDesc := v1.Descriptor{
 			MediaType: types.OCIManifestSchema1,
 			Size:      1234,
-			Digest:    v1.Hash{Algorithm: "sha256", Hex: "imgonly"},
+			Digest:    imageHash,
 		}
 
 		reg := &mockRegistry{
@@ -141,8 +149,80 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		pusher := NewBundlePusher(docker, reg)
 
-		_, err := pusher.Push(context.Background(), testBundleModel(), PushOptions{})
+		_, err = pusher.Push(context.Background(), testBundleModel(), PushOptions{})
 		require.NoError(t, err)
+	})
+
+	for _, test := range []struct {
+		name   string
+		docker command.Command
+	}{
+		{
+			name: "empty upload digest",
+			docker: &mockDocker{
+				pushFunc:   func(ctx context.Context, ref string) error { return nil },
+				pushResult: &command.PushResult{},
+			},
+		},
+		{
+			name: "command without push result support",
+			docker: commandWithoutPushResult{Command: &mockDocker{
+				pushFunc: func(ctx context.Context, ref string) error { return nil },
+			}},
+		},
+	} {
+		t.Run("falls back to tag lookup for "+test.name, func(t *testing.T) {
+			imageHash, err := v1.NewHash(testDockerPushDigest)
+			require.NoError(t, err)
+			imgDesc := v1.Descriptor{
+				MediaType: types.OCIManifestSchema1,
+				Size:      1234,
+				Digest:    imageHash,
+			}
+
+			reg := &mockRegistry{
+				getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+					require.Equal(t, testCogImageRef, ref)
+					return imgDesc, nil
+				},
+				pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
+					idxManifest, err := idx.IndexManifest()
+					require.NoError(t, err)
+					require.Equal(t, imgDesc.Digest, idxManifest.Manifests[0].Digest)
+					return nil
+				},
+			}
+
+			pushed, err := NewBundlePusher(test.docker, reg).Push(context.Background(), testBundleModel(), PushOptions{})
+
+			require.NoError(t, err)
+			require.Equal(t, testRepo+"@"+testDockerPushDigest, pushed.Image.Reference)
+		})
+	}
+
+	t.Run("requires upload digest when requested", func(t *testing.T) {
+		docker := &mockDocker{
+			pushFunc:   func(ctx context.Context, ref string) error { return nil },
+			pushResult: &command.PushResult{},
+		}
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				require.FailNow(t, "descriptor lookup must not fall back to a mutable tag when a digest is required")
+				return v1.Descriptor{}, nil
+			},
+			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
+				require.FailNow(t, "index must not be pushed without an upload digest")
+				return nil
+			},
+		}
+
+		_, err := NewBundlePusher(docker, reg).Push(
+			context.Background(),
+			testBundleModel(),
+			PushOptions{RequireDigest: true},
+		)
+
+		require.ErrorContains(t, err, "upload did not report the manifest digest")
 	})
 
 	t.Run("full push flow succeeds with single weight", func(t *testing.T) {
@@ -178,10 +258,12 @@ func TestBundlePusher_Push(t *testing.T) {
 			},
 		}
 
+		imageHash, err := v1.NewHash(testDockerPushDigest)
+		require.NoError(t, err)
 		imgDesc := v1.Descriptor{
 			MediaType: types.OCIManifestSchema1,
 			Size:      1234,
-			Digest:    v1.Hash{Algorithm: "sha256", Hex: "imgdigestabc1234567"},
+			Digest:    imageHash,
 		}
 
 		weightDesc := v1.Descriptor{
@@ -203,7 +285,7 @@ func TestBundlePusher_Push(t *testing.T) {
 				switch ref {
 				case weightRef:
 					return weightDesc, nil
-				case testCogImageRef:
+				case testRepo + "@" + testDockerPushDigest:
 					return imgDesc, nil
 				}
 				return v1.Descriptor{}, fmt.Errorf("unexpected descriptor lookup: %s", ref)
@@ -242,7 +324,7 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		// Verify call sequence: weight verified first (HEAD by digest,
 		// before anything mutates the registry), then local re-tag,
-		// then docker push, then image HEAD, then index push, then
+		// then docker push, then digest-pinned image HEAD, then index push, then
 		// the deferred local-tag cleanup. The index descriptor is
 		// computed locally from the v1.ImageIndex bytes — no HEAD.
 		require.Equal(t,
@@ -250,7 +332,7 @@ func TestBundlePusher_Push(t *testing.T) {
 				"registry:getDescriptor:" + weightRef,
 				"docker:tag:" + testImageRef + "->" + testCogImageRef,
 				"docker:push:" + testCogImageRef,
-				"registry:getDescriptor:" + testCogImageRef,
+				"registry:getDescriptor:" + testRepo + "@" + testDockerPushDigest,
 				"registry:pushIndex:" + testModelRef,
 				"docker:remove:" + testCogImageRef,
 			},
@@ -387,6 +469,29 @@ func TestBundlePusher_Push(t *testing.T) {
 		require.Contains(t, err.Error(), "manifest not found")
 	})
 
+	t.Run("rejects a descriptor that doesn't match the uploaded image digest", func(t *testing.T) {
+		docker := &mockDocker{
+			pushFunc: func(ctx context.Context, ref string) error { return nil },
+		}
+		mismatchedDigest, err := v1.NewHash("sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+		require.NoError(t, err)
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				require.Equal(t, testRepo+"@"+testDockerPushDigest, ref)
+				return v1.Descriptor{Digest: mismatchedDigest}, nil
+			},
+			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
+				require.FailNow(t, "index must not be pushed with a mismatched image descriptor")
+				return nil
+			},
+		}
+
+		_, err = NewBundlePusher(docker, reg).Push(context.Background(), testBundleModel(), PushOptions{})
+
+		require.ErrorContains(t, err, "registry returned digest")
+		require.ErrorContains(t, err, testDockerPushDigest)
+	})
+
 	t.Run("returns error when weight manifest not in registry", func(t *testing.T) {
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error {
@@ -408,7 +513,8 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "w1")
-		require.Contains(t, err.Error(), "not found in registry")
+		require.Contains(t, err.Error(), "not found in target repository")
+		require.Contains(t, err.Error(), testRepo)
 		require.Contains(t, err.Error(), "cog weights import")
 		require.Contains(t, err.Error(), "manifest unknown")
 	})
@@ -494,8 +600,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		var headCheckCount atomic.Int32
 		reg := &mockRegistry{
 			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
-				// Count weight HEADs only (those are by repo@digest).
-				if strings.Contains(ref, "@") {
+				if strings.HasSuffix(ref, testW1Digest) || strings.HasSuffix(ref, testW2Digest) {
 					headCheckCount.Add(1)
 				}
 				return descriptorFromRef(ref), nil
@@ -552,14 +657,17 @@ func TestResolver_Push(t *testing.T) {
 				return nil
 			},
 		}
+		imageHash, err := v1.NewHash(testDockerPushDigest)
+		require.NoError(t, err)
 		imgDesc := v1.Descriptor{
 			MediaType: types.OCIManifestSchema1,
 			Size:      1234,
-			Digest:    v1.Hash{Algorithm: "sha256", Hex: "imagedigestformatimage"},
+			Digest:    imageHash,
 		}
 		reg := &mockRegistry{
 			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
-				return imgDesc, nil
+				require.Failf(t, "unexpected descriptor lookup", "image result must use the digest reported by push, not HEAD mutable tag %q", ref)
+				return v1.Descriptor{}, nil
 			},
 		}
 		resolver := NewResolver(docker, reg)
@@ -600,6 +708,7 @@ func TestResolver_Push(t *testing.T) {
 				dockerPushed = true
 				return nil
 			},
+			pushResult: &command.PushResult{},
 		}
 		reg := &mockRegistry{
 			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
@@ -620,6 +729,27 @@ func TestResolver_Push(t *testing.T) {
 		require.True(t, dockerPushed)
 		require.Same(t, m, pushed,
 			"on HEAD failure, Push should return the input Model unchanged")
+	})
+
+	t.Run("FormatImage returns digest lookup error when required", func(t *testing.T) {
+		var dockerPushed bool
+		docker := &mockDocker{
+			pushFunc: func(ctx context.Context, ref string) error {
+				dockerPushed = true
+				return nil
+			},
+			pushResult: &command.PushResult{},
+		}
+		resolver := NewResolver(docker, &mockRegistry{})
+
+		img := &ImageArtifact{name: "model", Reference: testImageRef}
+		m := &Model{Format: FormatImage, Image: img, Artifacts: []Artifact{img}}
+
+		pushed, err := resolver.Push(context.Background(), m, PushOptions{RequireDigest: true})
+		require.ErrorContains(t, err, "resolve pushed image digest")
+		require.ErrorContains(t, err, "did not report")
+		require.Nil(t, pushed)
+		require.True(t, dockerPushed)
 	})
 
 	t.Run("FormatBundle with no weights produces a single-entry index", func(t *testing.T) {
