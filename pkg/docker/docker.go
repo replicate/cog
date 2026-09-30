@@ -1,12 +1,15 @@
 package docker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -195,11 +198,16 @@ func (c *apiClient) ContainerLogs(ctx context.Context, containerID string, w io.
 }
 
 func (c *apiClient) Push(ctx context.Context, imageRef string) error {
+	_, err := c.PushWithResult(ctx, imageRef)
+	return err
+}
+
+func (c *apiClient) PushWithResult(ctx context.Context, imageRef string) (command.PushResult, error) {
 	console.Debugf("=== APIClient.Push %s", imageRef)
 
 	parsedName, err := name.ParseReference(imageRef)
 	if err != nil {
-		return fmt.Errorf("failed to parse image reference: %w", err)
+		return command.PushResult{}, fmt.Errorf("failed to parse image reference: %w", err)
 	}
 
 	console.Debugf("fully qualified image ref: %s", parsedName)
@@ -224,35 +232,89 @@ func (c *apiClient) Push(ctx context.Context, imageRef string) error {
 	var opts image.PushOptions
 	encodedAuth, err := registry.EncodeAuthConfig(authConfig)
 	if err != nil {
-		return fmt.Errorf("failed to encode auth config: %w", err)
+		return command.PushResult{}, fmt.Errorf("failed to encode auth config: %w", err)
 	}
 	opts.RegistryAuth = encodedAuth
 
 	output, err := c.client.ImagePush(ctx, imageRef, opts)
 	if err != nil {
-		return fmt.Errorf("failed to push image: %w", err)
+		return command.PushResult{}, fmt.Errorf("failed to push image: %w", err)
 	}
 	defer output.Close()
 
-	// output is a json stream, so we need to parse it, handle errors, and write progress to stderr
-	isTTY := console.IsTTY(os.Stderr)
-	if err := jsonmessage.DisplayJSONMessagesStream(output, os.Stderr, os.Stderr.Fd(), isTTY, nil); err != nil {
+	return displayPushOutput(output, os.Stderr, os.Stderr.Fd(), console.IsTTY(os.Stderr), imageRef)
+}
+
+var pushStatusPattern = regexp.MustCompile(`(?:^|: )digest: (sha256:[0-9a-f]{64}) size: ([0-9]+)$`)
+
+type pushOutputCapture struct {
+	pending []byte
+	result  command.PushResult
+}
+
+func (c *pushOutputCapture) Write(p []byte) (int, error) {
+	c.pending = append(c.pending, p...)
+	for {
+		newline := bytes.IndexByte(c.pending, '\n')
+		if newline < 0 {
+			break
+		}
+		c.capture(c.pending[:newline])
+		c.pending = c.pending[newline+1:]
+	}
+	return len(p), nil
+}
+
+func (c *pushOutputCapture) finish() {
+	if len(c.pending) > 0 {
+		c.capture(c.pending)
+		c.pending = nil
+	}
+}
+
+func (c *pushOutputCapture) capture(line []byte) {
+	var message jsonmessage.JSONMessage
+	if err := json.Unmarshal(line, &message); err != nil {
+		return
+	}
+	if message.Aux != nil {
+		var pushed types.PushResult
+		if err := json.Unmarshal(*message.Aux, &pushed); err == nil && pushed.Digest != "" {
+			c.result = command.PushResult{Digest: pushed.Digest, Size: int64(pushed.Size)}
+		}
+		return
+	}
+	matches := pushStatusPattern.FindStringSubmatch(message.Status)
+	if len(matches) != 3 {
+		return
+	}
+	size, err := strconv.ParseInt(matches[2], 10, 64)
+	if err != nil {
+		return
+	}
+	c.result = command.PushResult{Digest: matches[1], Size: size}
+}
+
+func displayPushOutput(output io.Reader, stderr io.Writer, terminalFD uintptr, isTTY bool, imageRef string) (command.PushResult, error) {
+	var capture pushOutputCapture
+	err := jsonmessage.DisplayJSONMessagesStream(io.TeeReader(output, &capture), stderr, terminalFD, isTTY, nil)
+	capture.finish()
+	if err != nil {
 		var streamErr *jsonmessage.JSONError
 		if errors.As(err, &streamErr) {
 			if isTagNotFoundError(err) {
-				return &command.NotFoundError{Ref: imageRef, Object: "tag"}
+				return command.PushResult{}, &command.NotFoundError{Ref: imageRef, Object: "tag"}
 			}
 			if isRepositoryNotFoundError(err) {
-				return &command.NotFoundError{Ref: imageRef, Object: "repository"}
+				return command.PushResult{}, &command.NotFoundError{Ref: imageRef, Object: "repository"}
 			}
 			if isAuthorizationFailedError(err) {
-				return command.ErrAuthorizationFailed
+				return command.PushResult{}, command.ErrAuthorizationFailed
 			}
 		}
-		return fmt.Errorf("error during image push: %w", err)
+		return command.PushResult{}, fmt.Errorf("error during image push: %w", err)
 	}
-
-	return nil
+	return capture.result, nil
 }
 
 func (c *apiClient) ImageSave(ctx context.Context, imageRef string) (io.ReadCloser, error) {

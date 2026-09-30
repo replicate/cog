@@ -119,8 +119,13 @@ func TestImagePusher_Push(t *testing.T) {
 		docker := &mockDocker{imageSaveFunc: fakeImageSaveFunc(img, tag)}
 		pusher := newImagePusher(docker, mock)
 
-		err = pusher.Push(context.Background(), testArtifact(tag))
+		result, err := pusher.PushWithResult(context.Background(), testArtifact(tag))
 		require.NoError(t, err)
+		expectedDigest, err := img.Digest()
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, expectedDigest.String(), result.Digest)
+		assert.Positive(t, result.Size)
 
 		// Should have pushed 2 layers + 1 config blob = 3 WriteLayer calls
 		assert.Equal(t, 3, mock.writeLayerCount)

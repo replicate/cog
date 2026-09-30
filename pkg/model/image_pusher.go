@@ -65,17 +65,31 @@ func WithOnFallback(fn func()) ImagePushOption {
 	}
 }
 
+// ImagePushResult identifies the manifest uploaded by ImagePusher.
+type ImagePushResult struct {
+	Digest string
+	Size   int64
+}
+
 // Push pushes a container image to the registry.
 //
 // Tries the OCI chunked push path first (if enabled and registry client is
 // available), then falls back to Docker push on any non-fatal error.
 // The artifact must have a valid Reference.
 func (p *ImagePusher) Push(ctx context.Context, artifact *ImageArtifact, opts ...ImagePushOption) error {
+	_, err := p.PushWithResult(ctx, artifact, opts...)
+	return err
+}
+
+// PushWithResult pushes an image and returns the digest reported by the path
+// that uploaded its manifest. The digest is empty only when the Docker command
+// doesn't expose push results.
+func (p *ImagePusher) PushWithResult(ctx context.Context, artifact *ImageArtifact, opts ...ImagePushOption) (*ImagePushResult, error) {
 	if artifact == nil {
-		return fmt.Errorf("image artifact is nil")
+		return nil, fmt.Errorf("image artifact is nil")
 	}
 	if artifact.Reference == "" {
-		return fmt.Errorf("image artifact has no reference")
+		return nil, fmt.Errorf("image artifact has no reference")
 	}
 
 	var opt imagePushOptions
@@ -86,12 +100,12 @@ func (p *ImagePusher) Push(ctx context.Context, artifact *ImageArtifact, opts ..
 	imageRef := artifact.Reference
 
 	if p.canOCIPush() {
-		err := p.ociPush(ctx, imageRef, opt)
+		result, err := p.ociPush(ctx, imageRef, opt)
 		if err == nil {
-			return nil
+			return result, nil
 		}
 		if !shouldFallbackToDocker(err) {
-			return fmt.Errorf("OCI chunked push: %w", err)
+			return nil, fmt.Errorf("OCI chunked push: %w", err)
 		}
 		if opt.onFallback != nil {
 			opt.onFallback()
@@ -99,7 +113,17 @@ func (p *ImagePusher) Push(ctx context.Context, artifact *ImageArtifact, opts ..
 		console.Warnf("OCI chunked push failed, falling back to Docker push: %v", sanitizeError(err))
 	}
 
-	return p.docker.Push(ctx, imageRef)
+	if dockerWithResult, ok := p.docker.(command.PushResultCommand); ok {
+		result, err := dockerWithResult.PushWithResult(ctx, imageRef)
+		if err != nil {
+			return nil, err
+		}
+		return &ImagePushResult{Digest: result.Digest, Size: result.Size}, nil
+	}
+	if err := p.docker.Push(ctx, imageRef); err != nil {
+		return nil, err
+	}
+	return &ImagePushResult{}, nil
 }
 
 // canOCIPush returns true if OCI chunked push is enabled.
@@ -109,7 +133,7 @@ func (p *ImagePusher) canOCIPush() bool {
 
 // ociPush exports the image from Docker daemon as a tar, then pushes all layers,
 // config, and manifest to the registry using chunked uploads.
-func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt imagePushOptions) error {
+func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt imagePushOptions) (*ImagePushResult, error) {
 	console.Debugf("Exporting image %s from Docker daemon...", imageRef)
 
 	if opt.progressFn != nil {
@@ -118,20 +142,20 @@ func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt imagePus
 
 	ref, err := name.ParseReference(imageRef, name.Insecure)
 	if err != nil {
-		return fmt.Errorf("parse image reference %q: %w", imageRef, err)
+		return nil, fmt.Errorf("parse image reference %q: %w", imageRef, err)
 	}
 
 	// Get the Docker tar stream directly from the docker command
 	rc, err := p.docker.ImageSave(ctx, imageRef)
 	if err != nil {
-		return fmt.Errorf("export image from daemon: %w", err)
+		return nil, fmt.Errorf("export image from daemon: %w", err)
 	}
 	defer rc.Close() //nolint:errcheck
 
 	// Write the tar to a temp file so we can seek on it
 	tmpTar, err := os.CreateTemp("", "cog-image-*.tar")
 	if err != nil {
-		return fmt.Errorf("create temp tar file: %w", err)
+		return nil, fmt.Errorf("create temp tar file: %w", err)
 	}
 
 	defer func() {
@@ -140,7 +164,7 @@ func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt imagePus
 	}()
 
 	if _, err := io.Copy(tmpTar, rc); err != nil {
-		return fmt.Errorf("write image tar: %w", err)
+		return nil, fmt.Errorf("write image tar: %w", err)
 	}
 	_ = rc.Close()
 
@@ -155,7 +179,7 @@ func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt imagePus
 
 	img, err := tarball.ImageFromPath(tmpTar.Name(), &tag)
 	if err != nil {
-		return fmt.Errorf("load image from tar: %w", err)
+		return nil, fmt.Errorf("load image from tar: %w", err)
 	}
 
 	if opt.progressFn != nil {
@@ -166,23 +190,31 @@ func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt imagePus
 }
 
 // pushImage pushes a v1.Image (layers, config, manifest) to the registry.
-func (p *ImagePusher) pushImage(ctx context.Context, imageRef string, img v1.Image, opt imagePushOptions) error {
+func (p *ImagePusher) pushImage(ctx context.Context, imageRef string, img v1.Image, opt imagePushOptions) (*ImagePushResult, error) {
 	repo := repoFromReference(imageRef)
 
 	if err := p.pushLayers(ctx, repo, img, opt); err != nil {
-		return fmt.Errorf("push layers: %w", err)
+		return nil, fmt.Errorf("push layers: %w", err)
 	}
 
 	if err := p.pushConfig(ctx, repo, img); err != nil {
-		return fmt.Errorf("push config: %w", err)
+		return nil, fmt.Errorf("push config: %w", err)
 	}
 
 	console.Debugf("Pushing image manifest for %s", imageRef)
 	if err := p.registry.PushImage(ctx, imageRef, img); err != nil {
-		return fmt.Errorf("push manifest: %w", err)
+		return nil, fmt.Errorf("push manifest: %w", err)
 	}
 
-	return nil
+	digest, err := img.Digest()
+	if err != nil {
+		return nil, fmt.Errorf("compute pushed image digest: %w", err)
+	}
+	rawManifest, err := img.RawManifest()
+	if err != nil {
+		return nil, fmt.Errorf("read pushed image manifest: %w", err)
+	}
+	return &ImagePushResult{Digest: digest.String(), Size: int64(len(rawManifest))}, nil
 }
 
 // pushLayers pushes all image layers concurrently using the registry client's

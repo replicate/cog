@@ -8,6 +8,16 @@ type BuildOptions struct {
 	// ImageName is the output image name (required).
 	ImageName string
 
+	// Format overrides the artifact format resolved from cog.yaml and
+	// COG_MODEL*. A zero value keeps the normal resolution behavior.
+	// Push uses this when a positional target must replace environment
+	// destinations without changing the project's configured format.
+	Format Format
+
+	// ModelRef is the resolved bundle destination when Format is
+	// FormatBundle. It is ignored for FormatImage.
+	ModelRef *ResolvedRef
+
 	// NoCache disables build cache.
 	NoCache bool
 
