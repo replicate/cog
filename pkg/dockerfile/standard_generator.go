@@ -32,7 +32,7 @@ const observabilityConfigBuildPath = "telemetry.py"
 const observabilityConfigRuntimePath = "/.cog/telemetry.py"
 const PythonObservabilityRequirements = "opentelemetry-api==1.44.0 opentelemetry-sdk==1.44.0 opentelemetry-exporter-otlp-proto-http==1.44.0 opentelemetry-exporter-otlp-proto-grpc==1.44.0"
 const PythonObservabilityCheck = `python -c "import cog._telemetry; from coglet import _impl; raise SystemExit(0 if getattr(_impl, '_supports_observability_metrics', False) else 1)"`
-const PythonObservabilityCheckError = "OpenTelemetry tracing and metrics require matching cog and coglet builds with metrics support"
+const PythonObservabilityCheckError = "OpenTelemetry metrics require matching cog and coglet builds with metrics support"
 const uvBreakSystemPackages = "--break-system-packages"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
@@ -771,7 +771,9 @@ func (g *StandardGenerator) installPythonObservabilityDependencies() string {
 	if g.strip {
 		install += " && " + StripDebugSymbolsCommand
 	}
-	install += " && (" + PythonObservabilityCheck + " || (echo \"" + PythonObservabilityCheckError + "\" >&2; exit 1))"
+	if g.Config.Observability.Metrics != nil && g.Config.Observability.Metrics.Enabled {
+		install += " && (" + PythonObservabilityCheck + " || (echo \"" + PythonObservabilityCheckError + "\" >&2; exit 1))"
+	}
 	return install
 }
 

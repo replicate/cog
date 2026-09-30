@@ -711,6 +711,9 @@ pub async fn spawn_worker(
                 }
                 Ok(Err(e)) => {
                     tracing::debug!(error = %e, "Setup failed");
+                    if matches!(e, OrchestratorError::Setup { .. }) {
+                        wait_for_worker_exit(&mut child).await;
+                    }
                     return Err(e);
                 }
                 Err(_) => {
@@ -721,7 +724,15 @@ pub async fn spawn_worker(
         }
         None => {
             tracing::debug!("Waiting for setup with no timeout");
-            setup_fut.await?
+            match setup_fut.await {
+                Ok(ready) => ready,
+                Err(error) => {
+                    if matches!(error, OrchestratorError::Setup { .. }) {
+                        wait_for_worker_exit(&mut child).await;
+                    }
+                    return Err(error);
+                }
+            }
         }
     };
 
@@ -827,6 +838,18 @@ fn record_pending_cancellation(pending_cancellations: &mut HashSet<String>, pred
         return;
     }
     pending_cancellations.insert(prediction_id);
+}
+
+async fn wait_for_worker_exit(child: &mut Child) {
+    match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => tracing::warn!(%error, "Failed to reap worker after setup failure"),
+        Err(_) => {
+            if let Err(error) = child.kill().await {
+                tracing::warn!(%error, "Failed to kill worker after setup failure");
+            }
+        }
+    }
 }
 
 fn fail_worker_predictions(

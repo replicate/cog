@@ -391,10 +391,19 @@ impl PredictionService {
     /// Sends a shutdown message to the worker process and waits for it to exit.
     /// If no orchestrator is configured, this is a no-op.
     pub async fn shutdown(&self) {
-        if let Some(ref state) = *self.orchestrator.read().await
-            && let Err(e) = state.orchestrator.shutdown().await
-        {
-            tracing::warn!(error = %e, "Error during orchestrator shutdown");
+        if let Some(ref state) = *self.orchestrator.read().await {
+            if let Err(e) = state.orchestrator.shutdown().await {
+                tracing::warn!(error = %e, "Error during orchestrator shutdown");
+            }
+            state.pool.poison_all();
+        }
+        // Include predictions awaiting uploads, which have left worker routing.
+        // Terminal setters preserve results that completed during shutdown.
+        for entry in self.predictions.iter() {
+            if let Some(mut prediction) = try_lock_prediction(&entry.prediction) {
+                prediction.set_failed("Server shutting down".to_string());
+            }
+            entry.cancel_token.cancel();
         }
     }
 
@@ -776,8 +785,39 @@ impl PredictionService {
             pred.record_trace_slot(slot_id);
         }
 
-        // Register for response routing in event loop
         let prediction_arc = slot.prediction();
+        let prediction_dir =
+            std::path::PathBuf::from("/tmp/coglet/predictions").join(&prediction_id);
+        let output_dir = prediction_dir.join("outputs");
+        let input_dir = prediction_dir.join("inputs");
+        let request = std::fs::create_dir_all(&output_dir)
+            .and_then(|()| std::fs::create_dir_all(&input_dir))
+            .and_then(|()| {
+                build_slot_request(
+                    prediction_id.clone(),
+                    input,
+                    output_dir
+                        .to_str()
+                        .expect("output dir path is valid UTF-8")
+                        .to_string(),
+                    &input_dir,
+                    context,
+                    trace,
+                )
+            });
+        let request = match request {
+            Ok(request) => request,
+            Err(error) => {
+                let message = format!("Failed to prepare prediction request: {error}");
+                if let Some(mut prediction) = try_lock_prediction(&prediction_arc) {
+                    prediction.set_failed(message.clone());
+                }
+                self.remove_prediction(&prediction_id);
+                slot.release_unstarted();
+                return Err(PredictionError::Failed(message));
+            }
+        };
+
         let mut registration = RegisteredPredictionGuard::new(
             self,
             Arc::clone(&state.orchestrator),
@@ -789,41 +829,6 @@ impl PredictionService {
             .orchestrator
             .register_prediction(slot_id, Arc::clone(&prediction_arc), idle_tx)
             .await;
-
-        // Create per-prediction dirs for file-based inputs/outputs
-        let prediction_dir =
-            std::path::PathBuf::from("/tmp/coglet/predictions").join(&prediction_id);
-        let output_dir = prediction_dir.join("outputs");
-        let input_dir = prediction_dir.join("inputs");
-        if let Err(error) = std::fs::create_dir_all(&output_dir) {
-            let message = format!("Failed to create output dir: {error}");
-            registration.fail(message.clone()).await;
-            return Err(PredictionError::Failed(message));
-        }
-        if let Err(error) = std::fs::create_dir_all(&input_dir) {
-            let message = format!("Failed to create input dir: {error}");
-            registration.fail(message.clone()).await;
-            return Err(PredictionError::Failed(message));
-        }
-
-        let request = match build_slot_request(
-            prediction_id.clone(),
-            input,
-            output_dir
-                .to_str()
-                .expect("output dir path is valid UTF-8")
-                .to_string(),
-            &input_dir,
-            context,
-            trace,
-        ) {
-            Ok(request) => request,
-            Err(error) => {
-                let message = format!("Failed to build slot request: {error}");
-                registration.fail(message.clone()).await;
-                return Err(PredictionError::Failed(message));
-            }
-        };
 
         // permit_mut returns None if permit isn't InUse (shouldn't happen here)
         if registration.slot_mut().permit_mut().is_none() {
@@ -841,8 +846,6 @@ impl PredictionService {
             .await
         {
             tracing::error!(%slot_id, error = %e, "Failed to send prediction request");
-            // Broken socket means the slot is dead — poison it at the pool level.
-            state.pool.poison(slot_id);
             let message = format!("Failed to send request: {e}");
             registration.fail(message.clone()).await;
             return Err(PredictionError::Failed(message));
@@ -1297,6 +1300,46 @@ mod tests {
         rx.changed().await.unwrap();
 
         assert!(*rx.borrow());
+    }
+
+    #[tokio::test]
+    async fn shutdown_finalizes_pending_predictions_and_preserves_results() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(3).await;
+        svc.set_orchestrator(Arc::clone(&pool), Arc::new(MockOrchestrator::new()))
+            .await;
+        svc.set_health(Health::Ready).await;
+
+        let mut slots = Vec::new();
+        for id in ["processing", "awaiting-upload", "completed"] {
+            let (handle, unregistered) = svc
+                .submit_prediction(id.to_string(), serde_json::json!({}), None, false)
+                .await
+                .unwrap();
+            let (_, slot) = unregistered.into_parts();
+            let prediction = slot.prediction();
+            prediction.lock().unwrap().set_processing();
+            if id == "completed" {
+                prediction
+                    .lock()
+                    .unwrap()
+                    .set_succeeded(PredictionOutput::Single(serde_json::json!("done")));
+            }
+            slots.push((handle, slot, prediction));
+        }
+
+        svc.shutdown().await;
+        for (handle, slot, prediction) in slots {
+            let prediction = prediction.lock().unwrap();
+            if handle.id() == "completed" {
+                assert_eq!(prediction.status(), PredictionStatus::Succeeded);
+            } else {
+                assert_eq!(prediction.status(), PredictionStatus::Failed);
+                assert_eq!(prediction.error(), Some("Server shutting down"));
+            }
+            assert!(handle.cancel_token().is_cancelled());
+            assert!(pool.is_poisoned(slot.slot_id()));
+        }
     }
 
     #[tokio::test]

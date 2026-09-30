@@ -1541,8 +1541,7 @@ func TestPythonObservabilityDependenciesAreOptIn(t *testing.T) {
 		},
 	}}
 	require.Contains(t, enabled.installPythonObservabilityDependencies(), PythonObservabilityRequirements)
-	require.Contains(t, enabled.installPythonObservabilityDependencies(), PythonObservabilityCheck)
-	require.Contains(t, enabled.installPythonObservabilityDependencies(), PythonObservabilityCheckError)
+	assert.NotContains(t, enabled.installPythonObservabilityDependencies(), PythonObservabilityCheck)
 
 	enabled.strip = true
 	require.Contains(t, enabled.installPythonObservabilityDependencies(), StripDebugSymbolsCommand)
@@ -1554,4 +1553,6 @@ func TestPythonObservabilityDependenciesAreOptIn(t *testing.T) {
 		},
 	}}
 	require.Contains(t, metricsOnly.installPythonObservabilityDependencies(), PythonObservabilityRequirements)
+	assert.Contains(t, metricsOnly.installPythonObservabilityDependencies(), PythonObservabilityCheck)
+	assert.Contains(t, metricsOnly.installPythonObservabilityDependencies(), PythonObservabilityCheckError)
 }

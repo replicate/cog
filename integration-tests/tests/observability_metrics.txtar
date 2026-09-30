@@ -30,8 +30,11 @@ from opentelemetry import metrics
 
 from cog import BaseRunner
 
+assert type(metrics.get_meter_provider()).__name__ == "CustomMeterProvider"
+requests = metrics.get_meter(__name__).create_counter("model.requests")
+
 class Runner(BaseRunner):
     def run(self, value: str) -> str:
         provider_name = type(metrics.get_meter_provider()).__name__
-        metrics.get_meter(__name__).create_counter("model.requests").add(1)
+        requests.add(1)
         return f"{value} from {provider_name}"

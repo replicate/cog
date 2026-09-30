@@ -134,6 +134,10 @@ def _shutdown_provider(
     if provider is None:
         return
     try:
+        provider.force_flush()
+    except Exception:
+        _logger.exception("Failed to flush Python %s provider", signal)
+    try:
         provider.shutdown()
     except Exception:
         _logger.exception("Failed to shut down Python %s provider", signal)
@@ -205,7 +209,7 @@ def _build_tracer_provider(
             return None
     if not callable(factory):
         raise RuntimeError("telemetry.py create_tracer_provider must be callable")
-    provider = _call_tracer_factory(factory, resource)
+    provider = _call_provider_factory(factory, resource)
     if not isinstance(provider, TracerProvider):
         raise RuntimeError(
             "telemetry.py create_tracer_provider must return TracerProvider"
@@ -227,7 +231,7 @@ def _build_meter_provider(
             return None
     if not callable(factory):
         raise RuntimeError("telemetry.py create_meter_provider must be callable")
-    provider = factory(resource)
+    provider = _call_provider_factory(factory, resource)
     if not isinstance(provider, MeterProvider):
         raise RuntimeError(
             "telemetry.py create_meter_provider must return MeterProvider"
@@ -235,18 +239,20 @@ def _build_meter_provider(
     return provider
 
 
-def _call_tracer_factory(factory: Callable[..., object], resource: Resource) -> object:
+def _call_provider_factory(
+    factory: Callable[..., object], resource: Resource
+) -> object:
     try:
         signature = inspect.signature(factory)
     except (TypeError, ValueError):
         return factory(resource)
 
     try:
-        signature.bind(resource)
-    except TypeError:
         signature.bind()
-        return factory()
-    return factory(resource)
+    except TypeError:
+        signature.bind(resource)
+        return factory(resource)
+    return factory()
 
 
 def _create_default_tracer_provider(resource: Resource) -> TracerProvider | None:
@@ -304,11 +310,16 @@ def _create_default_meter_provider(resource: Resource) -> MeterProvider | None:
     else:
         raise RuntimeError(f"Unsupported OTLP protocol: {protocol}")
 
-    return MeterProvider(
-        metric_readers=[PeriodicExportingMetricReader(exporter)],
-        resource=resource,
-        shutdown_on_exit=False,
-    )
+    reader = PeriodicExportingMetricReader(exporter)
+    try:
+        return MeterProvider(
+            metric_readers=[reader],
+            resource=resource,
+            shutdown_on_exit=False,
+        )
+    except Exception:
+        reader.shutdown()
+        raise
 
 
 def _endpoint(signal: str) -> tuple[str | None, bool]:

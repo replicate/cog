@@ -121,46 +121,109 @@ assert config.disabled == {{RuntimeMetric.SETUP_DURATION}}
     assert result.returncode == 0, result.stderr
 
 
-def test_custom_meter_provider_shutdown_does_not_force_flush(tmp_path: Path) -> None:
-    marker = tmp_path / "lifecycle.txt"
-    config = tmp_path / "telemetry.py"
-    config.write_text(
-        f"""
-from pathlib import Path
+def test_shutdown_exports_metrics_without_a_periodic_thread() -> None:
+    result = _run_script(
+        """
+import math
+from cog import _telemetry
 from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import (
+    MetricExporter, MetricExportResult, PeriodicExportingMetricReader,
+)
 
-marker = Path({str(marker)!r})
-marker.write_text("")
+class Exporter(MetricExporter):
+    def __init__(self):
+        super().__init__()
+        self.values = []
+        self.closed = False
 
-class Provider(MeterProvider):
-    def force_flush(self, timeout_millis=10000):
-        marker.write_text(marker.read_text() + "flush\\n")
+    def export(self, data, **kwargs):
+        for resource in data.resource_metrics:
+            for scope in resource.scope_metrics:
+                for metric in scope.metrics:
+                    self.values.extend(point.value for point in metric.data.data_points)
+        return MetricExportResult.SUCCESS
+
+    def force_flush(self, **kwargs):
         return True
 
-    def shutdown(self, *args, **kwargs):
-        marker.write_text(marker.read_text() + "shutdown\\n")
+    def shutdown(self, **kwargs):
+        self.closed = True
 
-def create_meter_provider(resource):
-    return Provider(shutdown_on_exit=False)
-"""
-    )
-    result = _run_script(
-        f"""
-import os
-os.environ.update({{
-    "COG_METRICS_CONFIGURED": "true",
-    "COG_METRICS_ENABLED": "true",
-    "COG_OBSERVABILITY_CONFIG": {str(config)!r},
-    "OTEL_METRICS_EXPORTER": "none",
-}})
-from cog import _telemetry
-_telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
-_telemetry.install_providers()
+exporter = Exporter()
+reader = PeriodicExportingMetricReader(exporter, export_interval_millis=math.inf)
+provider = MeterProvider(metric_readers=[reader], shutdown_on_exit=False)
+provider.get_meter("test").create_counter("requests").add(3)
+_telemetry._meter_provider = provider
 _telemetry.shutdown()
+assert exporter.values == [3], exporter.values
+assert exporter.closed
 """
     )
     assert result.returncode == 0, result.stderr
-    assert marker.read_text() == "shutdown\n"
+
+
+def test_shutdown_closes_provider_when_flush_fails() -> None:
+    result = _run_script(
+        """
+from cog import _telemetry
+from opentelemetry.sdk.metrics import MeterProvider
+
+class Provider(MeterProvider):
+    closed = False
+
+    def force_flush(self, **kwargs):
+        raise RuntimeError("flush failed")
+
+    def shutdown(self, **kwargs):
+        self.closed = True
+
+provider = Provider(shutdown_on_exit=False)
+_telemetry._meter_provider = provider
+_telemetry.shutdown()
+assert provider.closed
+"""
+    )
+    assert result.returncode == 0, result.stderr
+    assert "flush failed" in result.stderr
+
+
+def test_invalid_meter_configuration_stops_reader_thread() -> None:
+    result = _run_script(
+        """
+import os
+import threading
+os.environ.update({
+    "COG_METRICS_CONFIGURED": "true",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
+    "OTEL_METRICS_EXEMPLAR_FILTER": "invalid",
+})
+from cog import _telemetry
+_telemetry.install_providers()
+assert _telemetry._meter_provider is None
+assert not any(t.name == "OtelPeriodicExportingMetricReader" for t in threading.enumerate())
+"""
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_legacy_tracer_factory_keeps_optional_argument_default() -> None:
+    result = _run_script(
+        """
+from cog import _telemetry
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON
+
+def factory(sampler=ALWAYS_ON):
+    return TracerProvider(sampler=sampler, shutdown_on_exit=False)
+
+provider = _telemetry._call_provider_factory(factory, _telemetry._base_resource())
+with provider.get_tracer("test").start_as_current_span("test") as span:
+    assert span.is_recording()
+provider.shutdown()
+"""
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_invalid_runtime_metrics_configuration_fails_setup(tmp_path: Path) -> None:

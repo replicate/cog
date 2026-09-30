@@ -20,7 +20,7 @@ def _run_script(script: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_trace_provider_installs_before_model_import() -> None:
+def test_trace_provider_installs() -> None:
     script = """
 import os
 os.environ.update({
@@ -44,9 +44,9 @@ def test_ratio_sampler_without_arg_defaults_to_one() -> None:
     script = """
 import os
 os.environ["OTEL_TRACES_SAMPLER"] = "traceidratio"
-from cog import _trace
+from cog import _telemetry
 from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
-sampler = _trace._sampler()
+sampler = _telemetry._sampler()
 assert isinstance(sampler, TraceIdRatioBased)
 assert sampler.rate == 1.0
 """
@@ -56,11 +56,11 @@ assert sampler.rate == 1.0
 
 def test_http_trace_endpoint_appends_signal_path_once() -> None:
     script = """
-from cog import _trace
-assert _trace._http_trace_endpoint("https://collector:4318", True) == "https://collector:4318/v1/traces"
-assert _trace._http_trace_endpoint("https://collector:4318/v1/traces", True) == "https://collector:4318/v1/traces"
-assert _trace._http_trace_endpoint("https://collector:4318/base?token=secret", True) == "https://collector:4318/base/v1/traces?token=secret"
-assert _trace._http_trace_endpoint("https://collector:4318/custom?token=secret", False) == "https://collector:4318/custom?token=secret"
+from cog import _telemetry
+assert _telemetry._http_endpoint("https://collector:4318", True, "traces") == "https://collector:4318/v1/traces"
+assert _telemetry._http_endpoint("https://collector:4318/v1/traces", True, "traces") == "https://collector:4318/v1/traces"
+assert _telemetry._http_endpoint("https://collector:4318/base?token=secret", True, "traces") == "https://collector:4318/base/v1/traces?token=secret"
+assert _telemetry._http_endpoint("https://collector:4318/custom?token=secret", False, "traces") == "https://collector:4318/custom?token=secret"
 """
     result = _run_script(script)
     assert result.returncode == 0, result.stderr
@@ -163,15 +163,15 @@ os.environ.update({{
     "COG_OBSERVABILITY_CONFIG": {str(config)!r},
     "OTEL_TRACES_EXPORTER": "none",
 }})
-from cog import _trace
-_trace._CUSTOM_CONFIG_PATH = {str(config)!r}
+from cog import _telemetry, _trace
+_telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
 _trace.install_provider()
 _trace.shutdown()
 """
 
     result = _run_script(script)
     assert result.returncode == 0, result.stderr
-    assert marker.read_text() == "configured\nshutdown\n"
+    assert marker.read_text() == "configured\nflush\nshutdown\n"
 
 
 def test_zero_argument_custom_trace_provider_remains_supported(tmp_path: Path) -> None:
@@ -192,10 +192,10 @@ os.environ.update({{
     "COG_OBSERVABILITY_CONFIG": {str(config)!r},
     "OTEL_TRACES_EXPORTER": "none",
 }})
-from cog import _trace
+from cog import _telemetry, _trace
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
-_trace._CUSTOM_CONFIG_PATH = {str(config)!r}
+_telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
 _trace.install_provider()
 assert isinstance(trace.get_tracer_provider(), TracerProvider)
 """
@@ -234,8 +234,8 @@ os.environ.update({{
     "COG_TRACE_ENABLED": "true",
     "COG_OBSERVABILITY_CONFIG": {str(config)!r},
 }})
-from cog import _trace
-_trace._CUSTOM_CONFIG_PATH = {str(config)!r}
+from cog import _telemetry, _trace
+_telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
 _trace.install_provider()
 """
         result = _run_script(script)
@@ -260,8 +260,8 @@ os.environ.update({{
     "COG_OBSERVABILITY_CONFIG": {str(config)!r},
     {name!r}: {value!r},
 }})
-from cog import _trace
-_trace._CUSTOM_CONFIG_PATH = {str(config)!r}
+from cog import _telemetry, _trace
+_telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
 _trace.install_provider()
 """
         result = _run_script(script)

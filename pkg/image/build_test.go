@@ -169,6 +169,8 @@ func TestAddObservabilityToCustomDockerfileImageUsesStagedConfig(t *testing.T) {
 	require.Contains(t, build.DockerfileContents, "USER root")
 	require.Contains(t, build.DockerfileContents, "USER \"1000:1000\"")
 	require.Equal(t, map[string]string{cogBuildContextName: "/tmp/build-cache"}, build.BuildContexts)
+	assert.NotContains(t, build.DockerfileContents, dockerfilepkg.PythonObservabilityCheck)
+	assert.Contains(t, build.DockerfileContents, "ENV COG_METRICS_CONFIGURED=false")
 }
 
 func TestAddObservabilityToCustomDockerfileImageSupportsMetricsOnly(t *testing.T) {
@@ -188,9 +190,24 @@ func TestAddObservabilityToCustomDockerfileImageSupportsMetricsOnly(t *testing.T
 	assert.Contains(t, build.DockerfileContents, "ENV COG_METRICS_ENABLED=true")
 	assert.Contains(t, build.DockerfileContents, dockerfilepkg.PythonObservabilityCheck)
 	assert.Contains(t, build.DockerfileContents, dockerfilepkg.PythonObservabilityCheckError)
-	assert.NotContains(t, build.DockerfileContents, "COG_TRACE_CONFIGURED")
+	assert.Contains(t, build.DockerfileContents, "ENV COG_TRACE_CONFIGURED=false")
 	assert.Contains(t, build.DockerfileContents, "USER root")
 	assert.Contains(t, build.DockerfileContents, "USER \"1000:1000\"")
+}
+
+func TestAddObservabilityToCustomDockerfileImageDisablesInheritedTelemetry(t *testing.T) {
+	dockerCommand := &recordingCommand{MockCommand: dockertest.NewMockCommand()}
+	observability := &config.Observability{Metrics: &config.Metrics{Enabled: false}}
+
+	err := addObservabilityToCustomDockerfileImage(t.Context(), dockerCommand, "metrics-enabled-base", observability, "plain", "/tmp/build-cache")
+
+	require.NoError(t, err)
+	require.Len(t, dockerCommand.builds, 1)
+	dockerfile := dockerCommand.builds[0].DockerfileContents
+	assert.Contains(t, dockerfile, "ENV COG_METRICS_CONFIGURED=false\nENV COG_METRICS_ENABLED=false")
+	assert.Contains(t, dockerfile, "ENV COG_TRACE_CONFIGURED=false\nENV COG_TRACE_ENABLED=false")
+	assert.Contains(t, dockerfile, `ENV COG_OBSERVABILITY_CONFIG=""`)
+	assert.NotContains(t, dockerfile, "RUN ")
 }
 
 func TestGeneratePredictorMetadataDoesNotRequireValidOutputSchema(t *testing.T) {

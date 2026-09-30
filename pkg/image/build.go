@@ -528,7 +528,7 @@ func addConcurrencyToCustomDockerfileImage(ctx context.Context, dockerCommand co
 }
 
 func addObservabilityToCustomDockerfileImage(ctx context.Context, dockerCommand command.Command, imageName string, observability *config.Observability, progressOutput string, buildCacheDir string) error {
-	if !observability.AnyTelemetryEnabled() {
+	if observability == nil {
 		return nil
 	}
 	imageInfo, err := dockerCommand.Inspect(ctx, imageName)
@@ -658,13 +658,17 @@ func concurrencyDockerfile(baseImage string, maxConcurrency int) string {
 func observabilityDockerfile(baseImage string, observability *config.Observability, imageUser string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "FROM %s\n", baseImage)
-	if imageUser != "" {
-		fmt.Fprintln(&b, "USER root")
-	}
-	fmt.Fprintf(&b, "RUN python -m pip install --no-cache-dir --break-system-packages %s\n", dockerfile.PythonObservabilityRequirements)
-	fmt.Fprintf(&b, "RUN (%s || (echo \"%s\" >&2; exit 1))\n", dockerfile.PythonObservabilityCheck, dockerfile.PythonObservabilityCheckError)
-	if imageUser != "" {
-		fmt.Fprintf(&b, "USER %s\n", strconv.Quote(imageUser))
+	if observability.AnyTelemetryEnabled() {
+		if imageUser != "" {
+			fmt.Fprintln(&b, "USER root")
+		}
+		fmt.Fprintf(&b, "RUN python -m pip install --no-cache-dir --break-system-packages %s\n", dockerfile.PythonObservabilityRequirements)
+		if observability.Metrics != nil && observability.Metrics.Enabled {
+			fmt.Fprintf(&b, "RUN (%s || (echo \"%s\" >&2; exit 1))\n", dockerfile.PythonObservabilityCheck, dockerfile.PythonObservabilityCheckError)
+		}
+		if imageUser != "" {
+			fmt.Fprintf(&b, "USER %s\n", strconv.Quote(imageUser))
+		}
 	}
 	if observability.Traces != nil && observability.Traces.Enabled {
 		traces := observability.Traces
@@ -675,12 +679,18 @@ func observabilityDockerfile(baseImage string, observability *config.Observabili
 		if traces.TraceHeader != "" {
 			fmt.Fprintf(&b, "ENV COG_TRACE_HEADER=\"%s\"\nENV COG_TRACE_HEADER_FORMAT=\"%s\"\n", traces.TraceHeader, traces.TraceHeaderFormat)
 		}
+	} else {
+		fmt.Fprint(&b, "ENV COG_TRACE_CONFIGURED=false\nENV COG_TRACE_ENABLED=false\n")
 	}
 	if observability.Metrics != nil && observability.Metrics.Enabled {
 		fmt.Fprint(&b, "ENV COG_METRICS_CONFIGURED=true\nENV COG_METRICS_ENABLED=true\n")
+	} else {
+		fmt.Fprint(&b, "ENV COG_METRICS_CONFIGURED=false\nENV COG_METRICS_ENABLED=false\n")
 	}
 	if observability.Config != "" {
 		fmt.Fprintf(&b, "COPY --from=%s telemetry.py /.cog/telemetry.py\nENV COG_OBSERVABILITY_CONFIG=\"/.cog/telemetry.py\"\n", cogBuildContextName)
+	} else {
+		fmt.Fprintln(&b, "ENV COG_OBSERVABILITY_CONFIG=\"\"")
 	}
 	return b.String()
 }

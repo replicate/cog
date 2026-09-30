@@ -699,7 +699,7 @@ fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Static metadata
     m.add("__version__", env!("COGLET_PEP440_VERSION"))?;
     m.add("__build__", BuildInfo::new())?;
-    m.add("_supports_observability_metrics", true)?;
+    m.add("_supports_observability_metrics", cfg!(feature = "tracing"))?;
 
     // Frozen server object
     m.add("server", CogletServer {})?;
