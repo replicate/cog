@@ -162,7 +162,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -215,7 +215,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -245,7 +245,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -272,7 +272,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -285,7 +285,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -300,7 +300,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -313,7 +313,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -340,7 +340,7 @@ jobs:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
           key: py-${{ steps.setup-python.outputs.python-version }}
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -364,7 +364,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -381,7 +381,7 @@ jobs:
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -396,7 +396,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -414,7 +414,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -439,7 +439,7 @@ jobs:
           path: dist
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -454,7 +454,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -475,7 +475,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -504,7 +504,7 @@ jobs:
       CGO_ENABLED: "1"
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -521,7 +521,7 @@ jobs:
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -545,7 +545,7 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -576,7 +576,7 @@ jobs:
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -697,7 +697,7 @@ jobs:
         run: |
           cp dist/cog ./cog
           chmod +x ./cog
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
@@ -863,7 +863,7 @@ jobs:
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
