@@ -1620,6 +1620,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn canceling_prediction_closes_pending_upload_connection() {
+        use tokio::io::AsyncReadExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut prediction =
+            TestPrediction::new(format!("http://{}", listener.local_addr().unwrap()), false).await;
+        prediction.file_output(file.path()).await;
+        let cancel_token = prediction.prediction.lock().unwrap().cancel_token();
+        let server = async {
+            let mut connection = tokio::time::timeout(Duration::from_secs(5), async {
+                let (mut connection, _) = listener.accept().await.unwrap();
+                // The file is empty, so the headers are the entire request.
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    request.push(connection.read_u8().await.unwrap());
+                }
+                connection
+            })
+            .await
+            .expect("upload did not start");
+
+            // Keep the response pending so only cancellation can close the connection.
+            cancel_token.cancel();
+            let mut buffer = [0];
+            let bytes_read =
+                tokio::time::timeout(Duration::from_secs(5), connection.read(&mut buffer))
+                    .await
+                    .expect("pending upload was not aborted")
+                    .unwrap();
+            assert_eq!(
+                bytes_read, 0,
+                "upload connection should close on cancellation"
+            );
+        };
+
+        let (response, ()) = tokio::join!(prediction.finish(false), server);
+
+        assert_eq!(response["status"], "canceled", "{response}");
+        assert!(response["output"].is_null());
+        assert!(response["error"].is_null());
+    }
+
+    #[tokio::test]
     async fn canceled_prediction_does_not_succeed_after_upload_failure() {
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
