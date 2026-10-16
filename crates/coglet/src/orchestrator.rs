@@ -18,6 +18,7 @@ use futures::{SinkExt, StreamExt};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
+use tokio_util::task::AbortOnDropHandle;
 use tracing::Instrument as _;
 
 use crate::PredictionOutput;
@@ -43,17 +44,25 @@ async fn upload_file(
     filename: &str,
     data: &[u8],
     content_type: &str,
+    prediction_id: &str,
 ) -> Result<String, String> {
     let url = format!("{endpoint}{filename}");
     let client = reqwest::Client::new();
     let resp = client
         .put(&url)
         .header("Content-Type", content_type)
+        .header("X-Prediction-Id", prediction_id)
         .body(data.to_vec())
         .timeout(std::time::Duration::from_secs(25))
         .send()
         .await
-        .map_err(|e| format!("upload request failed: {}", e.without_url()))?;
+        .map_err(|e| {
+            if e.is_timeout() {
+                "upload request timed out".to_string()
+            } else {
+                format!("upload request failed: {}", e.without_url())
+            }
+        })?;
 
     if !resp.status().is_success() {
         return Err(format!("upload returned status {}", resp.status()));
@@ -774,7 +783,8 @@ async fn run_event_loop(
         HashMap::new();
     let mut pending_healthchecks: Vec<tokio::sync::oneshot::Sender<HealthcheckResult>> = Vec::new();
     let mut healthcheck_counter: u64 = 0;
-    let mut pending_uploads: HashMap<SlotId, Vec<tokio::task::JoinHandle<()>>> = HashMap::new();
+    let mut pending_uploads: HashMap<SlotId, Vec<AbortOnDropHandle<Result<(), String>>>> =
+        HashMap::new();
     let mut pending_cancellations: HashSet<String> = HashSet::new();
 
     let (slot_msg_tx, mut slot_msg_rx) =
@@ -1149,11 +1159,15 @@ async fn run_event_loop(
                                 });
                                 if let Some(ref url) = upload_url {
                                     // Spawn upload task so we don't block the event loop
-                                    let pred = predictions.get(&slot_id).cloned();
+                                    let Some(pred) = predictions.get(&slot_id).cloned() else {
+                                        continue;
+                                    };
+                                    let Some(prediction_id) = try_lock_prediction(&pred).map(|p| p.id().to_string()) else {
+                                        predictions.remove(&slot_id);
+                                        continue;
+                                    };
                                     #[cfg(feature = "tracing")]
-                                    let trace = pred.as_ref().and_then(|pred| {
-                                        try_lock_prediction(pred).and_then(|prediction| prediction.trace_carrier())
-                                    });
+                                    let trace = try_lock_prediction(&pred).and_then(|p| p.trace_carrier());
                                     let endpoint = ensure_trailing_slash(url);
                                     let basename = std::path::Path::new(&filename)
                                         .file_name()
@@ -1171,20 +1185,20 @@ async fn run_event_loop(
                                     if let Some(trace) = trace.as_ref() {
                                         crate::trace::set_parent_from_carrier(&upload_span, trace);
                                     }
-                                    let handle = tokio::spawn(async move {
-                                        match upload_file(&endpoint, &basename, &bytes, &mime).await {
+                                    let handle = AbortOnDropHandle::new(tokio::spawn(async move {
+                                        match upload_file(&endpoint, &basename, &bytes, &mime, &prediction_id).await {
                                             Ok(url) => {
-                                                if let Some(pred) = pred
-                                                    && let Some(mut p) = try_lock_prediction(&pred)
-                                                {
+                                                if let Some(mut p) = try_lock_prediction(&pred) {
                                                     p.append_output(serde_json::Value::String(url));
                                                 }
+                                                Ok(())
                                             }
                                             Err(e) => {
-                                                tracing::error!(error = %e, "Failed to upload file output");
+                                                tracing::error!(%prediction_id, error = %e, "Failed to upload file output");
+                                                Err(e)
                                             }
                                         }
-                                    }.instrument(upload_span));
+                                    }.instrument(upload_span)));
                                     pending_uploads.entry(slot_id).or_default().push(handle);
                                 } else {
                                     // No upload URL — base64-encode as data URI
@@ -1218,7 +1232,7 @@ async fn run_event_loop(
                             predict_time,
                             is_stream,
                             output_is_array,
-                            "Prediction succeeded"
+                            "Prediction worker completed"
                         );
                         let uploads = pending_uploads.remove(&slot_id).unwrap_or_default();
                         if let Some(pred) = predictions.remove(&slot_id) {
@@ -1229,51 +1243,57 @@ async fn run_event_loop(
                                 // registered waiters; spawning a task can fire the
                                 // notification before the service registers its waiter.
                                 if let Some(mut p) = try_lock_prediction(&pred) {
-                                    let pred_output = wrap_outputs(
-                                        p.take_outputs(),
-                                        output_is_array,
-                                        is_stream,
-                                    );
-                                    p.set_succeeded(pred_output);
-                                }
-                            } else {
-                                // Has pending uploads — must spawn to await them.
-                                // Clone the cancel token so we can abort uploads if
-                                // the prediction is cancelled while uploads are in flight.
-                                let (cancel_token, upload_pred_id) = match try_lock_prediction(&pred) {
-                                    Some(p) => (Some(p.cancel_token()), p.id().to_string()),
-                                    None => (None, id.clone()),
-                                };
-                                tokio::spawn(async move {
-                                    if let Some(token) = cancel_token {
-                                        let upload_fut = futures::future::join_all(uploads);
-                                        tokio::pin!(upload_fut);
-                                        tokio::select! {
-                                            _ = &mut upload_fut => {}
-                                            _ = token.cancelled() => {
-                                                tracing::info!(
-                                                    target: "coglet::prediction",
-                                                    prediction_id = %upload_pred_id,
-                                                    "Aborting in-flight uploads due to cancellation"
-                                                );
-                                                if let Some(mut p) = try_lock_prediction(&pred) {
-                                                    p.set_canceled();
-                                                }
-                                                return;
-                                            }
-                                        }
+                                    if p.is_canceled() {
+                                        p.set_canceled();
                                     } else {
-                                        for h in uploads {
-                                            let _ = h.await;
-                                        }
-                                    }
-                                    if let Some(mut p) = try_lock_prediction(&pred) {
                                         let pred_output = wrap_outputs(
                                             p.take_outputs(),
                                             output_is_array,
                                             is_stream,
                                         );
                                         p.set_succeeded(pred_output);
+                                    }
+                                }
+                            } else {
+                                // Wait for uploads before making the prediction terminal.
+                                // Dropping their handles aborts them on cancellation.
+                                let Some(cancel_token) = try_lock_prediction(&pred).map(|p| p.cancel_token()) else {
+                                    continue;
+                                };
+                                tokio::spawn(async move {
+                                    let results = tokio::select! {
+                                        biased;
+                                        _ = cancel_token.cancelled() => {
+                                            tracing::info!(
+                                                target: "coglet::prediction",
+                                                prediction_id = %id,
+                                                "Aborting in-flight uploads due to cancellation"
+                                            );
+                                            if let Some(mut p) = try_lock_prediction(&pred) {
+                                                p.set_canceled();
+                                            }
+                                            return;
+                                        }
+                                        results = futures::future::join_all(uploads) => results,
+                                    };
+                                    let error = results.into_iter().find_map(|result| match result {
+                                        Ok(Ok(())) => None,
+                                        Ok(Err(error)) => Some(error),
+                                        Err(error) => Some(format!("upload task failed: {error}")),
+                                    });
+                                    if let Some(mut p) = try_lock_prediction(&pred) {
+                                        if p.is_canceled() {
+                                            p.set_canceled();
+                                        } else if let Some(error) = error {
+                                            p.set_failed(format!("Failed to upload output: {error}"));
+                                        } else {
+                                            let pred_output = wrap_outputs(
+                                                p.take_outputs(),
+                                                output_is_array,
+                                                is_stream,
+                                            );
+                                            p.set_succeeded(pred_output);
+                                        }
                                     }
                                 });
                             }
@@ -1337,6 +1357,339 @@ async fn run_event_loop(
 mod tests {
     use super::*;
     use serde_json::json;
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct TestPrediction {
+        prediction: Arc<StdMutex<Prediction>>,
+        writer: FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>,
+        event_loop: tokio::task::JoinHandle<()>,
+        worker: Child,
+        _idle_receiver: tokio::sync::oneshot::Receiver<SlotIdleToken>,
+    }
+
+    impl TestPrediction {
+        async fn new(upload_url: String, output_is_array: bool) -> Self {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            // Keep the control pipe open without requiring a Python worker.
+            let mut worker = Command::new("cat")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .kill_on_drop(true)
+                .spawn()
+                .unwrap();
+            let ctrl_reader = FramedRead::new(worker.stdout.take().unwrap(), JsonCodec::new());
+            let ctrl_writer = Arc::new(tokio::sync::Mutex::new(FramedWrite::new(
+                worker.stdin.take().unwrap(),
+                JsonCodec::new(),
+            )));
+            let (parent, worker_socket) = tokio::net::UnixStream::pair().unwrap();
+            let (reader, _) = parent.into_split();
+            let (_, writer) = worker_socket.into_split();
+            let slot_id = SlotId::new();
+            let (register_tx, register_rx) = mpsc::channel(1);
+            let (_, healthcheck_rx) = mpsc::channel(1);
+            let (_, cancel_rx) = mpsc::channel(1);
+            let event_loop = tokio::spawn(run_event_loop(
+                ctrl_reader,
+                ctrl_writer,
+                vec![(slot_id, FramedRead::new(reader, JsonCodec::new()))],
+                register_rx,
+                healthcheck_rx,
+                cancel_rx,
+                Arc::new(PermitPool::new(1)),
+                Some(upload_url),
+                output_is_array,
+            ));
+            let prediction = Arc::new(StdMutex::new(Prediction::new("upload-test".into(), None)));
+            prediction.lock().unwrap().set_processing();
+            let (idle_sender, idle_receiver) = tokio::sync::oneshot::channel();
+            let (registered_ack, registered_rx) = tokio::sync::oneshot::channel();
+            register_tx
+                .send(RegisterPredictionMessage {
+                    slot_id,
+                    prediction: Arc::clone(&prediction),
+                    idle_sender,
+                    registered_ack,
+                })
+                .await
+                .unwrap();
+            registered_rx.await.unwrap();
+            Self {
+                prediction,
+                writer: FramedWrite::new(writer, JsonCodec::new()),
+                event_loop,
+                worker,
+                _idle_receiver: idle_receiver,
+            }
+        }
+
+        async fn file_output(&mut self, file: &std::path::Path) {
+            self.writer
+                .send(SlotResponse::FileOutput {
+                    filename: file.to_str().unwrap().to_string(),
+                    kind: FileOutputKind::FileType,
+                    mime_type: Some("application/octet-stream".into()),
+                })
+                .await
+                .unwrap();
+        }
+
+        async fn finish(&mut self, is_stream: bool) -> serde_json::Value {
+            let completion = self.prediction.lock().unwrap().completion();
+            self.writer
+                .send(SlotResponse::Done {
+                    id: "upload-test".into(),
+                    output: None,
+                    predict_time: 0.1,
+                    is_stream,
+                })
+                .await
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(30), completion.notified())
+                .await
+                .expect("prediction did not complete");
+            let response = self.prediction.lock().unwrap().build_state_snapshot();
+            self.worker.kill().await.unwrap();
+            self.event_loop.abort();
+            let _ = (&mut self.event_loop).await;
+            response
+        }
+    }
+
+    impl Drop for TestPrediction {
+        fn drop(&mut self) {
+            self.event_loop.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn rejected_output_upload_fails_scalar_prediction() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(ResponseTemplate::new(503))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut prediction = TestPrediction::new(server.uri(), false).await;
+        prediction.file_output(file.path()).await;
+
+        let response = prediction.finish(false).await;
+
+        assert_eq!(response["status"], "failed", "{response}");
+        assert_eq!(
+            response["error"],
+            "Failed to upload output: upload returned status 503 Service Unavailable"
+        );
+        assert!(response["output"].is_null());
+    }
+
+    #[tokio::test]
+    async fn rejected_output_upload_fails_prediction_with_partial_list_output() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(ResponseTemplate::new(503))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut prediction = TestPrediction::new(server.uri(), true).await;
+        prediction
+            .writer
+            .send(SlotResponse::OutputChunk {
+                output: json!("https://example.com/previous-output"),
+                index: 0,
+            })
+            .await
+            .unwrap();
+        prediction.file_output(file.path()).await;
+
+        let response = prediction.finish(true).await;
+
+        assert_eq!(response["status"], "failed", "{response}");
+        assert!(response["error"].as_str().unwrap().contains("503"));
+    }
+
+    #[tokio::test]
+    async fn timed_out_output_upload_fails_prediction() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(ResponseTemplate::new(201).set_delay(Duration::from_secs(35)))
+            .mount(&server)
+            .await;
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut prediction = TestPrediction::new(server.uri(), false).await;
+        prediction.file_output(file.path()).await;
+
+        let response = prediction.finish(false).await;
+
+        assert_eq!(response["status"], "failed", "{response}");
+        assert_eq!(
+            response["error"],
+            "Failed to upload output: upload request timed out"
+        );
+    }
+
+    #[tokio::test]
+    async fn output_upload_sends_prediction_id_and_preserves_output_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/output.bin"))
+            .and(header("X-Prediction-Id", "upload-test"))
+            .and(header("Content-Type", "application/octet-stream"))
+            .respond_with(ResponseTemplate::new(202).insert_header(
+                "Location",
+                "https://example.com/result.bin?secret=signing-token",
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("output.bin");
+        std::fs::write(&file, b"prediction output").unwrap();
+        let mut prediction = TestPrediction::new(server.uri(), false).await;
+        prediction.file_output(&file).await;
+
+        let response = prediction.finish(false).await;
+
+        assert_eq!(response["status"], "succeeded", "{response}");
+        assert_eq!(response["output"], "https://example.com/result.bin");
+        assert!(response["error"].is_null());
+        assert_eq!(
+            server.received_requests().await.unwrap()[0].body,
+            b"prediction output"
+        );
+    }
+
+    #[tokio::test]
+    async fn output_upload_follows_redirects_and_strips_signing_query() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/output.bin"))
+            .respond_with(ResponseTemplate::new(307).insert_header(
+                "Location",
+                format!("{}/signed/output.bin?token=secret", server.uri()),
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("PUT"))
+            .and(path("/signed/output.bin"))
+            .and(wiremock::matchers::body_bytes(b"prediction output"))
+            .respond_with(ResponseTemplate::new(201))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("output.bin");
+        std::fs::write(&file, b"prediction output").unwrap();
+        let mut prediction = TestPrediction::new(server.uri(), false).await;
+        prediction.file_output(&file).await;
+
+        let response = prediction.finish(false).await;
+
+        assert_eq!(response["status"], "succeeded", "{response}");
+        assert_eq!(
+            response["output"],
+            format!("{}/signed/output.bin", server.uri())
+        );
+    }
+
+    #[tokio::test]
+    async fn output_upload_connection_error_fails_prediction_without_leaking_url() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut prediction = TestPrediction::new(
+            format!("http://{address}/?secret=upload-token&filename="),
+            false,
+        )
+        .await;
+        prediction.file_output(file.path()).await;
+
+        let response = prediction.finish(false).await;
+
+        assert_eq!(response["status"], "failed", "{response}");
+        let error = response["error"].as_str().unwrap();
+        assert!(error.starts_with("Failed to upload output: upload request failed:"));
+        assert!(!error.contains("upload-token"), "{error}");
+        assert!(!error.contains(&address.to_string()), "{error}");
+    }
+
+    #[tokio::test]
+    async fn canceling_prediction_closes_pending_upload_connection() {
+        use tokio::io::AsyncReadExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut prediction =
+            TestPrediction::new(format!("http://{}", listener.local_addr().unwrap()), false).await;
+        prediction.file_output(file.path()).await;
+        let cancel_token = prediction.prediction.lock().unwrap().cancel_token();
+        let server = async {
+            let mut connection = tokio::time::timeout(Duration::from_secs(5), async {
+                let (mut connection, _) = listener.accept().await.unwrap();
+                // The file is empty, so the headers are the entire request.
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    request.push(connection.read_u8().await.unwrap());
+                }
+                connection
+            })
+            .await
+            .expect("upload did not start");
+
+            // Keep the response pending so only cancellation can close the connection.
+            cancel_token.cancel();
+            let mut buffer = [0];
+            let bytes_read =
+                tokio::time::timeout(Duration::from_secs(5), connection.read(&mut buffer))
+                    .await
+                    .expect("pending upload was not aborted")
+                    .unwrap();
+            assert_eq!(
+                bytes_read, 0,
+                "upload connection should close on cancellation"
+            );
+        };
+
+        let (response, ()) = tokio::join!(prediction.finish(false), server);
+
+        assert_eq!(response["status"], "canceled", "{response}");
+        assert!(response["output"].is_null());
+        assert!(response["error"].is_null());
+    }
+
+    #[tokio::test]
+    async fn canceled_prediction_does_not_succeed_after_upload_failure() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(ResponseTemplate::new(503).set_delay(Duration::from_secs(35)))
+            .mount(&server)
+            .await;
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut prediction = TestPrediction::new(server.uri(), false).await;
+        prediction.file_output(file.path()).await;
+        let cancel_token = prediction.prediction.lock().unwrap().cancel_token();
+        let cancel_upload = async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while server.received_requests().await.unwrap().is_empty() {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            })
+            .await
+            .expect("upload did not start");
+            cancel_token.cancel();
+        };
+
+        let (response, ()) = tokio::join!(prediction.finish(false), cancel_upload);
+
+        assert_eq!(response["status"], "canceled", "{response}");
+        assert!(response["error"].is_null());
+    }
 
     // ── wrap_outputs: schema says array (output_is_array = true) ──
 
