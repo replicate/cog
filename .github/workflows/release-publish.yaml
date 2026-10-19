@@ -155,4 +155,5 @@ jobs:
     uses: ./.github/workflows/homebrew-tap.yaml
     with:
       tag: ${{ github.event.release.tag_name }}
-    secrets: inherit
+    secrets:
+      COG_HOMEBREW_TAP_PRIVATE_KEY: ${{ secrets.COG_HOMEBREW_TAP_PRIVATE_KEY }}
