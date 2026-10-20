@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 1
 
       - name: Run Bonk
-        uses: ask-bonk/ask-bonk/github@main
+        uses: ask-bonk/ask-bonk/github@14a1af226388b15b389a0c1b7df9168a940165b6 # v0.5.1
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_GATEWAY_BASE_URL: https://gateway.ai.cloudflare.com/v1/${{ vars.CLOUDFLARE_ACCOUNT_ID }}/${{ vars.CLOUDFLARE_GATEWAY_ID }}/compat
