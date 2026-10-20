@@ -127,7 +127,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-rel-${{ github.job }}
@@ -312,7 +312,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           version: 2026.4.27
           cache_key_prefix: mise-rel-${{ github.job }}
