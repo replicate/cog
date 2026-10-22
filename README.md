@@ -229,6 +229,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environme
 - [Using Cog with Windows 11](docs/wsl2/wsl2.md)
 - [Browse the example models in this repo](docs/examples.md)
 - [Deploy models with Cog](docs/deploy.md)
+- [Configure OpenTelemetry tracing and metrics](docs/observability.md)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
 - [Run interface reference](docs/python.md) to learn how the `Runner` interface works
 - [Training interface reference](docs/training.md) to learn how to add a fine-tuning API to your model

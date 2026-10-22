@@ -66,6 +66,7 @@ coglet/
     │
     │   # Orchestrator (Parent Process)
     ├── orchestrator.rs     # spawn_worker, OrchestratorHandle, event loop
+    ├── runtime_metrics.rs  # Parent-owned OpenTelemetry runtime instruments
     │
     │   # Worker (Child Process)
     ├── worker.rs           # run_worker, PredictHandler trait, SetupError
@@ -128,7 +129,7 @@ spawn_worker(config)
     ├─▶ Wait for Ready message (with timeout)
     ├─▶ Populate PermitPool with slot writers
     ├─▶ Spawn event loop task
-    └─▶ Return OrchestratorReady {pool, schema, handle}
+    └─▶ Return OrchestratorReady {pool, schema, runtime_metrics, handle}
 ```
 
 Event loop handles:
@@ -148,7 +149,7 @@ run_worker(handler, config)
     ├─▶ Connect to slot sockets (from env)
     ├─▶ Setup control channel (stdin/stdout)
     ├─▶ Run handler.setup() with log routing
-    ├─▶ Send Ready {slots, schema}
+    ├─▶ Send Ready {slots, schema, runtime_metrics}
     ├─▶ Enter event loop:
     │       - ControlRequest::Cancel → handler.cancel(slot)
     │       - ControlRequest::Shutdown → exit

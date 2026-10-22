@@ -459,6 +459,27 @@ self.record_metric("count", "now a string")
 
 Outside an active run, `self.record_metric()` and `self.scope` are silent no-ops — no need for `None` checks.
 
+### OpenTelemetry metrics
+
+`record_metric()` only changes Cog's response `metrics` field. To export model metrics to an OpenTelemetry collector, enable `observability.metrics` and use the standard meter API:
+
+```python
+from cog import BaseRunner
+from opentelemetry import metrics
+
+meter = metrics.get_meter(__name__)
+token_count = meter.create_counter("model.token_count")
+
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> str:
+        result = self.model.generate(prompt)
+        token_count.add(result.tokens)
+        return result.text
+```
+
+Cog installs the `MeterProvider` before importing the model. Do not call `set_meter_provider()` in model code. Use `observability.config` to provide a custom provider or to disable selected [runtime metrics](observability.md#runtime-metric-selection).
+
 ## OpenTelemetry spans
 
 When `observability.traces` is enabled, Cog installs an OpenTelemetry tracer provider before importing the model. Model spans use the standard API and automatically join the active prediction trace:
@@ -475,7 +496,7 @@ class Runner(BaseRunner):
             return self.model(prompt)
 ```
 
-Do not call `set_tracer_provider()` in model code. To customize the Python provider, set `observability.config` to a Python file that defines `create_tracer_provider()`. Cog installs and shuts down the returned provider. See [Custom Python tracing](observability.md#custom-python-tracing).
+Do not call `set_tracer_provider()` in model code. To customize the Python provider, set `observability.config` to a Python file that defines `create_tracer_provider(resource)`. Cog installs and shuts down the returned provider. See [Custom Python telemetry](observability.md#custom-python-telemetry).
 
 Asyncio tasks inherit the active Python context. Raw threads and child processes need explicit context propagation, and background tasks that outlive a prediction may emit uncorrelated spans.
 

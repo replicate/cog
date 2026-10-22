@@ -7,7 +7,9 @@ from pathlib import Path
 def _run_script(script: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     for name in list(env):
-        if name.startswith(("COG_OBSERVABILITY_", "COG_TRACE_", "OTEL_")):
+        if name.startswith(
+            ("COG_OBSERVABILITY_", "COG_TRACE_", "COG_METRICS_", "OTEL_")
+        ):
             del env[name]
     return subprocess.run(
         [sys.executable, "-c", script],
@@ -18,7 +20,7 @@ def _run_script(script: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_trace_provider_installs_before_model_import() -> None:
+def test_trace_provider_installs() -> None:
     script = """
 import os
 os.environ.update({
@@ -42,9 +44,9 @@ def test_ratio_sampler_without_arg_defaults_to_one() -> None:
     script = """
 import os
 os.environ["OTEL_TRACES_SAMPLER"] = "traceidratio"
-from cog import _trace
+from cog import _telemetry
 from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
-sampler = _trace._sampler()
+sampler = _telemetry._sampler()
 assert isinstance(sampler, TraceIdRatioBased)
 assert sampler.rate == 1.0
 """
@@ -54,11 +56,11 @@ assert sampler.rate == 1.0
 
 def test_http_trace_endpoint_appends_signal_path_once() -> None:
     script = """
-from cog import _trace
-assert _trace._http_trace_endpoint("https://collector:4318", True) == "https://collector:4318/v1/traces"
-assert _trace._http_trace_endpoint("https://collector:4318/v1/traces", True) == "https://collector:4318/v1/traces"
-assert _trace._http_trace_endpoint("https://collector:4318/base?token=secret", True) == "https://collector:4318/base/v1/traces?token=secret"
-assert _trace._http_trace_endpoint("https://collector:4318/custom?token=secret", False) == "https://collector:4318/custom?token=secret"
+from cog import _telemetry
+assert _telemetry._http_endpoint("https://collector:4318", True, "traces") == "https://collector:4318/v1/traces"
+assert _telemetry._http_endpoint("https://collector:4318/v1/traces", True, "traces") == "https://collector:4318/v1/traces"
+assert _telemetry._http_endpoint("https://collector:4318/base?token=secret", True, "traces") == "https://collector:4318/base/v1/traces?token=secret"
+assert _telemetry._http_endpoint("https://collector:4318/custom?token=secret", False, "traces") == "https://collector:4318/custom?token=secret"
 """
     result = _run_script(script)
     assert result.returncode == 0, result.stderr
@@ -145,7 +147,7 @@ class Provider(TracerProvider):
     def shutdown(self):
         marker.write_text(marker.read_text() + "shutdown\\n")
 
-def create_tracer_provider():
+def create_tracer_provider(resource):
     return Provider(shutdown_on_exit=False)
 
 def configure_instrumentation():
@@ -161,8 +163,8 @@ os.environ.update({{
     "COG_OBSERVABILITY_CONFIG": {str(config)!r},
     "OTEL_TRACES_EXPORTER": "none",
 }})
-from cog import _trace
-_trace._CUSTOM_CONFIG_PATH = {str(config)!r}
+from cog import _telemetry, _trace
+_telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
 _trace.install_provider()
 _trace.shutdown()
 """
@@ -172,22 +174,51 @@ _trace.shutdown()
     assert marker.read_text() == "configured\nflush\nshutdown\n"
 
 
+def test_zero_argument_custom_trace_provider_remains_supported(tmp_path: Path) -> None:
+    config = tmp_path / "telemetry.py"
+    config.write_text(
+        """
+from opentelemetry.sdk.trace import TracerProvider
+
+def create_tracer_provider():
+    return TracerProvider(shutdown_on_exit=False)
+"""
+    )
+    script = f"""
+import os
+os.environ.update({{
+    "COG_TRACE_CONFIGURED": "true",
+    "COG_TRACE_ENABLED": "true",
+    "COG_OBSERVABILITY_CONFIG": {str(config)!r},
+    "OTEL_TRACES_EXPORTER": "none",
+}})
+from cog import _telemetry, _trace
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+_telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
+_trace.install_provider()
+assert isinstance(trace.get_tracer_provider(), TracerProvider)
+"""
+
+    result = _run_script(script)
+    assert result.returncode == 0, result.stderr
+
+
 def test_custom_trace_provider_errors(tmp_path: Path) -> None:
     tests = {
-        "missing factory": ("value = True\n", "must define create_tracer_provider"),
         "wrong provider": (
-            "def create_tracer_provider():\n    return object()\n",
+            "def create_tracer_provider(resource):\n    return object()\n",
             "must return TracerProvider",
         ),
         "invalid instrumentation": (
             "from opentelemetry.sdk.trace import TracerProvider\n"
-            "def create_tracer_provider():\n    return TracerProvider(shutdown_on_exit=False)\n"
+            "def create_tracer_provider(resource):\n    return TracerProvider(shutdown_on_exit=False)\n"
             "configure_instrumentation = True\n",
             "configure_instrumentation must be callable",
         ),
         "instrumentation failure": (
             "from opentelemetry.sdk.trace import TracerProvider\n"
-            "def create_tracer_provider():\n    return TracerProvider(shutdown_on_exit=False)\n"
+            "def create_tracer_provider(resource):\n    return TracerProvider(shutdown_on_exit=False)\n"
             "def configure_instrumentation():\n    raise RuntimeError('instrumentation failed')\n",
             "instrumentation failed",
         ),
@@ -203,8 +234,8 @@ os.environ.update({{
     "COG_TRACE_ENABLED": "true",
     "COG_OBSERVABILITY_CONFIG": {str(config)!r},
 }})
-from cog import _trace
-_trace._CUSTOM_CONFIG_PATH = {str(config)!r}
+from cog import _telemetry, _trace
+_telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
 _trace.install_provider()
 """
         result = _run_script(script)
@@ -229,8 +260,8 @@ os.environ.update({{
     "COG_OBSERVABILITY_CONFIG": {str(config)!r},
     {name!r}: {value!r},
 }})
-from cog import _trace
-_trace._CUSTOM_CONFIG_PATH = {str(config)!r}
+from cog import _telemetry, _trace
+_telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
 _trace.install_provider()
 """
         result = _run_script(script)

@@ -860,6 +860,16 @@ func TestObservabilityConfigParsing(t *testing.T) {
 	require.True(t, cfg.Observability.Traces.Enabled)
 }
 
+func TestObservabilityBooleanSignalParsing(t *testing.T) {
+	cfgFile, err := parseBytes([]byte("observability:\n  traces: true\n  metrics: true\n"))
+	require.NoError(t, err)
+	cfg, err := configFileToConfig(cfgFile)
+	require.NoError(t, err)
+	require.True(t, cfg.Observability.Traces.Enabled)
+	require.True(t, cfg.Observability.Metrics.Enabled)
+	require.True(t, cfg.Observability.AnyTelemetryEnabled())
+}
+
 func TestConfigMarshal(t *testing.T) {
 	cfg := &Config{
 		Build: &Build{
