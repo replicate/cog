@@ -802,6 +802,32 @@ torch==1.12.1`
 	require.Equal(t, expected, requirements)
 }
 
+func TestPythonRequirementsKeepsDottedPackageNames(t *testing.T) {
+	tmpDir := t.TempDir()
+	err := os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`ruamel.yaml==0.18.6
+zope.interface==6.4
+backports.zoneinfo==0.2.1 --hash=sha256:fadbfe37f74051d024037f223b8e001611eac868b5c5b06144ef4d8b799862f2
+requests==2.32.3`), 0o644)
+	require.NoError(t, err)
+
+	config := &Config{
+		Build: &Build{
+			PythonVersion:      "3.10",
+			PythonRequirements: "requirements.txt",
+		},
+	}
+	err = config.Complete(tmpDir)
+	require.NoError(t, err)
+
+	requirements, err := config.PythonRequirementsForArch("linux", "amd64", []string{})
+	require.NoError(t, err)
+	expected := `ruamel.yaml==0.18.6
+zope.interface==6.4
+backports.zoneinfo==0.2.1
+requests==2.32.3`
+	require.Equal(t, expected, requirements)
+}
+
 func TestBlankBuild(t *testing.T) {
 	// Naively, this turns into nil, so make sure it's a real build object
 	cfgFile, err := parseBytes([]byte(`build:`))
