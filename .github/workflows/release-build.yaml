@@ -296,11 +296,46 @@ jobs:
           name: coglet-wheel-${{ matrix.artifact-suffix }}
           path: dist/*.whl
 
+  build-coglet-binaries:
+    name: Build coglet binaries
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.4.27
+          cache_key_prefix: mise-rel-${{ github.job }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          key: release-coglet-binaries
+
+      # mise-action does not cache ~/.rustup, so targets may be missing on a cache hit
+      - name: Ensure Rust musl targets
+        run: rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+
+      - name: Build coglet binaries
+        run: mise run build:coglet:binary
+
+      - name: Upload coglet binaries
+        uses: actions/upload-artifact@v6
+        with:
+          name: coglet-binaries
+          path: |
+            dist/coglet_Linux_x86_64
+            dist/coglet_Linux_arm64
+
   create-release:
     name: Create release
     permissions:
       contents: write
-    needs: [verify-tag, build-sdk, build-coglet-wheels]
+    needs: [verify-tag, build-sdk, build-coglet-wheels, build-coglet-binaries]
     # macOS arm64 runner: native clang for darwin targets, zig for linux targets.
     # CGo required for go-tree-sitter (static Python schema parser).
     runs-on: macos-14
@@ -341,13 +376,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Append Python wheels to the release
+      # Append Python wheels and coglet binaries to the release
       - name: Download all wheel artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
 
-      - name: Upload wheels to release
+      - name: Upload wheels and coglet binaries to release
         run: |
           TAG="${{ github.ref_name }}"
 
@@ -355,11 +390,13 @@ jobs:
           mkdir -p release-wheels
           cp artifacts/sdk-dist/* release-wheels/
           cp artifacts/coglet-wheel-*/*.whl release-wheels/
+          cp artifacts/coglet-binaries/coglet_Linux_x86_64 artifacts/coglet-binaries/coglet_Linux_arm64 release-wheels/
 
           # Download goreleaser's checksums.txt and append wheel checksums
           gh release download "$TAG" -p checksums.txt -D release-wheels
           cd release-wheels
           shasum -a 256 *.whl *.tar.gz >> checksums.txt
+          shasum -a 256 coglet_Linux_x86_64 coglet_Linux_arm64 >> checksums.txt
           echo "Checksums:"
           cat checksums.txt
           cd ..
