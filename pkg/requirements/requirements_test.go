@@ -558,3 +558,23 @@ func checkRequirements(t *testing.T, expected []string, actual []string) {
 	}
 	require.Equal(t, len(expected), len(actual))
 }
+
+func TestSplitMarker(t *testing.T) {
+	tests := []struct {
+		requirement   string
+		withoutMarker string
+		marker        string
+	}{
+		{"torch==2.0.1", "torch==2.0.1", ""},
+		{`pywin32==306 ; sys_platform == "win32"`, "pywin32==306", `sys_platform == "win32"`},
+		{`numpy==1.26.4;python_version>="3.10"`, "numpy==1.26.4", `python_version>="3.10"`},
+		{`colorama==0.4.6 ; sys_platform == 'win32'     --hash=sha256:abc --hash=sha256:def`, "colorama==0.4.6 --hash=sha256:abc --hash=sha256:def", `sys_platform == 'win32'`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.requirement, func(t *testing.T) {
+			withoutMarker, marker := SplitMarker(tt.requirement)
+			require.Equal(t, tt.withoutMarker, withoutMarker)
+			require.Equal(t, tt.marker, marker)
+		})
+	}
+}

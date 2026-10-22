@@ -141,6 +141,24 @@ func SplitPinnedPythonRequirement(requirement string) (name string, version stri
 	return name, version, findLinks, extraIndexURLs, nil
 }
 
+// optionAfterMarkerRe finds the first inline pip option (e.g. --hash) after an environment marker.
+var optionAfterMarkerRe = regexp.MustCompile(`\s--?[a-zA-Z]`)
+
+// SplitMarker separates a PEP 508 environment marker (e.g. `; sys_platform == "win32"`) from a
+// requirements.txt line. It returns the line without the marker, with any inline pip options
+// that followed the marker (e.g. --hash) kept, and the marker expression without the ";".
+func SplitMarker(requirement string) (withoutMarker string, marker string) {
+	before, after, found := strings.Cut(requirement, ";")
+	if !found {
+		return requirement, ""
+	}
+	marker, options := after, ""
+	if loc := optionAfterMarkerRe.FindStringIndex(after); loc != nil {
+		marker, options = after[:loc[0]], after[loc[0]:]
+	}
+	return strings.TrimSpace(strings.TrimSpace(before) + options), strings.TrimSpace(marker)
+}
+
 func PackageName(pipRequirement string) string {
 	re := regexp.MustCompile(`^([a-zA-Z0-9_\-\.]+(?:\[[^\]]+\])?)`)
 	match := re.FindStringSubmatch(pipRequirement)
