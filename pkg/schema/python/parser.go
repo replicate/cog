@@ -156,6 +156,7 @@ func resolveImportedModelsPhase(state *ParseState) error {
 		state.ModelCtx.resolvedModels = state.Models
 		setDiscoveredModels(state.Models, collectModelClasses(state.Root, state.Options.Source, state.ModelCtx))
 	}
+	followReexportedFileLikes(state.Imports, state.LoadedModules, state.Options.SourcePath)
 	return nil
 }
 

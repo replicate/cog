@@ -1,6 +1,9 @@
 package schema
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // SchemaError represents errors during schema generation.
 type SchemaError struct {
@@ -109,6 +112,19 @@ func errUnresolvableImportedType(name, module string) error {
 				"`from typing import Annotated`, `from cog import Opaque`, and `field: Annotated[%s, Opaque]`. "+
 				"Otherwise define it as a BaseModel subclass in your predict file, or provide a .pyi stub",
 			name, module, name),
+	}
+}
+
+func errNotCogFileLike(localName, module, original string) error {
+	msg := fmt.Sprintf(
+		"%s is %s.%s, not cog.%s. Use `from cog import %s` for file inputs",
+		localName, module, original, original, original)
+	if !strings.Contains(localName, ".") {
+		msg += fmt.Sprintf(". If you also need %s.%s, import it under a different name", module, original)
+	}
+	return &SchemaError{
+		Kind:    ErrUnsupportedType,
+		Message: msg,
 	}
 }
 
