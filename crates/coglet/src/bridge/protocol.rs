@@ -361,6 +361,12 @@ pub enum SlotResponse {
         mime_type: Option<String>,
     },
 
+    /// Sent before the first output of a list, generator, or iterator return
+    /// value, so the parent sends outputs to webhooks as they arrive. A single
+    /// return value doesn't send this; its output is only published once the
+    /// prediction finishes.
+    StreamStarted,
+
     /// Streaming output chunk for generator and iterator output.
     OutputChunk {
         output: serde_json::Value,
@@ -581,6 +587,14 @@ mod tests {
                 "output": "chunk 1",
                 "index": 7
             })
+        );
+    }
+
+    #[test]
+    fn slot_stream_started_serializes() {
+        assert_eq!(
+            serde_json::to_value(SlotResponse::StreamStarted).unwrap(),
+            json!({"type": "stream_started"})
         );
     }
 

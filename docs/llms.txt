@@ -2015,8 +2015,9 @@ at the following times.
   Once, when the prediction starts
   (`status` is `starting`).
 - `output`:
-  Each time a run function generates an output
-  (either once using `return` or multiple times using `yield`)
+  Each time a run function yields an output,
+  or for each item of a returned list.
+  A single returned value is only sent with `completed`.
 - `logs`:
   Each time the run function writes to `stdout`
 - `completed`:
