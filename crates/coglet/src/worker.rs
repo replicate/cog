@@ -248,6 +248,17 @@ impl SlotSender {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
     }
 
+    /// Tell the parent the return value is a list, generator, or iterator.
+    ///
+    /// Call before sending its first output. Outputs sent without this are
+    /// treated as a single return value and aren't published until the
+    /// prediction finishes.
+    pub fn start_stream(&self) -> io::Result<()> {
+        self.tx
+            .send(SlotResponse::StreamStarted)
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
+    }
+
     /// Send prediction output, either inline or spilled to disk if too large.
     pub fn send_output(&self, output: serde_json::Value) -> io::Result<()> {
         let msg = build_output_message(&self.output_dir, output, self.next_output_index())?;

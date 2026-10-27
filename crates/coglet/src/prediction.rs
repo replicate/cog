@@ -143,6 +143,12 @@ pub struct Prediction {
     status: PredictionStatus,
     logs: String,
     outputs: Vec<serde_json::Value>,
+    /// True when the output is a list, generator, or iterator. Only then are
+    /// outputs sent in `output` webhooks and shown in snapshots before the
+    /// prediction finishes. A single return value is only shown once
+    /// `set_succeeded` has given it its final shape; otherwise it would be
+    /// shown as a one-element array.
+    streaming: bool,
     output: Option<PredictionOutput>,
     error: Option<String>,
     webhook: Option<WebhookSender>,
@@ -168,6 +174,7 @@ impl Prediction {
             status: PredictionStatus::Starting,
             logs: String::new(),
             outputs: Vec::new(),
+            streaming: false,
             output: None,
             error: None,
             webhook,
@@ -508,13 +515,21 @@ impl Prediction {
         self.append_output_chunk(output, index);
     }
 
+    /// Mark the output as a list, generator, or iterator, so outputs are
+    /// sent in webhooks and shown in snapshots as they arrive.
+    pub fn mark_streaming(&mut self) {
+        self.streaming = true;
+    }
+
     pub fn append_output_chunk(&mut self, output: serde_json::Value, index: u64) {
         self.outputs.push(output.clone());
         self.emit_stream_event(PredictionStreamEvent::Output {
             chunk: output,
             index,
         });
-        self.fire_webhook(WebhookEventType::Output);
+        if self.streaming {
+            self.fire_webhook(WebhookEventType::Output);
+        }
     }
 
     pub fn outputs(&self) -> &[serde_json::Value] {
@@ -589,9 +604,10 @@ impl Prediction {
 
         // Include output: use final output if set (terminal), otherwise
         // include accumulated streaming outputs for intermediate states.
+        // A single return value is left out until it's final.
         if let Some(ref output) = self.output {
             payload["output"] = serde_json::json!(output);
-        } else if !self.outputs.is_empty() {
+        } else if self.streaming && !self.outputs.is_empty() {
             payload["output"] = serde_json::json!(self.outputs);
         }
 
@@ -728,6 +744,36 @@ mod tests {
         pred.append_output(serde_json::json!("chunk1"));
         pred.append_output(serde_json::json!("chunk2"));
         assert_eq!(pred.outputs().len(), 2);
+    }
+
+    #[test]
+    fn snapshot_leaves_out_single_output_until_succeeded() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_processing();
+        pred.append_output(serde_json::json!("https://example.com/output.wav"));
+
+        assert!(pred.build_state_snapshot().get("output").is_none());
+
+        pred.set_succeeded(PredictionOutput::Single(serde_json::json!(
+            "https://example.com/output.wav"
+        )));
+        assert_eq!(
+            pred.build_state_snapshot()["output"],
+            "https://example.com/output.wav"
+        );
+    }
+
+    #[test]
+    fn snapshot_includes_streamed_outputs_while_processing() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_processing();
+        pred.mark_streaming();
+        pred.append_output(serde_json::json!("chunk1"));
+
+        assert_eq!(
+            pred.build_state_snapshot()["output"],
+            serde_json::json!(["chunk1"])
+        );
     }
 
     #[tokio::test]
