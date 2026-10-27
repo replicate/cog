@@ -115,7 +115,7 @@ jobs:
 
       - uses: jdx/mise-action@v4
         with:
-          version: 2026.4.27
+          version: 2026.10.21
           cache_key_prefix: mise-pub-${{ github.job }}
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
