@@ -113,7 +113,7 @@ Part of the solution is Docker, but it is so complex to get it to work: Dockerfi
 
 We realized that, in addition to Spotify, other companies were also using Docker to build and deploy machine learning models. [Uber](https://eng.uber.com/michelangelo-pyml/) and others have built similar systems. So, we're making an open source version so other people can do this too.
 
-Hit us up if you're interested in using it or want to collaborate with us. [We're on Discord](https://discord.gg/replicate) or email us at [team@replicate.com](mailto:team@replicate.com).
+Hit us up if you're interested in using it or want to collaborate with us. Email us at [team@replicate.com](mailto:team@replicate.com).
 
 ## Prerequisites
 
@@ -235,8 +235,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environme
 - [HTTP API reference](docs/http.md) to learn how to use the HTTP API that models serve
 
 ## Need help?
-
-[Join us in #cog on Discord.](https://discord.gg/replicate)
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/replicate/cog)
 
