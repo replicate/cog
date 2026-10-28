@@ -1,0 +1,404 @@
+#!/usr/bin/env bash
+# cogverify - helper for the verify-cog skill (see ../SKILL.md).
+#
+#   cogverify build [--force] [--skip-coglet]   build CLI + SDK wheel + coglet wheel into <repo>/dist
+#   cogverify doctor                            read-only "is this setup worth driving?" check
+#   cogverify new-run [--fixture NAME]          create an isolated run (scratch model dir + evidence dir)
+#   cogverify env                               print the run's variables (use: eval "$(cogverify env)")
+#   cogverify tx [asserts] NAME 'COMMAND'       run COMMAND in the model dir, save a transcript as evidence
+#   cogverify serve-start                       start `cog serve` on a free port, wait for READY
+#   cogverify serve-stop                        stop that server and its container
+#   cogverify cleanup [--purge-tools]           tear down everything the run created, keep the evidence
+#   cogverify image-label KEY                   print one label of the run's image (e.g. run.cog.version)
+#   cogverify image-schema                      summarize the OpenAPI Input schema stored in the run's image
+#   cogverify free-port                         print a free localhost TCP port
+#
+# Run-scoped commands read the run id from $COG_VERIFY_RUN (printed by new-run).
+set -euo pipefail
+
+SELF=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+SKILL=$(cd "$SELF/.." && pwd)
+REPO=$(git -C "$SKILL" rev-parse --show-toplevel)
+VHOME=${COG_VERIFY_HOME:-$HOME/.cache/cog-verify}
+MATURIN_IMAGE=${COG_VERIFY_MATURIN_IMAGE:-ghcr.io/pyo3/maturin:latest}
+GO_PKG=github.com/replicate/cog/pkg/global
+
+log() { printf '[cogverify] %s\n' "$*"; }
+die() { printf '[cogverify] ERROR: %s\n' "$*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"; }
+
+host_platform() { printf '%s_%s' "$(go env GOOS)" "$(go env GOARCH)"; }
+cli_bin() { printf '%s/dist/go/%s/cog' "$REPO" "$(host_platform)"; }
+repo_version() { tr -d '[:space:]' <"$REPO/VERSION.txt"; }
+repo_sha() { git -C "$REPO" rev-parse --short HEAD; }
+cli_version_string() { printf '%s-dev+g%s' "$(repo_version)" "$(repo_sha)"; }
+sdk_pep440() { repo_version | sed -E 's/-alpha/a/; s/-beta/b/; s/-rc/rc/; s/-dev/.dev/'; }
+sdk_wheels() { ls "$REPO"/dist/cog-*.whl 2>/dev/null || true; }
+coglet_wheels() { ls "$REPO"/dist/coglet-*x86_64*.whl 2>/dev/null || true; }
+
+# first path under the given args that is newer than $ARTIFACT (find filter in $FIND_ARGS)
+newer_source() {
+  local artifact=$1; shift
+  (cd "$REPO" && find "$@" -type f "${FIND_ARGS[@]}" -newer "$artifact" 2>/dev/null | head -n1) || true
+}
+stale_cli() {
+  FIND_ARGS=(! -name '*_test.go')
+  [[ -n $(newer_source "$1" cmd pkg go.mod go.sum VERSION.txt) ]]
+}
+stale_sdk() {
+  FIND_ARGS=(\( -name '*.py' -o -name '*.pyi' -o -name 'py.typed' -o -name 'pyproject.toml' -o -name 'VERSION.txt' \))
+  [[ -n $(newer_source "$1" python pyproject.toml VERSION.txt) ]]
+}
+stale_coglet() {
+  FIND_ARGS=(\( -name '*.rs' -o -name 'Cargo.toml' -o -name 'Cargo.lock' -o -name 'build.rs' -o -name '*.py' -o -name '*.pyi' -o -name 'pyproject.toml' \) ! -path '*/target/*')
+  [[ -n $(newer_source "$1" crates) ]]
+}
+
+free_port() {
+  local p
+  for _ in $(seq 1 30); do
+    p=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+    if [[ -z $(lsof -nP -iTCP:"$p" -sTCP:LISTEN 2>/dev/null) ]]; then printf '%s\n' "$p"; return 0; fi
+  done
+  die "could not find a free port"
+}
+
+# ---------------------------------------------------------------- build
+
+extra_ca_setup() {
+  # Some networks (e.g. Cloudflare Zero Trust) re-sign TLS for crates.io/static.rust-lang.org.
+  # The host trusts the corporate CA; the builder container does not. Export it, if known.
+  mkdir -p "$VHOME"
+  local dest="$VHOME/extra-ca.pem"
+  if [[ -n ${COG_VERIFY_EXTRA_CA:-} ]]; then
+    cp "$COG_VERIFY_EXTRA_CA" "$dest"
+  elif [[ $(uname) == Darwin ]] && security find-certificate -c "Cloudflare Corporate Zero Trust" -p /Library/Keychains/System.keychain >"$dest.tmp" 2>/dev/null && [[ -s $dest.tmp ]]; then
+    mv "$dest.tmp" "$dest"
+  else
+    rm -f "$dest.tmp"; : >"$dest"
+  fi
+}
+
+build_cli() {
+  local bin ver sha; bin=$(cli_bin); ver=$(cli_version_string); sha=$(repo_sha)
+  if [[ $FORCE == 0 && -x $bin ]] && ! stale_cli "$bin" && [[ $("$bin" --version) == *"$ver"* ]]; then
+    log "cli: up to date ($ver)"; return
+  fi
+  log "cli: go build -> $bin ($ver)"
+  mkdir -p "$(dirname "$bin")"
+  (cd "$REPO" && CGO_ENABLED=1 GOFLAGS=-buildvcs=false go build -o "$bin" \
+    -ldflags "-X $GO_PKG.Version=$ver -X $GO_PKG.Commit=$sha -X $GO_PKG.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" ./cmd/cog)
+}
+
+build_sdk() {
+  local w; w=$(sdk_wheels | head -n1)
+  if [[ $FORCE == 0 && -n $w ]] && ! stale_sdk "$w" && [[ $w == *"cog-$(sdk_pep440)-"* ]]; then
+    log "sdk wheel: up to date ($(basename "$w"))"; return
+  fi
+  log "sdk wheel: uv build (version $(sdk_pep440))"
+  mkdir -p "$REPO/dist"
+  rm -f "$REPO"/dist/cog-*.whl "$REPO"/dist/cog-*.tar.gz
+  (cd "$REPO" && SETUPTOOLS_SCM_PRETEND_VERSION=$(sdk_pep440) uv build --out-dir=dist . >/dev/null)
+}
+
+build_coglet() {
+  local w; w=$(coglet_wheels | head -n1)
+  if [[ $FORCE == 0 && -n $w ]] && ! stale_coglet "$w"; then
+    log "coglet wheel: up to date ($(basename "$w"))"; return
+  fi
+  log "coglet wheel: cross-compiling linux/x86_64 in a $MATURIN_IMAGE container (cog images are always linux/amd64)"
+  if ! docker image inspect "$MATURIN_IMAGE" >/dev/null 2>&1; then log "pulling builder image $MATURIN_IMAGE (one time; removed by 'cleanup --purge-tools')"; docker pull "$MATURIN_IMAGE" >/dev/null; fi
+  extra_ca_setup
+  mkdir -p "$REPO/dist"
+  rm -f "$REPO"/dist/coglet-*x86_64*.whl
+  local name="cog-verify-coglet-$$"
+  trap 'docker rm -f "'"$name"'" >/dev/null 2>&1 || true' EXIT
+  # The repo is mounted read-only; the cargo target dir lives inside the throwaway container.
+  docker run --rm --name "$name" --entrypoint bash \
+    -v "$REPO":/io:ro -v "$REPO/dist":/out -v "$VHOME/extra-ca.pem":/extra-ca.pem:ro \
+    -e CARGO_TARGET_DIR=/tmp/target "$MATURIN_IMAGE" -c '
+      set -eu
+      base=""; for f in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt; do [ -f "$f" ] && { base=$f; break; }; done
+      cat "$base" /extra-ca.pem > /tmp/ca-bundle.pem
+      export CARGO_HTTP_CAINFO=/tmp/ca-bundle.pem SSL_CERT_FILE=/tmp/ca-bundle.pem CURL_CA_BUNDLE=/tmp/ca-bundle.pem
+      pip install --quiet ziglang
+      rustup target add x86_64-unknown-linux-gnu
+      maturin build --release --out /out --target x86_64-unknown-linux-gnu --zig --manifest-path /io/crates/coglet-python/Cargo.toml
+    ' || die "coglet wheel build failed. If the log says 'self-signed certificate in certificate chain', set COG_VERIFY_EXTRA_CA=/path/to/corporate-ca.pem (it must live under \$HOME so Docker can mount it)."
+  trap - EXIT
+  [[ -n $(coglet_wheels) ]] || die "coglet build finished but no x86_64 wheel is in dist/"
+}
+
+cmd_build() {
+  FORCE=0; local skip_coglet=0
+  while [[ $# -gt 0 ]]; do
+    case $1 in --force) FORCE=1;; --skip-coglet) skip_coglet=1;; *) die "build: unknown flag $1";; esac; shift
+  done
+  need go; need uv; need docker; need git
+  build_cli
+  build_sdk
+  if [[ $skip_coglet == 1 ]]; then log "coglet wheel: skipped (the image will pull coglet from PyPI; coglet/crates changes are NOT under test)"; else build_coglet; fi
+  log "done:"; ls -1 "$REPO"/dist/go/*/cog "$REPO"/dist/*.whl 2>/dev/null | sed 's/^/  /'
+}
+
+# ---------------------------------------------------------------- doctor
+
+cmd_doctor() {
+  local fails=0
+  pass() { printf 'PASS  %s\n' "$*"; }
+  warn() { printf 'WARN  %s\n' "$*"; }
+  fail() { printf 'FAIL  %s\n' "$*"; fails=$((fails+1)); }
+  info() { printf 'INFO  %s\n' "$*"; }
+
+  for t in go uv docker git curl python3; do command -v "$t" >/dev/null 2>&1 && pass "tool: $t ($(command -v "$t"))" || fail "tool missing: $t"; done
+  command -v mise >/dev/null 2>&1 && info "mise on PATH ($(command -v mise)); this skill still uses the underlying commands" || info "mise not on PATH (fine; build uses the commands the mise tasks run)"
+
+  info "repo: $REPO  branch=$(git -C "$REPO" rev-parse --abbrev-ref HEAD)  HEAD=$(repo_sha)  $([[ -n $(git -C "$REPO" status --porcelain) ]] && echo 'DIRTY tree (version string only shows HEAD)' || echo clean)"
+
+  if docker info >/dev/null 2>&1; then
+    local arch; arch=$(docker info --format '{{.Architecture}}')
+    pass "docker daemon up (server $(docker info --format '{{.ServerVersion}}'), $(docker info --format '{{.OperatingSystem}}'), $arch)"
+    [[ $arch == x86_64 || $arch == amd64 ]] || warn "docker host is $arch: cog always builds/runs linux/amd64, so containers are emulated and slower"
+  else fail "docker daemon not reachable"; fi
+
+  case $VHOME in "$HOME"/*) pass "COG_VERIFY_HOME=$VHOME is under \$HOME (colima/Docker Desktop can bind-mount it)";; *) warn "COG_VERIFY_HOME=$VHOME is outside \$HOME; Docker bind mounts (cog serve /src) may not see it";; esac
+
+  local bin; bin=$(cli_bin)
+  if [[ -x $bin ]]; then
+    local v; v=$("$bin" --version 2>&1 || true)
+    [[ $v == *"+g$(repo_sha)"* ]] && pass "cli: $v ($bin)" || fail "cli version '$v' does not contain +g$(repo_sha): rebuild with 'cogverify build'"
+    stale_cli "$bin" && fail "cli: sources are newer than $bin: run 'cogverify build'" || pass "cli: not older than cmd/ pkg/ go.mod"
+  else fail "cli binary missing at $bin: run 'cogverify build'"; fi
+
+  local sw cw
+  sw=$(sdk_wheels); cw=$(coglet_wheels)
+  if [[ -z $sw ]]; then fail "sdk wheel missing in dist/: run 'cogverify build'"
+  elif [[ $(wc -l <<<"$sw") -gt 1 ]]; then fail "several cog-*.whl in dist/ (cog picks the last by name): $(tr '\n' ' ' <<<"$sw")"
+  else
+    [[ $sw == *"cog-$(sdk_pep440)-"* ]] && pass "sdk wheel: $(basename "$sw")" || fail "sdk wheel version != VERSION.txt ($(sdk_pep440)): $(basename "$sw")"
+    stale_sdk "$sw" && fail "sdk wheel older than python/: run 'cogverify build'" || pass "sdk wheel: not older than python/"
+  fi
+  if [[ -z $cw ]]; then warn "coglet x86_64 wheel missing in dist/: images will use coglet from PyPI, not this checkout"
+  elif [[ $(wc -l <<<"$cw") -gt 1 ]]; then fail "several coglet x86_64 wheels in dist/: $(tr '\n' ' ' <<<"$cw")"
+  else
+    pass "coglet wheel: $(basename "$cw")"
+    stale_coglet "$cw" && fail "coglet wheel older than crates/: run 'cogverify build'" || pass "coglet wheel: not older than crates/"
+  fi
+
+  if [[ -n ${COG_VERIFY_RUN:-} ]]; then
+    local rd="$VHOME/runs/$COG_VERIFY_RUN"
+    if [[ -f $rd/state.env ]]; then
+      # shellcheck disable=SC1091
+      source "$rd/state.env"
+      [[ -d $MODEL_DIR ]] && pass "run $RUN_ID: model dir $MODEL_DIR" || warn "run $RUN_ID: model dir gone (cleaned up?)"
+      [[ -n $(docker images -q "$IMAGE" 2>/dev/null) ]] && info "run image $IMAGE exists" || info "run image $IMAGE not built yet"
+      if [[ -f $rd/serve.env ]]; then
+        # shellcheck disable=SC1091
+        source "$rd/serve.env"
+        kill -0 "$SERVE_PID" 2>/dev/null && pass "serve: cog pid $SERVE_PID alive" || fail "serve: cog pid $SERVE_PID not running"
+        [[ -n $(docker ps -q --filter id="$SERVE_CONTAINER") ]] && pass "serve: container $SERVE_CONTAINER running" || fail "serve: container $SERVE_CONTAINER not running"
+        local own; own=$(docker ps -q --filter publish="$SERVE_PORT")
+        [[ $own == "${SERVE_CONTAINER:0:12}" ]] && pass "serve: port $SERVE_PORT is published by our container only" || fail "serve: port $SERVE_PORT is published by '$own', expected ${SERVE_CONTAINER:0:12}"
+        local st; st=$(curl -s -m 3 "$SERVE_URL/health-check" | python3 -c 'import sys,json; print(json.load(sys.stdin)["status"])' 2>/dev/null || echo unreachable)
+        [[ $st == READY ]] && pass "serve: /health-check status=READY" || fail "serve: /health-check status=$st"
+      else info "no server started for this run"; fi
+    else fail "COG_VERIFY_RUN=$COG_VERIFY_RUN has no state at $rd"; fi
+  else info "COG_VERIFY_RUN not set: skipping run checks"; fi
+
+  [[ $fails == 0 ]] && { echo "doctor: OK"; return 0; } || { echo "doctor: $fails failure(s)"; return 1; }
+}
+
+# ---------------------------------------------------------------- runs
+
+load_run() {
+  [[ -n ${COG_VERIFY_RUN:-} ]] || die "set COG_VERIFY_RUN=<run id> (printed by 'cogverify new-run')"
+  RUN_DIR="$VHOME/runs/$COG_VERIFY_RUN"
+  [[ -f $RUN_DIR/state.env ]] || die "no such run: $RUN_DIR/state.env"
+  # shellcheck disable=SC1091
+  source "$RUN_DIR/state.env"
+  if [[ -f $RUN_DIR/serve.env ]]; then
+    # shellcheck disable=SC1091
+    source "$RUN_DIR/serve.env"
+  fi
+}
+
+cmd_new_run() {
+  local fixture=echo
+  while [[ $# -gt 0 ]]; do case $1 in --fixture) fixture=$2; shift;; *) die "new-run: unknown flag $1";; esac; shift; done
+  [[ -d $SKILL/fixtures/$fixture ]] || die "no fixture '$fixture' (have: $(ls "$SKILL/fixtures" | tr '\n' ' '))"
+  local bin; bin=$(cli_bin); [[ -x $bin ]] || die "cli not built: run 'cogverify build' first"
+  local rand run_id rd
+  rand=$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')
+  run_id="$(date +%Y%m%d-%H%M%S)-$rand"
+  rd="$VHOME/runs/$run_id"
+  mkdir -p "$rd/evidence"
+  # The model dir name decides the default image name: cog-<dir>. Unique per run.
+  cp -R "$SKILL/fixtures/$fixture" "$rd/verify-$rand"
+  {
+    printf 'RUN_ID=%q\n' "$run_id"
+    printf 'RUN_DIR=%q\n' "$rd"
+    printf 'MODEL_DIR=%q\n' "$rd/verify-$rand"
+    printf 'EVIDENCE_DIR=%q\n' "$rd/evidence"
+    printf 'IMAGE=%q\n' "cog-verify-$rand"
+    printf 'FIXTURE=%q\n' "$fixture"
+    printf 'REPO=%q\n' "$REPO"
+    printf 'COG=%q\n' "$bin"
+  } >"$rd/state.env"
+  log "run created: $run_id (fixture: $fixture)"
+  echo "export COG_VERIFY_RUN=$run_id"
+  echo "# then: eval \"\$($SELF/cogverify env)\"   -> COG, IMAGE, MODEL_DIR, EVIDENCE_DIR, RUN_DIR, (SERVE_URL)"
+}
+
+cmd_env() {
+  load_run
+  grep -h '=' "$RUN_DIR/state.env"
+  [[ ! -f $RUN_DIR/serve.env ]] || grep -h '=' "$RUN_DIR/serve.env"
+  echo "export COG IMAGE MODEL_DIR EVIDENCE_DIR RUN_DIR REPO"
+  [[ ! -f $RUN_DIR/serve.env ]] || echo "export SERVE_URL SERVE_PORT SERVE_PID SERVE_CONTAINER"
+}
+
+cmd_tx() {
+  load_run
+  local want_exit="" ; local -a out_re=() err_re=() out_not=() err_not=()
+  while [[ ${1:-} == --* ]]; do
+    case $1 in
+      --exit) want_exit=$2;; --stdout) out_re+=("$2");; --stderr) err_re+=("$2");;
+      --stdout-not) out_not+=("$2");; --stderr-not) err_not+=("$2");;
+      *) die "tx: unknown flag $1";;
+    esac; shift 2
+  done
+  local name=${1:?usage: tx [asserts] NAME 'COMMAND'} cmdline=${2:?usage: tx [asserts] NAME 'COMMAND'}
+  local base="$EVIDENCE_DIR/$name" code
+  mkdir -p "$EVIDENCE_DIR"
+  printf '%s\n' "$cmdline" >"$base.cmd"
+  set +e
+  # stdin is /dev/null so nothing can block on input; pipe into the command inside COMMAND if you need stdin.
+  (cd "$MODEL_DIR" && V="$SELF/cogverify" && export V COG_VERIFY_RUN COG IMAGE MODEL_DIR RUN_DIR EVIDENCE_DIR REPO SERVE_URL SERVE_PORT SERVE_CONTAINER \
+    && bash -c "$cmdline" </dev/null >"$base.stdout" 2>"$base.stderr")
+  code=$?
+  set -e
+  printf '%s\n' "$code" >"$base.exit"
+  local n=${COG_VERIFY_TX_LINES:-40}
+  show() { # $1 label, $2 file: print up to $n lines, keeping the head and (mostly) the tail
+    [[ -s $2 ]] || return 0
+    local total; total=$(awk 'END{print NR}' "$2")
+    echo "--- $1 ($total lines; full: $2)"
+    if (( total <= n )); then cat "$2"; else head -n $((n / 3)) "$2"; echo "  [... $((total - n)) lines omitted ...]"; tail -n $((n - n / 3)) "$2"; fi
+    [[ -z $(tail -c1 "$2") ]] || echo   # file did not end in a newline
+  }
+  printf '$ %s\n' "$cmdline"
+  show stdout "$base.stdout"
+  show stderr "$base.stderr"
+  echo "--- exit $code"
+  local bad=0 r re; : >"$base.asserts"
+  chk() { # $1 label, $2 rc (0 = assertion held)
+    if [[ $2 == 0 ]]; then echo "ASSERT ok    $1" | tee -a "$base.asserts"; else echo "ASSERT FAIL  $1" | tee -a "$base.asserts"; bad=1; fi
+  }
+  if [[ -n $want_exit ]]; then [[ $code == "$want_exit" ]] && r=0 || r=1; chk "exit == $want_exit (got $code)" $r; fi
+  for re in ${out_re[@]+"${out_re[@]}"};  do grep -Eq -- "$re" "$base.stdout" && r=0 || r=1; chk "stdout matches /$re/" $r; done
+  for re in ${err_re[@]+"${err_re[@]}"};  do grep -Eq -- "$re" "$base.stderr" && r=0 || r=1; chk "stderr matches /$re/" $r; done
+  for re in ${out_not[@]+"${out_not[@]}"}; do grep -Eq -- "$re" "$base.stdout" && r=1 || r=0; chk "stdout lacks /$re/" $r; done
+  for re in ${err_not[@]+"${err_not[@]}"}; do grep -Eq -- "$re" "$base.stderr" && r=1 || r=0; chk "stderr lacks /$re/" $r; done
+  return $bad
+}
+
+cmd_image_label() {
+  load_run
+  docker image inspect "$IMAGE" --format "{{index .Config.Labels \"${1:?usage: image-label KEY}\"}}"
+}
+
+cmd_image_schema() {
+  load_run
+  docker image inspect "$IMAGE" --format '{{index .Config.Labels "run.cog.openapi_schema"}}' | python3 -c '
+import json, sys
+schema = json.load(sys.stdin)
+inp = schema["components"]["schemas"]["Input"]
+required = set(inp.get("required", []))
+for name, p in sorted(inp["properties"].items(), key=lambda kv: kv[1].get("x-order", 0)):
+    print("%s: type=%s required=%s default=%s minimum=%s maximum=%s description=%r" % (
+        name, p.get("type"), "yes" if name in required else "no", p.get("default"),
+        p.get("minimum"), p.get("maximum"), p.get("description")))
+'
+}
+
+cmd_serve_start() {
+  load_run
+  [[ ! -f $RUN_DIR/serve.env ]] || die "a server is already recorded for this run; run serve-stop first"
+  local port pid slog url deadline
+  port=$(free_port); url="http://127.0.0.1:$port"; slog="$EVIDENCE_DIR/serve.log"
+  log "starting: cog serve -p $port (image $IMAGE, first start also builds the image)"
+  ( cd "$MODEL_DIR" || exit 1
+    nohup "$COG" serve -p "$port" --progress plain </dev/null >"$slog" 2>&1 &
+    echo $! >"$RUN_DIR/serve.pid" )
+  pid=$(cat "$RUN_DIR/serve.pid")
+  deadline=$((SECONDS + ${COG_VERIFY_SERVE_TIMEOUT:-420}))
+  while :; do
+    kill -0 "$pid" 2>/dev/null || { tail -n 40 "$slog" >&2; die "cog serve (pid $pid) exited before READY; log: $slog"; }
+    if [[ $(curl -s -m 2 "$url/health-check" | python3 -c 'import sys,json; print(json.load(sys.stdin)["status"])' 2>/dev/null || true) == READY ]]; then break; fi
+    (( SECONDS < deadline )) || { tail -n 40 "$slog" >&2; die "timed out waiting for READY on $url"; }
+    sleep 2
+  done
+  local cid; cid=$(docker ps -q --no-trunc --filter publish="$port" | head -n1)
+  [[ -n $cid ]] || die "READY but no container publishes port $port"
+  {
+    printf 'SERVE_PID=%q\n' "$pid"; printf 'SERVE_PORT=%q\n' "$port"
+    printf 'SERVE_URL=%q\n' "$url"; printf 'SERVE_CONTAINER=%q\n' "$cid"
+  } >"$RUN_DIR/serve.env"
+  log "READY: $url  cog pid=$pid  container=${cid:0:12}"
+}
+
+cmd_serve_stop() {
+  load_run
+  [[ -f $RUN_DIR/serve.env ]] || { log "no server recorded for this run"; return 0; }
+  # Graceful path: the coglet server was started with --await-explicit-shutdown (it ignores SIGTERM),
+  # so POST /shutdown is the clean stop. The container is --rm and disappears with it.
+  curl -s -m 5 -X POST "$SERVE_URL/shutdown" >/dev/null 2>&1 || true
+  local i
+  for _ in $(seq 1 20); do kill -0 "$SERVE_PID" 2>/dev/null || break; sleep 1; done
+  if kill -0 "$SERVE_PID" 2>/dev/null; then
+    # only signal the pid we recorded, and only if it is still our `cog serve -p <port>`
+    if ps -p "$SERVE_PID" -o command= | grep -q -- "serve -p $SERVE_PORT"; then kill -INT "$SERVE_PID" 2>/dev/null || true; sleep 2; fi
+  fi
+  if [[ -n $(docker ps -aq --no-trunc --filter id="$SERVE_CONTAINER") ]]; then
+    log "container ${SERVE_CONTAINER:0:12} survived /shutdown; removing it by id"
+    docker rm -f "$SERVE_CONTAINER" >/dev/null 2>&1 || true
+  fi
+  rm -f "$RUN_DIR/serve.env" "$RUN_DIR/serve.pid"
+  log "server stopped (pid $SERVE_PID, container ${SERVE_CONTAINER:0:12}, port $SERVE_PORT)"
+}
+
+cmd_cleanup() {
+  local purge=0; [[ ${1:-} != --purge-tools ]] || purge=1
+  load_run
+  cmd_serve_stop || true
+  local ref
+  while read -r ref; do [[ -z $ref ]] || { docker rmi "$ref" >/dev/null 2>&1 && log "removed image $ref" || log "could not remove image $ref"; }; done \
+    < <(docker images --format '{{.Repository}}:{{.Tag}}' --filter "reference=${IMAGE}*")
+  cp "$RUN_DIR/state.env" "$EVIDENCE_DIR/run-state.env" 2>/dev/null || true
+  rm -rf "$MODEL_DIR" "$RUN_DIR/serve.pid"
+  if [[ $purge == 1 ]]; then
+    docker rmi "$MATURIN_IMAGE" >/dev/null 2>&1 && log "removed tool image $MATURIN_IMAGE" || true
+    rm -f "$VHOME/extra-ca.pem"
+  fi
+  echo "--- cleanup report"
+  echo "images matching ${IMAGE}*:   $(docker images -q --filter "reference=${IMAGE}*" | wc -l | tr -d ' ') (want 0)"
+  echo "model dir exists:            $([[ -d $MODEL_DIR ]] && echo yes || echo no) (want no)"
+  echo "evidence kept at:            $EVIDENCE_DIR ($(find "$EVIDENCE_DIR" -type f | wc -l | tr -d ' ') files)"
+  echo "left in place on purpose:    $REPO/dist (build outputs, gitignored; reused by the next run)"
+}
+
+case ${1:-help} in
+  build) shift; cmd_build "$@";;
+  doctor) shift; cmd_doctor "$@";;
+  new-run) shift; cmd_new_run "$@";;
+  env) shift; cmd_env "$@";;
+  tx) shift; cmd_tx "$@";;
+  serve-start) shift; cmd_serve_start "$@";;
+  serve-stop) shift; cmd_serve_stop "$@";;
+  cleanup) shift; cmd_cleanup "$@";;
+  image-label) shift; cmd_image_label "$@";;
+  image-schema) shift; cmd_image_schema "$@";;
+  free-port) free_port;;
+  help|-h|--help) sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//';;
+  *) die "unknown command '$1' (try: cogverify help)";;
+esac
