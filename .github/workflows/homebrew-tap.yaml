@@ -24,6 +24,9 @@ on:
         description: "Release tag (e.g., v1.0.0)"
         required: true
         type: string
+    secrets:
+      COG_HOMEBREW_TAP_PRIVATE_KEY:
+        required: true
 
 permissions:
   contents: read
