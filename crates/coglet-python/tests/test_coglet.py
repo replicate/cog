@@ -5,6 +5,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -520,7 +521,7 @@ class TestSyncPredictor:
             assert result["metrics"]["predict_time"] >= 0
 
 
-@pytest.mark.parametrize("shape", ["scalar", "nested", "generator"])
+@pytest.mark.parametrize("shape", ["scalar", "nested", "generator", "list"])
 def test_returned_paths_are_consumed(tmp_path: Path, shape: str) -> None:
     predictor = tmp_path / "predict.py"
     predictor.write_text("""
@@ -539,6 +540,12 @@ class Predictor(BasePredictor):
             predictor.read_text()
             .replace("-> Path:", "-> dict[str, Path]:")
             .replace("return path", 'return {"file": path}')
+        )
+    elif shape == "list":
+        predictor.write_text(
+            predictor.read_text()
+            .replace("-> Path:", "-> list[Path]:")
+            .replace("return path", "return [path, path]")
         )
     elif shape == "generator":
         predictor.write_text(
@@ -559,10 +566,39 @@ class Predictor(BasePredictor):
             output = output["file"]
         elif shape == "generator":
             output = output[0]
+        elif shape == "list":
+            assert output[0] == output[1], output
+            output = output[0]
         assert output == "data:text/plain;base64,aGVsbG8="
         assert not (tmp_path / "result.txt").exists()
         result = server.predict({"write": False})
         assert result["status"] == "failed", result
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_returned_paths_outside_temp_dir_are_kept(tmp_path: Path, nested: bool) -> None:
+    # pytest's tmp_path lives in the system temp dir, so the asset goes next to
+    # this file to stand in for something baked into the image.
+    with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as asset_dir:
+        asset = Path(asset_dir) / "asset.txt"
+        asset.write_text("hello")
+        output = '{"file": asset}' if nested else "asset"
+        predictor = tmp_path / "predict.py"
+        predictor.write_text(f"""
+from pathlib import Path
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self) -> {"dict[str, Path]" if nested else "Path"}:
+        asset = Path({str(asset)!r})
+        return {output}
+""")
+        (tmp_path / "cog.yaml").write_text('predict: "predict.py:Predictor"\n')
+        with CogletServer(predictor) as server:
+            for _ in range(2):
+                result = server.predict({})
+                assert result["status"] == "succeeded", result
+        assert asset.read_text() == "hello"
 
 
 class TestSecretInput:

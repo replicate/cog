@@ -213,8 +213,9 @@ impl SlotSender {
 
     /// Send a file-typed output (e.g. Path, File return types).
     ///
-    /// Snapshot the file before the predictor resumes, then unlink the source
-    /// entry. Symlink targets are copied but never unlinked.
+    /// Snapshots the file into the output dir. The source is left in place;
+    /// callers pass it to [`release_output_path`] once every reference to it
+    /// has been sent.
     /// `mime_type` is an explicit MIME type; when None the parent guesses from extension.
     pub fn send_file_output(&self, path: PathBuf, mime_type: Option<String>) -> io::Result<()> {
         let upload_filename = path
@@ -222,16 +223,16 @@ impl SlotSender {
             .and_then(|s| s.to_str())
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 filename"))?
             .to_owned();
-        let mut source = std::fs::File::open(&path)?;
-        if !source.metadata()?.is_file() {
+        // Check before opening so a FIFO or device can't block the open.
+        if !std::fs::metadata(&path)?.is_file() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "output path must be a regular file",
             ));
         }
+        let mut source = std::fs::File::open(&path)?;
         let mut file = tempfile::NamedTempFile::new_in(&self.output_dir)?;
         std::io::copy(&mut source, &mut file)?;
-        std::fs::remove_file(&path)?;
         self.send_staged_file(file, mime_type, Some(upload_filename))
     }
 
@@ -282,6 +283,38 @@ impl SlotSender {
         self.tx
             .send(msg)
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
+    }
+}
+
+/// Delete a returned output path once its contents have been sent.
+///
+/// Only files whose directory resolves under the system temp dir are deleted,
+/// so baked-in assets, weights, and mounted files are never touched. The
+/// directory is resolved rather than the file, so a returned symlink removes
+/// the link and keeps its target. Failures are logged, not returned, because
+/// the output has already been sent.
+pub fn release_output_path(path: &std::path::Path) {
+    if !is_in_temp_dir(path) {
+        return;
+    }
+    if let Err(error) = std::fs::remove_file(path)
+        && error.kind() != io::ErrorKind::NotFound
+    {
+        tracing::warn!(path = %path.display(), %error, "Failed to remove output file");
+    }
+}
+
+fn is_in_temp_dir(path: &std::path::Path) -> bool {
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => std::path::Path::new("."),
+    };
+    match (
+        std::fs::canonicalize(parent),
+        std::fs::canonicalize(std::env::temp_dir()),
+    ) {
+        (Ok(parent), Ok(temp_dir)) => parent.starts_with(temp_dir),
+        _ => false,
     }
 }
 
@@ -1059,6 +1092,7 @@ mod tests {
         for contents in [b"first".as_slice(), b"second".as_slice()] {
             std::fs::write(&source, contents).unwrap();
             sender.send_file_output(source.clone(), None).unwrap();
+            release_output_path(&source);
             assert!(!source.exists());
             let SlotResponse::FileOutput {
                 filename,
@@ -1077,6 +1111,48 @@ mod tests {
         assert_eq!(
             sender.send_file_output(source, None).unwrap_err().kind(),
             io::ErrorKind::NotFound
+        );
+    }
+
+    #[test]
+    fn release_keeps_files_outside_temp_dir() {
+        let root = tempfile::Builder::new()
+            .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+            .unwrap();
+        let asset = root.path().join("asset.txt");
+        std::fs::write(&asset, b"asset").unwrap();
+        release_output_path(&asset);
+        assert_eq!(std::fs::read(asset).unwrap(), b"asset");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn release_keeps_files_behind_symlinked_directory() {
+        let outside = tempfile::Builder::new()
+            .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+            .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let link = temp.path().join("outputs");
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+        std::fs::write(outside.path().join("asset.txt"), b"asset").unwrap();
+        release_output_path(&link.join("asset.txt"));
+        assert_eq!(
+            std::fs::read(outside.path().join("asset.txt")).unwrap(),
+            b"asset"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fifo_output_is_rejected_without_blocking() {
+        let root = tempfile::tempdir().unwrap();
+        let fifo = root.path().join("pipe");
+        nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::S_IRWXU).unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let sender = SlotSender::new(tx, root.path().to_owned());
+        assert_eq!(
+            sender.send_file_output(fifo, None).unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
         );
     }
 
@@ -1112,6 +1188,7 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let sender = SlotSender::new(tx, root.path().to_owned());
         sender.send_file_output(link.clone(), None).unwrap();
+        release_output_path(&link);
         assert!(!link.exists());
         assert_eq!(std::fs::read(target).unwrap(), b"asset");
         let SlotResponse::FileOutput { filename, .. } = rx.try_recv().unwrap() else {
@@ -1124,11 +1201,20 @@ mod tests {
     fn independent_senders_sharing_output_directory_do_not_overwrite() {
         let outputs = tempfile::tempdir().unwrap();
         let (tx, mut rx) = mpsc::unbounded_channel();
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("result.txt");
         for contents in [b"first".as_slice(), b"second".as_slice()] {
             let sender = SlotSender::new(tx.clone(), outputs.path().to_owned());
             sender.write_file_output(contents, "txt", None).unwrap();
+            std::fs::write(&source, contents).unwrap();
+            sender.send_file_output(source.clone(), None).unwrap();
         }
-        for contents in [b"first".as_slice(), b"second".as_slice()] {
+        for contents in [
+            b"first".as_slice(),
+            b"first".as_slice(),
+            b"second".as_slice(),
+            b"second".as_slice(),
+        ] {
             let SlotResponse::FileOutput { filename, .. } = rx.try_recv().unwrap() else {
                 panic!("expected FileOutput");
             };

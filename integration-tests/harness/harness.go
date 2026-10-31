@@ -1130,7 +1130,7 @@ func (h *Harness) cmdUploadServerStart(ts *testscript.TestScript, neg bool, args
 		mus.mu.Unlock()
 
 		// Return a clean URL without query params (simulates a signed URL redirect)
-		location := fmt.Sprintf("http://host.docker.internal:%d%s", mus.port, r.URL.Path)
+		location := fmt.Sprintf("http://host.docker.internal:%d%s", mus.port, r.URL.EscapedPath())
 		w.Header().Set("Location", location)
 		w.WriteHeader(http.StatusOK)
 	})

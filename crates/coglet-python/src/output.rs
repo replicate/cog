@@ -12,37 +12,45 @@
 //!
 //! This replaces the Python modules cog.json and cog.files.
 
+use std::collections::HashSet;
+use std::path::PathBuf;
+
+use coglet_core::worker::release_output_path;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFrozenSet, PyList, PySet, PyString, PyTuple};
 
 /// Process prediction output for JSON serialization.
 ///
 /// Calls make_encodeable() to normalize, then encode_files() to convert any
-/// remaining Path/IOBase objects to base64 data URLs.
+/// remaining Path/IOBase objects to base64 data URLs. Encoded paths are
+/// released once the whole output is encoded, so repeated paths work.
 pub fn process_output<'py>(
     py: Python<'py>,
     output: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let encodeable = make_encodeable(py, output)?;
-    let mut paths = std::collections::HashSet::new();
-    let encoded = encode_files(py, &encodeable, &mut paths)?;
-    // Wait until every occurrence is encoded so repeated paths in one output work.
-    for path in paths {
-        if let Err(error) = std::fs::remove_file(path)
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            return Err(error.into());
-        }
-    }
+    let mut paths = HashSet::new();
+    let encoded = process_output_item(py, output, &mut paths)?;
+    release_output_paths(paths);
     Ok(encoded)
 }
 
-/// Process a single output item (for generator outputs).
+/// Process a single output item, collecting encoded paths instead of
+/// releasing them. Callers release `paths` after the last item that might
+/// reference them.
 pub fn process_output_item<'py>(
     py: Python<'py>,
     item: &Bound<'py, PyAny>,
+    paths: &mut HashSet<PathBuf>,
 ) -> PyResult<Bound<'py, PyAny>> {
-    process_output(py, item)
+    let encodeable = make_encodeable(py, item)?;
+    encode_files(py, &encodeable, paths)
+}
+
+/// Release every collected output path. See [`release_output_path`].
+pub fn release_output_paths(paths: HashSet<PathBuf>) {
+    for path in paths {
+        release_output_path(&path);
+    }
 }
 
 /// Normalize a Python object into a JSON-friendly form.
@@ -155,7 +163,7 @@ fn make_encodeable<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bo
 fn encode_files<'py>(
     py: Python<'py>,
     obj: &Bound<'py, PyAny>,
-    paths: &mut std::collections::HashSet<std::path::PathBuf>,
+    paths: &mut HashSet<PathBuf>,
 ) -> PyResult<Bound<'py, PyAny>> {
     // str -- return as-is (don't recurse into characters)
     if obj.is_instance_of::<PyString>() {
@@ -185,12 +193,20 @@ fn encode_files<'py>(
     let os_mod = py.import("os")?;
     let pathlike_cls = os_mod.getattr("PathLike")?;
     if obj.is_instance(&pathlike_cls)? {
+        let path = obj.extract::<PathBuf>()?;
+        // Check before opening so a FIFO or device can't block the open.
+        if !std::fs::metadata(&path)?.is_file() {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "output path must be a regular file: {}",
+                path.display()
+            )));
+        }
         let builtins = py.import("builtins")?;
         let fh = builtins.getattr("open")?.call1((obj, "rb"))?;
         let result = file_to_base64(py, &fh);
         fh.call_method0("close")?;
         let encoded = result?;
-        paths.insert(obj.extract::<std::path::PathBuf>()?);
+        paths.insert(path);
         return Ok(encoded);
     }
 
@@ -524,6 +540,52 @@ mod tests {
         });
         assert!(!link.exists());
         assert_eq!(std::fs::read(target).unwrap(), b"asset");
+    }
+
+    #[test]
+    fn nested_path_outside_temp_dir_is_kept() {
+        let root = tempfile::Builder::new()
+            .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+            .unwrap();
+        let file = root.path().join("asset.txt");
+        std::fs::write(&file, b"asset").unwrap();
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let path = py
+                .import("pathlib")
+                .unwrap()
+                .getattr("Path")
+                .unwrap()
+                .call1((&file,))
+                .unwrap();
+            let obj = PyDict::new(py);
+            obj.set_item("file", &path).unwrap();
+            process_output(py, obj.as_any()).unwrap();
+        });
+        assert_eq!(std::fs::read(file).unwrap(), b"asset");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nested_fifo_is_rejected_without_blocking() {
+        let root = tempfile::tempdir().unwrap();
+        let fifo = root.path().join("pipe");
+        let c_path = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let path = py
+                .import("pathlib")
+                .unwrap()
+                .getattr("Path")
+                .unwrap()
+                .call1((&fifo,))
+                .unwrap();
+            let obj = PyDict::new(py);
+            obj.set_item("file", &path).unwrap();
+            assert!(process_output(py, obj.as_any()).is_err());
+        });
+        assert!(fifo.exists());
     }
 
     #[test]

@@ -373,7 +373,7 @@ When a prediction input exceeds 6MiB, it's too large to send inline through the 
 
 When run() produces file outputs (`cog.Path`), the worker sends a `FileOutput` message with the filename and MIME type. The parent handles uploading the file (or base64-encoding it for inline responses). The `output_dir` field in the `Predict` request tells the worker where to write output files.
 
-Returning or yielding a path transfers ownership to Cog. The worker snapshots its contents into a unique temporary file and unlinks the source entry before resuming user code. This prevents a later overwrite from changing an earlier streamed output. The parent deletes the snapshot after reading it; uploads use the bytes in memory. Nested paths are encoded inline and unlinked after the containing output is encoded. Cleanup removes files only, never prediction directories derived from public IDs.
+The worker snapshots a returned or yielded path into a unique temporary file in `output_dir` before resuming user code, so a later overwrite can't change an earlier streamed output. After the snapshot is sent, the worker deletes the source only if its directory resolves under the system temp dir; files elsewhere are left alone. Paths in a list, tuple, or nested output are deleted after the whole output is sent, so the same path can appear more than once. The parent deletes the snapshot right after reading it, before the upload starts; uploads use the bytes in memory. Cleanup removes files only, never directories.
 
 `FileOutputKind` distinguishes between normal file outputs (`FileType`) and oversized outputs (`Oversized`) that exceeded an inline size limit.
 

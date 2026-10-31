@@ -1,0 +1,39 @@
+# Test which returned paths Cog deletes after sending them.
+# A temp file is deleted before the generator resumes, so the same path can be
+# rewritten for the next yield. A file baked into the image is never deleted,
+# so the second prediction can return it again.
+
+cog build -t $TEST_IMAGE
+cog serve
+
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+# "first", "second", "asset\n" as base64 data URLs
+stdout '"output":\["data:text/plain;base64,Zmlyc3Q=","data:text/plain;base64,c2Vjb25k","data:text/plain;base64,YXNzZXQK"\]'
+
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+stdout 'data:text/plain;base64,YXNzZXQK'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- asset.txt --
+asset
+-- predict.py --
+import tempfile
+from typing import Iterator
+
+from cog import BasePredictor, Path
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> Iterator[Path]:
+        path = Path(tempfile.mkdtemp()) / "out.txt"
+        for text in ["first", "second"]:
+            path.write_text(text)
+            yield path
+            assert not path.exists(), "temp output was not deleted"
+        yield Path("/src/asset.txt")

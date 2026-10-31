@@ -3358,7 +3358,9 @@ These types can be used directly as input parameter types and output return type
 
 For models that return a `cog.Path` object, the output returned by Cog's built-in HTTP server will be a URL.
 
-Returning or yielding a path transfers ownership of that file to Cog. Cog copies its contents and deletes the source entry before continuing, including files outside temporary directories. Return a copy if you need to keep the original. A symlink output deletes the link, not its target. To return the same path again, write a new file there first. Cog does not delete the containing directory.
+Cog copies the contents of a returned or yielded path. If the file is in the system temp directory (for example, one made with `tempfile`, or a downloaded input file), Cog then deletes it. For a generator, this happens before the generator resumes, so you can write to the same path again for the next `yield`. Files anywhere else, such as assets baked into the image or model weights, are never deleted. A symlink in the temp directory is removed but its target is kept. Cog does not delete directories.
+
+Don't build a returned path from an input value. A caller could point it at any file in the container.
 
 This example takes an input file, resizes it, and returns the resized image:
 

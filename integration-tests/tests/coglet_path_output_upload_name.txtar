@@ -1,0 +1,31 @@
+# Test that an uploaded output keeps its basename as one escaped path segment
+# and that a query string on --upload-url (as with signed URLs) is preserved.
+
+cog build -t $TEST_IMAGE
+
+upload-server-start
+
+cog serve --upload-url ${UPLOAD_SERVER_URL}?token=abc
+
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+stdout '"output":"http://host.docker.internal:[0-9]+/my%20result%20%231\.txt"'
+
+upload-server-count 1
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import tempfile
+
+from cog import BasePredictor, Path
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> Path:
+        path = Path(tempfile.mkdtemp()) / "my result #1.txt"
+        path.write_text("hello")
+        return path

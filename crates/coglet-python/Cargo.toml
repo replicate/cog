@@ -31,7 +31,7 @@ libc = "0.2"
 
 [dev-dependencies]
 pyo3 = { workspace = true, features = ["auto-initialize"] }
-tempfile = "3"
+tempfile.workspace = true
 
 [features]
 default = ["tracing", "tracing-grpc"]

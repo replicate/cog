@@ -34,6 +34,9 @@ use crate::prediction::Prediction;
 const MAX_PENDING_CANCELLATIONS: usize = 1000;
 
 /// Read an owned output snapshot and release its disk space before uploading.
+///
+/// The snapshot is deleted as soon as it is read, before the upload starts, so
+/// failed and canceled uploads have nothing left to clean up.
 fn read_output_file(filename: &str) -> std::io::Result<Vec<u8>> {
     let result = std::fs::read(filename);
     if let Err(error) = std::fs::remove_file(filename)
@@ -44,12 +47,28 @@ fn read_output_file(filename: &str) -> std::io::Result<Vec<u8>> {
     result
 }
 
+/// Make a filename safe to push as a single URL path segment.
+///
+/// URL parsing drops tabs and newlines and treats `.`/`..` as dot segments, so
+/// a name like `".\n."` would otherwise move the upload to the parent path.
+fn upload_segment(filename: &str) -> String {
+    let segment: String = filename
+        .chars()
+        .map(|c| if c.is_control() { '_' } else { c })
+        .collect();
+    match segment.as_str() {
+        "" | "." | ".." => "output".to_string(),
+        _ => segment,
+    }
+}
+
 /// Upload a file to a signed endpoint, returning the final URL.
 ///
 /// Matches the behavior of Python cog's `put_file_to_signed_endpoint`:
-/// PUT to `{endpoint}{filename}` with Content-Type header, then extract
-/// the final URL from the Location header (falling back to response URL),
-/// stripping query parameters. Follows redirects automatically.
+/// PUT to the endpoint with `filename` appended as one escaped path segment
+/// (the endpoint's query string is kept), then extract the final URL from the
+/// Location header (falling back to response URL), stripping query parameters.
+/// Follows redirects automatically.
 async fn upload_file(
     endpoint: &str,
     filename: &str,
@@ -59,9 +78,9 @@ async fn upload_file(
 ) -> Result<String, String> {
     let mut url = reqwest::Url::parse(endpoint).map_err(|_| "invalid upload URL".to_string())?;
     url.path_segments_mut()
-        .map_err(|_| "upload URL cannot contain path segments".to_string())?
+        .map_err(|_| "upload URL does not support path segments".to_string())?
         .pop_if_empty()
-        .push(filename);
+        .push(&upload_segment(filename));
     let client = reqwest::Client::new();
     let resp = client
         .put(url)
@@ -1521,6 +1540,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn upload_segment_cannot_escape_its_segment() {
+        assert_eq!(upload_segment(".\n."), "._.");
+        assert_eq!(upload_segment("a\tb.png"), "a_b.png");
+        assert_eq!(upload_segment(""), "output");
+        assert_eq!(upload_segment(".."), "output");
+        assert_eq!(upload_segment("result.png"), "result.png");
+    }
+
+    #[tokio::test]
+    async fn upload_with_control_characters_stays_under_endpoint() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(ResponseTemplate::new(201))
+            .expect(1)
+            .mount(&server)
+            .await;
+        upload_file(
+            &format!("{}/bucket/pred/?token=secret", server.uri()),
+            ".\n.",
+            b"data",
+            "text/plain",
+            "test",
+        )
+        .await
+        .unwrap();
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests[0].url.path(), "/bucket/pred/._.");
+        assert_eq!(requests[0].url.query(), Some("token=secret"));
+    }
+
     #[tokio::test]
     async fn file_upload_streams_and_cleans_snapshot_before_done() {
         let server = MockServer::start().await;
@@ -1539,6 +1590,7 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let sender = crate::worker::SlotSender::new(tx, outputs.path().to_owned());
         sender.send_file_output(file.clone(), None).unwrap();
+        crate::worker::release_output_path(&file);
         assert!(!file.exists());
         let mut prediction = TestPrediction::new(server.uri(), true).await;
         let mut events = prediction.prediction.lock().unwrap().subscribe_stream();

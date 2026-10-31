@@ -46,7 +46,9 @@ mime_guess = "2.0.5"
 
 # Identifiers
 uuid.workspace = true
-tempfile = "3"
+
+# Filesystem
+tempfile.workspace = true
 
 # HTTP server
 axum.workspace = true

@@ -1,12 +1,14 @@
 //! Python predictor loading and invocation.
 
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
-use coglet_core::worker::SlotSender;
+use coglet_core::worker::{SlotSender, release_output_path};
 use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 
 use crate::cancel;
@@ -212,14 +214,18 @@ fn submit_async_coroutine(
 
 /// Send a single output item over IPC, routing file outputs to disk.
 ///
-/// For Path outputs (os.PathLike): transfers ownership via send_file_output.
+/// For Path outputs (os.PathLike): snapshots the file via send_file_output.
 /// For IOBase outputs: reads bytes, writes to output_dir via write_file_output.
 /// For everything else: processes through make_encodeable + upload_files, then send_output.
+///
+/// Sent paths are added to `paths`; the caller releases them once no later
+/// item can reference them.
 fn send_output_item(
     py: Python<'_>,
     item: &Bound<'_, PyAny>,
     json_module: &Bound<'_, PyAny>,
     slot_sender: &SlotSender,
+    paths: &mut HashSet<PathBuf>,
 ) -> Result<(), PredictionError> {
     let os = py
         .import("os")
@@ -235,14 +241,15 @@ fn send_output_item(
         .map_err(|e| PredictionError::Failed(format!("Failed to get io.IOBase: {}", e)))?;
 
     if item.is_instance(&pathlike).unwrap_or(false) {
-        // Snapshot and consume the returned path before the predictor resumes.
         let path_str: String = item
             .call_method0("__fspath__")
             .and_then(|p| p.extract())
             .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
-        slot_sender
-            .send_file_output(std::path::PathBuf::from(path_str), None)
+        let path = PathBuf::from(path_str);
+        // Copying a large file shouldn't block other slots on the GIL.
+        py.detach(|| slot_sender.send_file_output(path.clone(), None))
             .map_err(|e| PredictionError::Failed(format!("Failed to send file output: {}", e)))?;
+        paths.insert(path);
         return Ok(());
     }
 
@@ -281,7 +288,7 @@ fn send_output_item(
     }
 
     // Non-file output - process normally
-    let processed = output::process_output_item(py, item)
+    let processed = output::process_output_item(py, item, paths)
         .map_err(|e| PredictionError::Failed(format!("Failed to process output item: {}", e)))?;
 
     let item_str: String = json_module
@@ -981,7 +988,10 @@ impl PythonPredictor {
                 PredictionError::Failed(format!("Generator iteration error: {}", e))
             })?;
 
-            send_output_item(py, &item, json_module, slot_sender)?;
+            // Release before the generator resumes so it can reuse the path.
+            let mut paths = HashSet::new();
+            send_output_item(py, &item, json_module, slot_sender, &mut paths)?;
+            output::release_output_paths(paths);
         }
 
         // Outputs already streamed over IPC — return empty stream
@@ -1018,11 +1028,12 @@ impl PythonPredictor {
                 .call_method0("__fspath__")
                 .and_then(|p| p.extract())
                 .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
-            slot_sender
-                .send_file_output(std::path::PathBuf::from(path_str), None)
+            let path = PathBuf::from(path_str);
+            py.detach(|| slot_sender.send_file_output(path.clone(), None))
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to send file output: {}", e))
                 })?;
+            release_output_path(&path);
             return Ok(PredictionOutput::Single(serde_json::Value::Null));
         }
 
@@ -1060,16 +1071,21 @@ impl PythonPredictor {
         // List/tuple output — iterate items so file outputs (Path, IOBase)
         // go through the FileOutput IPC path for upload instead of being
         // base64-encoded inline by process_output.
+        // Paths are released after the last item so `[p, p]` works.
         if let Ok(list) = result.cast::<pyo3::types::PyList>() {
+            let mut paths = HashSet::new();
             for item in list.iter() {
-                send_output_item(py, &item, json_module, slot_sender)?;
+                send_output_item(py, &item, json_module, slot_sender, &mut paths)?;
             }
+            output::release_output_paths(paths);
             return Ok(PredictionOutput::Stream(vec![]));
         }
         if let Ok(tuple) = result.cast::<pyo3::types::PyTuple>() {
+            let mut paths = HashSet::new();
             for item in tuple.iter() {
-                send_output_item(py, &item, json_module, slot_sender)?;
+                send_output_item(py, &item, json_module, slot_sender, &mut paths)?;
             }
+            output::release_output_paths(paths);
             return Ok(PredictionOutput::Stream(vec![]));
         }
 
@@ -1198,9 +1214,11 @@ impl PythonPredictor {
         let output = if is_async_gen {
             // Result is a pre-collected list — stream each item over IPC
             if let Ok(list) = result.extract::<Vec<Bound<'_, PyAny>>>() {
+                let mut paths = HashSet::new();
                 for item in list {
-                    send_output_item(py, &item, &json_module, slot_sender)?;
+                    send_output_item(py, &item, &json_module, slot_sender, &mut paths)?;
                 }
+                output::release_output_paths(paths);
             }
             PredictionOutput::Stream(vec![])
         } else {
