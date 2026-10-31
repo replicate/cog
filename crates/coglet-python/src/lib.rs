@@ -102,6 +102,7 @@ fn init_tracing(
     _to_stderr: bool,
     setup_log_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     #[cfg(feature = "tracing")] tracer: Option<coglet_core::trace::SdkTracer>,
+    #[cfg(feature = "tracing")] logs: Option<&coglet_core::logs::LoggingRuntime>,
 ) -> Result<Option<tokio::sync::mpsc::UnboundedReceiver<String>>, String> {
     let filter = if std::env::var("RUST_LOG").is_ok() {
         EnvFilter::from_default_env().add_directive("coglet::trace=trace".parse().unwrap())
@@ -132,6 +133,11 @@ fn init_tracing(
     #[cfg(not(feature = "tracing"))]
     let otel_layer = tracing_subscriber::layer::Identity::new();
 
+    #[cfg(feature = "tracing")]
+    let logs_layer = logs.map(|runtime| runtime.layer());
+    #[cfg(not(feature = "tracing"))]
+    let logs_layer = tracing_subscriber::layer::Identity::new();
+
     if let Some(tx) = setup_log_tx {
         let accumulator = coglet_core::SetupLogAccumulator::new(tx);
 
@@ -140,6 +146,7 @@ fn init_tracing(
                 .with(filter)
                 .with(sentry_layer)
                 .with(otel_layer)
+                .with(logs_layer)
                 .with(accumulator)
                 .with(fmt::layer().json().with_writer(std::io::stderr));
             subscriber.try_init().map_err(|error| error.to_string())?;
@@ -148,6 +155,7 @@ fn init_tracing(
                 .with(filter)
                 .with(sentry_layer)
                 .with(otel_layer)
+                .with(logs_layer)
                 .with(accumulator)
                 .with(fmt::layer().with_writer(std::io::stderr));
             subscriber.try_init().map_err(|error| error.to_string())?;
@@ -159,6 +167,7 @@ fn init_tracing(
                 .with(filter)
                 .with(sentry_layer)
                 .with(otel_layer)
+                .with(logs_layer)
                 .with(fmt::layer().json().with_writer(std::io::stderr));
             subscriber.try_init().map_err(|error| error.to_string())?;
         } else {
@@ -166,6 +175,7 @@ fn init_tracing(
                 .with(filter)
                 .with(sentry_layer)
                 .with(otel_layer)
+                .with(logs_layer)
                 .with(fmt::layer().with_writer(std::io::stderr));
             subscriber.try_init().map_err(|error| error.to_string())?;
         }
@@ -349,6 +359,11 @@ fn serve_impl(
         let _entered = rt.enter();
         coglet_core::trace::TracingRuntime::from_env(coglet_core::trace::ProcessRole::Parent)
     };
+    #[cfg(feature = "tracing")]
+    let logs_runtime = {
+        let _entered = rt.enter();
+        coglet_core::logs::LoggingRuntime::from_env()
+    };
 
     let (setup_log_tx, setup_log_rx) = tokio::sync::mpsc::unbounded_channel();
     #[cfg(feature = "tracing")]
@@ -356,6 +371,7 @@ fn serve_impl(
         false,
         Some(setup_log_tx),
         trace_runtime.as_ref().map(|runtime| runtime.tracer()),
+        logs_runtime.as_ref(),
     )
     .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
     #[cfg(not(feature = "tracing"))]
@@ -421,6 +437,10 @@ fn serve_impl(
         }
         #[cfg(feature = "tracing")]
         coglet_core::runtime_metrics::shutdown();
+        #[cfg(feature = "tracing")]
+        if let Some(runtime) = logs_runtime.as_ref() {
+            runtime.shutdown();
+        }
         return result;
     };
 
@@ -441,6 +461,10 @@ fn serve_impl(
     }
     #[cfg(feature = "tracing")]
     coglet_core::runtime_metrics::shutdown();
+    #[cfg(feature = "tracing")]
+    if let Some(runtime) = logs_runtime.as_ref() {
+        runtime.shutdown();
+    }
     result
 }
 
@@ -700,6 +724,7 @@ fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("COGLET_PEP440_VERSION"))?;
     m.add("__build__", BuildInfo::new())?;
     m.add("_supports_observability_metrics", cfg!(feature = "tracing"))?;
+    m.add("_supports_observability_logs", cfg!(feature = "tracing"))?;
 
     // Frozen server object
     m.add("server", CogletServer {})?;

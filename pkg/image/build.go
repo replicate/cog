@@ -663,8 +663,8 @@ func observabilityDockerfile(baseImage string, observability *config.Observabili
 			fmt.Fprintln(&b, "USER root")
 		}
 		fmt.Fprintf(&b, "RUN python -m pip install --no-cache-dir --break-system-packages %s\n", dockerfile.PythonObservabilityRequirements)
-		if observability.Metrics != nil && observability.Metrics.Enabled {
-			fmt.Fprintf(&b, "RUN (%s || (echo \"%s\" >&2; exit 1))\n", dockerfile.PythonObservabilityCheck, dockerfile.PythonObservabilityCheckError)
+		if check := dockerfile.PythonObservabilityCheck(observability); check != "" {
+			fmt.Fprintf(&b, "RUN (%s || (echo \"%s\" >&2; exit 1))\n", check, dockerfile.PythonObservabilityCheckError)
 		}
 		if imageUser != "" {
 			fmt.Fprintf(&b, "USER %s\n", strconv.Quote(imageUser))
@@ -686,6 +686,11 @@ func observabilityDockerfile(baseImage string, observability *config.Observabili
 		fmt.Fprint(&b, "ENV COG_METRICS_CONFIGURED=true\nENV COG_METRICS_ENABLED=true\n")
 	} else {
 		fmt.Fprint(&b, "ENV COG_METRICS_CONFIGURED=false\nENV COG_METRICS_ENABLED=false\n")
+	}
+	if observability.Logs != nil && observability.Logs.Enabled {
+		fmt.Fprint(&b, "ENV COG_LOGS_CONFIGURED=true\nENV COG_LOGS_ENABLED=true\n")
+	} else {
+		fmt.Fprint(&b, "ENV COG_LOGS_CONFIGURED=false\nENV COG_LOGS_ENABLED=false\n")
 	}
 	if observability.Config != "" {
 		fmt.Fprintf(&b, "COPY --from=%s telemetry.py /.cog/telemetry.py\nENV COG_OBSERVABILITY_CONFIG=\"/.cog/telemetry.py\"\n", cogBuildContextName)
