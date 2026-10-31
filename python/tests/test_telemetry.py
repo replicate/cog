@@ -123,10 +123,9 @@ assert config.disabled == {{RuntimeMetric.SETUP_DURATION}}
     assert result.returncode == 0, result.stderr
 
 
-def test_shutdown_exports_metrics_without_a_periodic_thread() -> None:
+def test_shutdown_exports_final_metrics_once() -> None:
     result = _run_script(
         """
-import math
 from cog import _telemetry
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import (
@@ -153,7 +152,7 @@ class Exporter(MetricExporter):
         self.closed = True
 
 exporter = Exporter()
-reader = PeriodicExportingMetricReader(exporter, export_interval_millis=math.inf)
+reader = PeriodicExportingMetricReader(exporter)
 provider = MeterProvider(metric_readers=[reader], shutdown_on_exit=False)
 provider.get_meter("test").create_counter("requests").add(3)
 _telemetry._meter_provider = provider
@@ -163,31 +162,6 @@ assert exporter.closed
 """
     )
     assert result.returncode == 0, result.stderr
-
-
-def test_shutdown_closes_provider_when_flush_fails() -> None:
-    result = _run_script(
-        """
-from cog import _telemetry
-from opentelemetry.sdk.metrics import MeterProvider
-
-class Provider(MeterProvider):
-    closed = False
-
-    def force_flush(self, **kwargs):
-        raise RuntimeError("flush failed")
-
-    def shutdown(self, **kwargs):
-        self.closed = True
-
-provider = Provider(shutdown_on_exit=False)
-_telemetry._meter_provider = provider
-_telemetry.shutdown()
-assert provider.closed
-"""
-    )
-    assert result.returncode == 0, result.stderr
-    assert "flush failed" in result.stderr
 
 
 def test_invalid_meter_configuration_stops_reader_thread() -> None:
@@ -261,9 +235,6 @@ from opentelemetry.sdk.trace import TracerProvider
 marker = Path({str(marker)!r})
 
 class Provider(TracerProvider):
-    def force_flush(self, timeout_millis=30000):
-        return True
-
     def shutdown(self):
         marker.touch()
 

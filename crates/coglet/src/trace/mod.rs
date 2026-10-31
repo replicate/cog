@@ -28,7 +28,7 @@ pub enum ProcessRole {
 }
 
 impl ProcessRole {
-    pub fn as_str(self) -> &'static str {
+    fn as_str(self) -> &'static str {
         match self {
             Self::Parent => "parent",
             Self::Worker => "worker",
@@ -47,7 +47,7 @@ pub fn base_resource(role: ProcessRole) -> Resource {
     resource.clone()
 }
 
-pub fn process_instance_id(role: ProcessRole) -> &'static str {
+fn process_instance_id(role: ProcessRole) -> &'static str {
     static PARENT_INSTANCE_ID: OnceLock<String> = OnceLock::new();
     static WORKER_INSTANCE_ID: OnceLock<String> = OnceLock::new();
 
@@ -494,7 +494,7 @@ fn http_trace_endpoint(endpoint: &str, append_trace_path: bool) -> String {
     format!("{path}/v1/traces{suffix}")
 }
 
-fn env_bool(name: &str, default: bool) -> Result<bool, String> {
+pub(crate) fn env_bool(name: &str, default: bool) -> Result<bool, String> {
     let Ok(value) = std::env::var(name) else {
         return Ok(default);
     };

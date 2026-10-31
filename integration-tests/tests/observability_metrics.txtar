@@ -24,8 +24,6 @@ def create_meter_provider(resource) -> MeterProvider:
 
 
 -- predict.py --
-import os
-
 from opentelemetry import metrics
 
 from cog import BaseRunner

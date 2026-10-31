@@ -1509,6 +1509,7 @@ mod tests {
             let (_, writer) = worker_socket.into_split();
             let slot_id = SlotId::new();
             let (register_tx, register_rx) = mpsc::channel(1);
+            let (_, unregister_rx) = mpsc::channel(1);
             let (_, healthcheck_rx) = mpsc::channel(1);
             let (_, cancel_rx) = mpsc::channel(1);
             let event_loop = tokio::spawn(run_event_loop(
@@ -1516,6 +1517,7 @@ mod tests {
                 ctrl_writer,
                 vec![(slot_id, FramedRead::new(reader, JsonCodec::new()))],
                 register_rx,
+                unregister_rx,
                 healthcheck_rx,
                 cancel_rx,
                 Arc::new(PermitPool::new(1)),

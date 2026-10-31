@@ -2644,7 +2644,7 @@ def configure_instrumentation() -> None:
     RequestsInstrumentor().instrument()
 ```
 
-Add instrumentation packages such as `opentelemetry-instrumentation-requests` to the model's requirements. Cog constructs every selected provider, validates their types, installs them globally, then calls `configure_instrumentation()` before importing the model. Cog force-flushes and shuts down providers with the worker, so custom providers should set `shutdown_on_exit=False`.
+Add instrumentation packages such as `opentelemetry-instrumentation-requests` to the model's requirements. Cog constructs every selected provider, validates their types, installs them globally, then calls `configure_instrumentation()` before importing the model. Cog shuts down providers with the worker, so custom providers should set `shutdown_on_exit=False`. Shutdown exports pending telemetry through the provider's processors and readers, so a custom processor or reader must flush in its own `shutdown()`.
 
 Custom Python providers control model-authored telemetry only. The Rust parent provider continues to own fixed runtime metrics. Without an OTLP endpoint, a custom provider can still emit model telemetry to a different destination, but there are no framework trace parents.
 

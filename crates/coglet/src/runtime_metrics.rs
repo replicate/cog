@@ -11,7 +11,7 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 
 use crate::bridge::protocol::{RuntimeMetric, RuntimeMetricsConfig};
 use crate::permit::PermitPool;
-use crate::trace::{ProcessRole, base_resource};
+use crate::trace::{ProcessRole, base_resource, env_bool};
 
 const PREDICTION_DURATION_BUCKETS: [f64; 14] = [
     0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0,
@@ -427,17 +427,6 @@ fn http_metrics_endpoint(endpoint: &str, append_metrics_path: bool) -> String {
         return format!("{path}{suffix}");
     }
     format!("{path}/v1/metrics{suffix}")
-}
-
-fn env_bool(name: &str, default: bool) -> Result<bool, String> {
-    let Ok(value) = std::env::var(name) else {
-        return Ok(default);
-    };
-    match value.to_ascii_lowercase().as_str() {
-        "1" | "true" | "yes" => Ok(true),
-        "0" | "false" | "no" => Ok(false),
-        _ => Err(format!("{name} must be true or false")),
-    }
 }
 
 #[cfg(test)]

@@ -140,10 +140,6 @@ from opentelemetry.sdk.trace import TracerProvider
 marker = Path({str(marker)!r})
 
 class Provider(TracerProvider):
-    def force_flush(self, timeout_millis=30000):
-        marker.write_text(marker.read_text() + "flush\\n")
-        return True
-
     def shutdown(self):
         marker.write_text(marker.read_text() + "shutdown\\n")
 
@@ -171,7 +167,7 @@ _trace.shutdown()
 
     result = _run_script(script)
     assert result.returncode == 0, result.stderr
-    assert marker.read_text() == "configured\nflush\nshutdown\n"
+    assert marker.read_text() == "configured\nshutdown\n"
 
 
 def test_zero_argument_custom_trace_provider_remains_supported(tmp_path: Path) -> None:
