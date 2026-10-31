@@ -11,3 +11,5 @@ observability:
     sampler: parentbased_always_on
   metrics:
     enabled: true
+  logs:
+    enabled: true

@@ -165,6 +165,13 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 				config.Observability.Metrics.Enabled = *metrics.Enabled
 			}
 		}
+		if cfg.Observability.Logs != nil {
+			logs := cfg.Observability.Logs
+			config.Observability.Logs = &Logs{}
+			if logs.Enabled != nil {
+				config.Observability.Logs.Enabled = *logs.Enabled
+			}
+		}
 	}
 	config.Environment = cfg.Environment
 

@@ -480,6 +480,10 @@ class Runner(BaseRunner):
 
 Cog installs the `MeterProvider` before importing the model. Do not call `set_meter_provider()` in model code. Use `observability.config` to provide a custom provider or to disable selected [runtime metrics](observability.md#runtime-metric-selection).
 
+### OpenTelemetry logs
+
+When `observability.logs` is enabled, records from Python's `logging` module are also exported to the OpenTelemetry collector. Cog does not add a handler or change log levels, so stderr output and the prediction's `logs` field are unchanged. `extra` fields become log attributes. See [Logs](observability.md#logs) for what is exported.
+
 ## OpenTelemetry spans
 
 When `observability.traces` is enabled, Cog installs an OpenTelemetry tracer provider before importing the model. Model spans use the standard API and automatically join the active prediction trace:

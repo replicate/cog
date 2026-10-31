@@ -8,6 +8,8 @@ mod version;
 
 pub mod bridge;
 mod fd_redirect;
+#[cfg(feature = "tracing")]
+pub mod logs;
 pub mod orchestrator;
 pub mod permit;
 #[cfg(feature = "tracing")]

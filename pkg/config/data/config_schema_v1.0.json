@@ -213,7 +213,7 @@
           "type": "string",
           "minLength": 1,
           "pattern": "\\.py$",
-          "description": "An optional Python module that customizes OpenTelemetry providers and runtime metrics."
+          "description": "An optional Python module that customizes OpenTelemetry providers, runtime metrics, and instrumentation."
         },
         "traces": {
           "$id": "#/properties/observability/properties/traces",
@@ -264,6 +264,24 @@
                 "enabled": {
                   "type": "boolean",
                   "description": "Whether to enable metrics in this image."
+                }
+              }
+            }
+          ]
+        },
+        "logs": {
+          "$id": "#/properties/observability/properties/logs",
+          "description": "Enables OpenTelemetry log export for model Python logging and Cog runtime events. Use true for defaults or an object to control enablement.",
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "required": ["enabled"],
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether to enable log export in this image."
                 }
               }
             }

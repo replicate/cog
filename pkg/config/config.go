@@ -79,13 +79,15 @@ type Observability struct {
 	Config  string   `json:"config,omitempty" yaml:"config,omitempty"`
 	Traces  *Tracing `json:"traces,omitempty" yaml:"traces,omitempty"`
 	Metrics *Metrics `json:"metrics,omitempty" yaml:"metrics,omitempty"`
+	Logs    *Logs    `json:"logs,omitempty" yaml:"logs,omitempty"`
 }
 
 // AnyTelemetryEnabled reports whether this image opts into an OpenTelemetry signal.
 func (o *Observability) AnyTelemetryEnabled() bool {
 	return o != nil &&
 		((o.Traces != nil && o.Traces.Enabled) ||
-			(o.Metrics != nil && o.Metrics.Enabled))
+			(o.Metrics != nil && o.Metrics.Enabled) ||
+			(o.Logs != nil && o.Logs.Enabled))
 }
 
 type Tracing struct {
@@ -97,6 +99,10 @@ type Tracing struct {
 }
 
 type Metrics struct {
+	Enabled bool `json:"enabled" yaml:"enabled"`
+}
+
+type Logs struct {
 	Enabled bool `json:"enabled" yaml:"enabled"`
 }
 
