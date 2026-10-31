@@ -18,10 +18,17 @@ var imageName string
 
 func newDebugCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "debug",
-		Hidden: true,
-		Short:  "Generate a Dockerfile from cog",
-		RunE:   cmdDockerfile,
+		Use:   "debug",
+		Short: "Generate the Dockerfile for the current Cog model",
+		Long: `Generate and print the Dockerfile that Cog would use to build the
+current model. This is useful for inspecting generated build steps and
+troubleshooting build failures without building the image.`,
+		Example: `  # Print the generated Dockerfile
+  cog debug
+
+  # Save it for inspection
+  cog debug > Dockerfile`,
+		RunE: cmdDockerfile,
 	}
 
 	addSeparateWeightsFlag(cmd)
