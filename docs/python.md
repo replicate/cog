@@ -548,7 +548,7 @@ These types can be used directly as input parameter types and output return type
 
 For models that return a `cog.Path` object, the output returned by Cog's built-in HTTP server will be a URL.
 
-Cog copies the contents of a returned or yielded path. If the file is in the system temp directory (for example, one made with `tempfile`, or a downloaded input file), Cog then deletes it. For a generator, this happens before the generator resumes, so you can write to the same path again for the next `yield`. Files anywhere else, such as assets baked into the image or model weights, are never deleted. A symlink in the temp directory is removed but its target is kept. Cog does not delete directories.
+Cog copies the contents of a returned or yielded path. If the file is in the system temp directory (for example, one made with `tempfile`, or a downloaded input file), Cog then deletes it. For a sync generator, this happens before the generator resumes, so you can write to the same path again for the next `yield`. An async generator runs to completion before any output is sent, so give each `yield` its own path. Files anywhere else, such as assets baked into the image or model weights, are never deleted. A symlink in the temp directory is removed but its target is kept. Cog does not delete directories.
 
 Don't build a returned path from an input value. A caller could point it at any file in the container.
 
