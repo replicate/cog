@@ -35,7 +35,7 @@ config_roots = ["."]
 go = "latest"
 uv = "0.9.26"
 "pipx:nox" = { version = "2025.11.12", uvx = true, uvx_args = "--python-preference=managed -p 3.13" }
-"rust" = { version = "1.93.0", components = "rustfmt,clippy,rust-analyzer", targets = "x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin" }
+"rust" = { version = "1.93.0", components = "rustfmt,clippy,rust-analyzer", targets = "x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin,x86_64-unknown-linux-musl,aarch64-unknown-linux-musl" }
 cargo-binstall = "1.16.6"
 # Cargo tools - use aqua backend where available for faster binary downloads
 # and better security (cosign/SLSA verification). Remaining cargo: tools use binstall.
@@ -289,6 +289,23 @@ run = [
     "build:coglet:wheel:linux-arm64",
   ] },
   { task = "build:coglet:wheel" },
+]
+
+[tasks."build:coglet:binary"]
+description = "Build static coglet binaries for Linux x86_64 and ARM64"
+sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "crates/Cargo.lock"]
+outputs = ["dist/coglet_Linux_x86_64", "dist/coglet_Linux_arm64"]
+run = [
+  { task = "_setup_dist" },
+  """
+#!/usr/bin/env bash
+set -euo pipefail
+for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+  cargo zigbuild --release --manifest-path crates/Cargo.toml -p coglet --bin coglet --target "$target"
+done
+cp crates/target/x86_64-unknown-linux-musl/release/coglet dist/coglet_Linux_x86_64
+cp crates/target/aarch64-unknown-linux-musl/release/coglet dist/coglet_Linux_arm64
+""",
 ]
 
 [tasks."build:sdk"]

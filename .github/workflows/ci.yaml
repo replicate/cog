@@ -207,6 +207,36 @@ jobs:
           # ABI3 wheels use cpXYZ-abi3 naming; just match any abi3 wheel
           path: dist/coglet-*-abi3-*.whl
 
+  build-coglet-binary:
+    name: Build coglet binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.4.27
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Ensure Rust musl targets
+        run: rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+      - name: Build coglet binaries
+        run: mise run build:coglet:binary
+      - name: Check coglet binary runs
+        run: |
+          file dist/coglet_Linux_x86_64 dist/coglet_Linux_arm64
+          dist/coglet_Linux_x86_64 --version
+      - name: Upload coglet binaries
+        uses: actions/upload-artifact@v6
+        with:
+          name: CogletBinaries
+          path: |
+            dist/coglet_Linux_x86_64
+            dist/coglet_Linux_arm64
+
   build-cog:
     name: Build cog CLI
     runs-on: ubuntu-latest
@@ -752,6 +782,7 @@ jobs:
       - build-cog
       - build-sdk
       - build-rust
+      - build-coglet-binary
       - fmt-go
       - fmt-rust
       - fmt-python
@@ -782,6 +813,7 @@ jobs:
           echo "  build-cog: ${{ needs.build-cog.result }}"
           echo "  build-sdk: ${{ needs.build-sdk.result }}"
           echo "  build-rust: ${{ needs.build-rust.result }}"
+          echo "  build-coglet-binary: ${{ needs.build-coglet-binary.result }}"
           echo "  fmt-go: ${{ needs.fmt-go.result }}"
           echo "  fmt-rust: ${{ needs.fmt-rust.result }}"
           echo "  fmt-python: ${{ needs.fmt-python.result }}"
@@ -810,6 +842,7 @@ jobs:
             "${{ needs.build-cog.result }}" \
             "${{ needs.build-sdk.result }}" \
             "${{ needs.build-rust.result }}" \
+            "${{ needs.build-coglet-binary.result }}" \
             "${{ needs.fmt-go.result }}" \
             "${{ needs.fmt-rust.result }}" \
             "${{ needs.fmt-python.result }}" \
