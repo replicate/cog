@@ -46,6 +46,7 @@ mime_guess = "2.0.5"
 
 # Identifiers
 uuid.workspace = true
+tempfile = "3"
 
 # HTTP server
 axum.workspace = true
@@ -84,7 +85,6 @@ nix = { version = "0.31", features = ["signal", "fs"] }
 
 [dev-dependencies]
 insta.workspace = true
-tempfile = "3"
 wiremock = "0.6"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

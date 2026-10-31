@@ -24,7 +24,17 @@ pub fn process_output<'py>(
     output: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let encodeable = make_encodeable(py, output)?;
-    encode_files(py, &encodeable)
+    let mut paths = std::collections::HashSet::new();
+    let encoded = encode_files(py, &encodeable, &mut paths)?;
+    // Wait until every occurrence is encoded so repeated paths in one output work.
+    for path in paths {
+        if let Err(error) = std::fs::remove_file(path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            return Err(error.into());
+        }
+    }
+    Ok(encoded)
 }
 
 /// Process a single output item (for generator outputs).
@@ -142,7 +152,11 @@ fn make_encodeable<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bo
 }
 
 /// Recursively walk the output and encode any Path/IOBase objects to base64 data URLs.
-fn encode_files<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+fn encode_files<'py>(
+    py: Python<'py>,
+    obj: &Bound<'py, PyAny>,
+    paths: &mut std::collections::HashSet<std::path::PathBuf>,
+) -> PyResult<Bound<'py, PyAny>> {
     // str -- return as-is (don't recurse into characters)
     if obj.is_instance_of::<PyString>() {
         return Ok(obj.clone());
@@ -152,7 +166,7 @@ fn encode_files<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound
     if let Ok(dict) = obj.cast_exact::<PyDict>() {
         let new_dict = PyDict::new(py);
         for (key, value) in dict.iter() {
-            new_dict.set_item(&key, encode_files(py, &value)?)?;
+            new_dict.set_item(&key, encode_files(py, &value, paths)?)?;
         }
         return Ok(new_dict.into_any());
     }
@@ -161,7 +175,7 @@ fn encode_files<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound
     if let Ok(list) = obj.cast_exact::<PyList>() {
         let items: Vec<Bound<'py, PyAny>> = list
             .iter()
-            .map(|item| encode_files(py, &item))
+            .map(|item| encode_files(py, &item, paths))
             .collect::<PyResult<_>>()?;
         let new_list = PyList::new(py, &items)?;
         return Ok(new_list.into_any());
@@ -175,7 +189,9 @@ fn encode_files<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound
         let fh = builtins.getattr("open")?.call1((obj, "rb"))?;
         let result = file_to_base64(py, &fh);
         fh.call_method0("close")?;
-        return result;
+        let encoded = result?;
+        paths.insert(obj.extract::<std::path::PathBuf>()?);
+        return Ok(encoded);
     }
 
     // io.IOBase -> base64 encode
@@ -441,6 +457,74 @@ mod tests {
     }
 
     // ── encode_files / file_to_base64 ────────────────────────────────
+
+    #[test]
+    fn nested_repeated_paths_are_encoded_then_consumed() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("result.txt");
+        std::fs::write(&file, b"nested").unwrap();
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let path = py
+                .import("pathlib")
+                .unwrap()
+                .getattr("Path")
+                .unwrap()
+                .call1((&file,))
+                .unwrap();
+            let obj = PyDict::new(py);
+            obj.set_item("first", &path).unwrap();
+            obj.set_item("second", PyList::new(py, [&path]).unwrap())
+                .unwrap();
+            let encoded = process_output(py, obj.as_any()).unwrap();
+            assert_eq!(
+                encoded
+                    .get_item("first")
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "data:text/plain;base64,bmVzdGVk"
+            );
+            assert_eq!(
+                encoded
+                    .get_item("second")
+                    .unwrap()
+                    .get_item(0)
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "data:text/plain;base64,bmVzdGVk"
+            );
+            assert!(!file.exists());
+            assert!(
+                process_output(py, &path).is_err(),
+                "a stale path must not be reused"
+            );
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nested_symlink_preserves_target() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("asset.txt");
+        let link = root.path().join("result.txt");
+        std::fs::write(&target, b"asset").unwrap();
+        std::os::unix::fs::symlink("asset.txt", &link).unwrap();
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let path = py
+                .import("pathlib")
+                .unwrap()
+                .getattr("Path")
+                .unwrap()
+                .call1((&link,))
+                .unwrap();
+            process_output(py, &path).unwrap();
+        });
+        assert!(!link.exists());
+        assert_eq!(std::fs::read(target).unwrap(), b"asset");
+    }
 
     #[test]
     fn encode_pathlike_to_base64() {

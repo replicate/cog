@@ -33,6 +33,17 @@ use crate::prediction::Prediction;
 
 const MAX_PENDING_CANCELLATIONS: usize = 1000;
 
+/// Read an owned output snapshot and release its disk space before uploading.
+fn read_output_file(filename: &str) -> std::io::Result<Vec<u8>> {
+    let result = std::fs::read(filename);
+    if let Err(error) = std::fs::remove_file(filename)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(%filename, %error, "Failed to remove output file");
+    }
+    result
+}
+
 /// Upload a file to a signed endpoint, returning the final URL.
 ///
 /// Matches the behavior of Python cog's `put_file_to_signed_endpoint`:
@@ -46,10 +57,14 @@ async fn upload_file(
     content_type: &str,
     prediction_id: &str,
 ) -> Result<String, String> {
-    let url = format!("{endpoint}{filename}");
+    let mut url = reqwest::Url::parse(endpoint).map_err(|_| "invalid upload URL".to_string())?;
+    url.path_segments_mut()
+        .map_err(|_| "upload URL cannot contain path segments".to_string())?
+        .pop_if_empty()
+        .push(filename);
     let client = reqwest::Client::new();
     let resp = client
-        .put(&url)
+        .put(url)
         .header("Content-Type", content_type)
         .header("X-Prediction-Id", prediction_id)
         .body(data.to_vec())
@@ -83,14 +98,6 @@ async fn upload_file(
             Ok(parsed.to_string())
         }
         Err(_) => Ok(final_url),
-    }
-}
-
-fn ensure_trailing_slash(s: &str) -> String {
-    if s.ends_with('/') {
-        s.to_string()
-    } else {
-        format!("{s}/")
     }
 }
 
@@ -1119,9 +1126,9 @@ async fn run_event_loop(
                             predictions.remove(&slot_id);
                         }
                     }
-                    Ok(SlotResponse::FileOutput { filename, kind, mime_type }) => {
+                    Ok(SlotResponse::FileOutput { filename, kind, mime_type, upload_filename }) => {
                         tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");
-                        let bytes = match std::fs::read(&filename) {
+                        let bytes = match read_output_file(&filename) {
                             Ok(b) => b,
                             Err(e) => {
                                 tracing::error!(%slot_id, %filename, error = %e, "Failed to read FileOutput");
@@ -1153,7 +1160,7 @@ async fn run_event_loop(
                             }
                             FileOutputKind::FileType => {
                                 let mime = mime_type.unwrap_or_else(|| {
-                                    mime_guess::from_path(&filename)
+                                    mime_guess::from_path(upload_filename.as_deref().unwrap_or(&filename))
                                         .first_or_octet_stream()
                                         .to_string()
                                 });
@@ -1168,12 +1175,12 @@ async fn run_event_loop(
                                     };
                                     #[cfg(feature = "tracing")]
                                     let trace = try_lock_prediction(&pred).and_then(|p| p.trace_carrier());
-                                    let endpoint = ensure_trailing_slash(url);
-                                    let basename = std::path::Path::new(&filename)
+                                    let endpoint = url.clone();
+                                    let basename = upload_filename.unwrap_or_else(|| std::path::Path::new(&filename)
                                         .file_name()
                                         .and_then(|n| n.to_str())
                                         .unwrap_or("output")
-                                        .to_string();
+                                        .to_string());
                                     let upload_span = crate::cog_span!(
                                         info_span,
                                         "cog.prediction.upload_output",
@@ -1431,6 +1438,7 @@ mod tests {
                     filename: file.to_str().unwrap().to_string(),
                     kind: FileOutputKind::FileType,
                     mime_type: Some("application/octet-stream".into()),
+                    upload_filename: None,
                 })
                 .await
                 .unwrap();
@@ -1464,6 +1472,96 @@ mod tests {
         }
     }
 
+    #[test]
+    fn reading_owned_output_deletes_only_that_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("output.json");
+        let sibling = directory.path().join("other.json");
+        std::fs::write(&file, b"{\"value\":1}").unwrap();
+        std::fs::write(&sibling, b"keep").unwrap();
+        assert_eq!(
+            read_output_file(file.to_str().unwrap()).unwrap(),
+            b"{\"value\":1}"
+        );
+        assert!(!file.exists());
+        assert_eq!(std::fs::read(sibling).unwrap(), b"keep");
+    }
+
+    #[tokio::test]
+    async fn upload_preserves_reserved_filename_and_signed_query() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(ResponseTemplate::new(201))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let filename = "result?draft#1%20 final.txt";
+        let result = upload_file(
+            &format!("{}/outputs?token=secret", server.uri()),
+            filename,
+            b"data",
+            "text/plain",
+            "test",
+        )
+        .await
+        .unwrap();
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(
+            requests[0].url.path(),
+            "/outputs/result%3Fdraft%231%2520%20final.txt"
+        );
+        assert_eq!(requests[0].url.query(), Some("token=secret"));
+        assert_eq!(
+            result,
+            format!(
+                "{}/outputs/result%3Fdraft%231%2520%20final.txt",
+                server.uri()
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn file_upload_streams_and_cleans_snapshot_before_done() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/result%3Fdraft.txt"))
+            .and(header("Content-Type", "text/plain"))
+            .and(wiremock::matchers::body_bytes(b"snapshot"))
+            .respond_with(ResponseTemplate::new(201))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let root = tempfile::tempdir().unwrap();
+        let outputs = tempfile::tempdir().unwrap();
+        let file = root.path().join("result?draft.txt");
+        std::fs::write(&file, b"snapshot").unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sender = crate::worker::SlotSender::new(tx, outputs.path().to_owned());
+        sender.send_file_output(file.clone(), None).unwrap();
+        assert!(!file.exists());
+        let mut prediction = TestPrediction::new(server.uri(), true).await;
+        let mut events = prediction.prediction.lock().unwrap().subscribe_stream();
+        prediction
+            .writer
+            .send(rx.try_recv().unwrap())
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                events.recv().await.unwrap();
+                if !prediction.prediction.lock().unwrap().outputs().is_empty() {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("file output should stream without Done");
+        assert_eq!(std::fs::read_dir(outputs.path()).unwrap().count(), 0);
+        assert!(!prediction.prediction.lock().unwrap().is_terminal());
+        assert_eq!(prediction.finish(true).await["status"], "succeeded");
+    }
+
     #[tokio::test]
     async fn rejected_output_upload_fails_scalar_prediction() {
         let server = MockServer::start().await;
@@ -1484,6 +1582,10 @@ mod tests {
             "Failed to upload output: upload returned status 503 Service Unavailable"
         );
         assert!(response["output"].is_null());
+        assert!(
+            !file.path().exists(),
+            "failed uploads must not retain snapshots"
+        );
     }
 
     #[tokio::test]
@@ -1556,6 +1658,7 @@ mod tests {
 
         assert_eq!(response["status"], "succeeded", "{response}");
         assert_eq!(response["output"], "https://example.com/result.bin");
+        assert!(!file.exists());
         assert!(response["error"].is_null());
         assert_eq!(
             server.received_requests().await.unwrap()[0].body,

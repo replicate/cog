@@ -179,7 +179,7 @@ Per-prediction data. Using separate sockets per slot avoids head-of-line blockin
 | ---------------------------------------------- | ---------------------------------------------------------------- |
 | `Log { source, data }`                         | Log line from run()                                              |
 | `Output { output }`                            | Yielded output value (for generators/streaming)                  |
-| `FileOutput { filename, kind, mime_type }`     | File produced by run() -- referenced by path, uploaded by parent |
+| `FileOutput { filename, kind, mime_type, upload_filename }` | Owned output snapshot referenced by path; optional original basename for uploads |
 | `Metric { name, value, mode }`                 | Custom metric (mode: `replace`, `increment`, or `append`)        |
 | `Done { id, output, predict_time, is_stream }` | Prediction completed successfully                                |
 | `Failed { id, error }`                         | Prediction failed                                                |
@@ -372,6 +372,8 @@ When a prediction input exceeds 6MiB, it's too large to send inline through the 
 ## File Outputs
 
 When run() produces file outputs (`cog.Path`), the worker sends a `FileOutput` message with the filename and MIME type. The parent handles uploading the file (or base64-encoding it for inline responses). The `output_dir` field in the `Predict` request tells the worker where to write output files.
+
+Returning or yielding a path transfers ownership to Cog. The worker snapshots its contents into a unique temporary file and unlinks the source entry before resuming user code. This prevents a later overwrite from changing an earlier streamed output. The parent deletes the snapshot after reading it; uploads use the bytes in memory. Nested paths are encoded inline and unlinked after the containing output is encoded. Cleanup removes files only, never prediction directories derived from public IDs.
 
 `FileOutputKind` distinguishes between normal file outputs (`FileType`) and oversized outputs (`Oversized`) that exceeded an inline size limit.
 

@@ -352,13 +352,17 @@ pub enum SlotResponse {
     },
 
     /// Output for a file/path-like output return type or an output that exceeds the size threshold
-    /// for bridge codec serialization.
+    /// for bridge codec serialization. The parent owns the file and unlinks it
+    /// after reading its bytes, including when the prediction has been canceled.
     FileOutput {
         filename: String,
         kind: FileOutputKind,
         /// Explicit MIME type from the predictor. Falls back to mime_guess when None.
         #[serde(skip_serializing_if = "Option::is_none")]
         mime_type: Option<String>,
+        /// Original basename when the file was staged under a temporary name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        upload_filename: Option<String>,
     },
 
     /// Streaming output chunk for generator and iterator output.

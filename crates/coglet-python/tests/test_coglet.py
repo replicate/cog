@@ -520,6 +520,51 @@ class TestSyncPredictor:
             assert result["metrics"]["predict_time"] >= 0
 
 
+@pytest.mark.parametrize("shape", ["scalar", "nested", "generator"])
+def test_returned_paths_are_consumed(tmp_path: Path, shape: str) -> None:
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+from pathlib import Path
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, write: bool = True) -> Path:
+        path = Path(__file__).parent / "result.txt"
+        if write:
+            path.write_text("hello")
+        return path
+""")
+    if shape == "nested":
+        predictor.write_text(
+            predictor.read_text()
+            .replace("-> Path:", "-> dict[str, Path]:")
+            .replace("return path", 'return {"file": path}')
+        )
+    elif shape == "generator":
+        predictor.write_text(
+            "from typing import Iterator\n"
+            + predictor.read_text()
+            .replace("-> Path:", "-> Iterator[Path]:")
+            .replace(
+                "return path",
+                'yield path\n        assert not path.exists(), "yielded path was not consumed"',
+            )
+        )
+    (tmp_path / "cog.yaml").write_text('predict: "predict.py:Predictor"\n')
+    with CogletServer(predictor) as server:
+        result = server.predict({})
+        assert result["status"] == "succeeded", result
+        output = result["output"]
+        if shape == "nested":
+            output = output["file"]
+        elif shape == "generator":
+            output = output[0]
+        assert output == "data:text/plain;base64,aGVsbG8="
+        assert not (tmp_path / "result.txt").exists()
+        result = server.predict({"write": False})
+        assert result["status"] == "failed", result
+
+
 class TestSecretInput:
     """Tests for cog.Secret input coercion."""
 

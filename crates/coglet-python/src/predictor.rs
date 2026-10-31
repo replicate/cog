@@ -212,7 +212,7 @@ fn submit_async_coroutine(
 
 /// Send a single output item over IPC, routing file outputs to disk.
 ///
-/// For Path outputs (os.PathLike): sends the existing file path via send_file_output.
+/// For Path outputs (os.PathLike): transfers ownership via send_file_output.
 /// For IOBase outputs: reads bytes, writes to output_dir via write_file_output.
 /// For everything else: processes through make_encodeable + upload_files, then send_output.
 fn send_output_item(
@@ -235,7 +235,7 @@ fn send_output_item(
         .map_err(|e| PredictionError::Failed(format!("Failed to get io.IOBase: {}", e)))?;
 
     if item.is_instance(&pathlike).unwrap_or(false) {
-        // Path output — file already on disk, send path reference
+        // Snapshot and consume the returned path before the predictor resumes.
         let path_str: String = item
             .call_method0("__fspath__")
             .and_then(|p| p.extract())

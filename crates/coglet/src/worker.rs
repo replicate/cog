@@ -162,7 +162,6 @@ type SlotWriter =
 pub struct SlotSender {
     tx: mpsc::UnboundedSender<SlotResponse>,
     output_dir: PathBuf,
-    file_counter: Arc<AtomicUsize>,
     output_counter: Arc<AtomicU64>,
 }
 
@@ -171,19 +170,12 @@ impl SlotSender {
         Self {
             tx,
             output_dir,
-            file_counter: Arc::new(AtomicUsize::new(0)),
             output_counter: Arc::new(AtomicU64::new(0)),
         }
     }
 
     fn next_output_index(&self) -> u64 {
         self.output_counter.fetch_add(1, Ordering::Relaxed)
-    }
-
-    /// Generate a unique filename in the output dir.
-    fn next_output_path(&self, extension: &str) -> PathBuf {
-        let n = self.file_counter.fetch_add(1, Ordering::Relaxed);
-        self.output_dir.join(format!("{n}.{extension}"))
     }
 
     pub fn send_log(&self, source: LogSource, data: &str) -> io::Result<()> {
@@ -211,28 +203,64 @@ impl SlotSender {
         extension: &str,
         mime_type: Option<String>,
     ) -> io::Result<()> {
-        let path = self.next_output_path(extension);
-        std::fs::write(&path, data)?;
-        self.send_file_output(path, mime_type)
+        use std::io::Write;
+        let mut file = tempfile::Builder::new()
+            .suffix(&format!(".{extension}"))
+            .tempfile_in(&self.output_dir)?;
+        file.write_all(data)?;
+        self.send_staged_file(file, mime_type, None)
     }
 
     /// Send a file-typed output (e.g. Path, File return types).
     ///
-    /// The file is already on disk at `path` — we just send the path reference.
+    /// Snapshot the file before the predictor resumes, then unlink the source
+    /// entry. Symlink targets are copied but never unlinked.
     /// `mime_type` is an explicit MIME type; when None the parent guesses from extension.
     pub fn send_file_output(&self, path: PathBuf, mime_type: Option<String>) -> io::Result<()> {
-        let filename = path
+        let upload_filename = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 filename"))?
+            .to_owned();
+        let mut source = std::fs::File::open(&path)?;
+        if !source.metadata()?.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "output path must be a regular file",
+            ));
+        }
+        let mut file = tempfile::NamedTempFile::new_in(&self.output_dir)?;
+        std::io::copy(&mut source, &mut file)?;
+        std::fs::remove_file(&path)?;
+        self.send_staged_file(file, mime_type, Some(upload_filename))
+    }
+
+    fn send_staged_file(
+        &self,
+        file: tempfile::NamedTempFile,
+        mime_type: Option<String>,
+        upload_filename: Option<String>,
+    ) -> io::Result<()> {
+        let filename = file
+            .path()
             .to_str()
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))?
-            .to_string();
+            .to_owned();
         let msg = SlotResponse::FileOutput {
             filename,
             kind: FileOutputKind::FileType,
             mime_type,
+            upload_filename,
         };
-        self.tx
-            .send(msg)
-            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
+        let (_, path) = file.keep().map_err(|e| e.error)?;
+        if self.tx.send(msg).is_err() {
+            std::fs::remove_file(path)?;
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "slot channel closed",
+            ));
+        }
+        Ok(())
     }
 
     /// Send a user metric to the parent process.
@@ -277,6 +305,7 @@ fn build_output_message(
             filename,
             kind: FileOutputKind::Oversized,
             mime_type: None,
+            upload_filename: None,
         })
     } else {
         Ok(SlotResponse::OutputChunk { output, index })
@@ -1018,6 +1047,94 @@ async fn run_prediction<H: PredictHandler>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn returned_path_is_consumed_and_each_yield_has_its_own_snapshot() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = tempfile::tempdir().unwrap();
+        let source = root.path().join("result?draft.txt");
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sender = SlotSender::new(tx, outputs.path().to_owned());
+        let mut snapshots = Vec::new();
+        for contents in [b"first".as_slice(), b"second".as_slice()] {
+            std::fs::write(&source, contents).unwrap();
+            sender.send_file_output(source.clone(), None).unwrap();
+            assert!(!source.exists());
+            let SlotResponse::FileOutput {
+                filename,
+                upload_filename,
+                ..
+            } = rx.try_recv().unwrap()
+            else {
+                panic!("expected FileOutput");
+            };
+            assert_eq!(upload_filename.as_deref(), Some("result?draft.txt"));
+            snapshots.push(filename);
+        }
+        assert_ne!(snapshots[0], snapshots[1]);
+        assert_eq!(std::fs::read(&snapshots[0]).unwrap(), b"first");
+        assert_eq!(std::fs::read(&snapshots[1]).unwrap(), b"second");
+        assert_eq!(
+            sender.send_file_output(source, None).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+    }
+
+    #[test]
+    fn output_staging_failure_preserves_source() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("result.txt");
+        std::fs::write(&source, b"keep me").unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let sender = SlotSender::new(tx, root.path().join("missing"));
+        assert!(sender.send_file_output(source.clone(), None).is_err());
+        assert_eq!(std::fs::read(source).unwrap(), b"keep me");
+    }
+
+    #[test]
+    fn failed_send_does_not_leave_a_snapshot() {
+        let outputs = tempfile::tempdir().unwrap();
+        let (tx, rx) = mpsc::unbounded_channel();
+        drop(rx);
+        let sender = SlotSender::new(tx, outputs.path().to_owned());
+        assert!(sender.write_file_output(b"data", "txt", None).is_err());
+        assert_eq!(std::fs::read_dir(outputs.path()).unwrap().count(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn returned_symlink_consumes_link_but_preserves_target() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("asset.txt");
+        let link = root.path().join("result.txt");
+        std::fs::write(&target, b"asset").unwrap();
+        std::os::unix::fs::symlink("asset.txt", &link).unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sender = SlotSender::new(tx, root.path().to_owned());
+        sender.send_file_output(link.clone(), None).unwrap();
+        assert!(!link.exists());
+        assert_eq!(std::fs::read(target).unwrap(), b"asset");
+        let SlotResponse::FileOutput { filename, .. } = rx.try_recv().unwrap() else {
+            panic!("expected FileOutput");
+        };
+        assert_eq!(std::fs::read(filename).unwrap(), b"asset");
+    }
+
+    #[test]
+    fn independent_senders_sharing_output_directory_do_not_overwrite() {
+        let outputs = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        for contents in [b"first".as_slice(), b"second".as_slice()] {
+            let sender = SlotSender::new(tx.clone(), outputs.path().to_owned());
+            sender.write_file_output(contents, "txt", None).unwrap();
+        }
+        for contents in [b"first".as_slice(), b"second".as_slice()] {
+            let SlotResponse::FileOutput { filename, .. } = rx.try_recv().unwrap() else {
+                panic!("expected FileOutput");
+            };
+            assert_eq!(std::fs::read(filename).unwrap(), contents);
+        }
+    }
 
     #[test]
     fn predict_result_success() {
