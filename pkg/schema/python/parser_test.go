@@ -1368,6 +1368,33 @@ class Predictor(BasePredictor):
 	require.Contains(t, se.Message, "cannot be statically resolved")
 }
 
+func TestInputStringArgumentsUsePythonStringValues(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        code: str = Input(
+            description="A numeric code. "
+            "Digits only.",
+            regex="^\\d+$",
+            default="0\n",
+        ),
+    ) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	field, ok := info.Inputs.Get("code")
+	require.True(t, ok)
+	require.NotNil(t, field.Description)
+	require.Equal(t, "A numeric code. Digits only.", *field.Description)
+	require.NotNil(t, field.Regex)
+	require.Equal(t, `^\d+$`, *field.Regex)
+	require.NotNil(t, field.Default)
+	require.Equal(t, "0\n", field.Default.Str)
+}
+
 func TestDescriptionFromModuleLevelVar(t *testing.T) {
 	source := `
 from cog import BasePredictor, Input
