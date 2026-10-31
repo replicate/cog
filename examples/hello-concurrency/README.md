@@ -17,9 +17,9 @@ This combined with the async setup and run methods in `run.py` allows Cog to run
 4 concurrent predictions. If Cog reaches the max concurrency threshold it will reject subsequent
 predictions with a `409 Conflict` response.
 
-### Tracing and metrics with Honeycomb
+### Tracing, metrics, and logs with Honeycomb
 
-Cog loads `telemetry.py` before importing the model. Its provider factories configure model spans and metrics, while `configure_runtime_metrics()` selects fixed Cog runtime instruments. The model uses the standard `opentelemetry.trace` and `opentelemetry.metrics` APIs.
+Cog loads `telemetry.py` before importing the model. Its provider factories configure model spans, metrics, and logs, while `configure_runtime_metrics()` selects fixed Cog runtime instruments. The model uses the standard `opentelemetry.trace` and `opentelemetry.metrics` APIs and Python's `logging` module.
 
 Set a Honeycomb API key in your shell, then pass its OTLP configuration at runtime:
 
@@ -37,10 +37,12 @@ cog run \
 
 The `parentbased_always_on` sampler preserves an upstream trace's sampling decision and samples predictions that start a new trace locally. `model.output_tokens` is a model-owned OpenTelemetry counter; `current_scope().record_metric()` continues to populate the prediction response separately.
 
-To print Python spans locally without an OTLP endpoint, run:
+The model's `logging` calls are exported as OpenTelemetry logs with the active trace and span IDs, and `extra` fields become log attributes. They still print to stderr and appear in the prediction's `logs` as before.
+
+To print Python spans or logs locally without an OTLP endpoint, run:
 
 ```shell
-cog run -e OTEL_DEBUG_TRACES=true -i total=5 -i interval=1
+cog run -e OTEL_DEBUG_TRACES=true -e OTEL_DEBUG_LOGS=true -i total=5 -i interval=1
 ```
 
 See [Honeycomb's OpenTelemetry endpoint documentation](https://docs.honeycomb.io/send-data/opentelemetry/#using-the-honeycomb-opentelemetry-endpoint) for regional endpoints and Honeycomb Classic dataset headers.

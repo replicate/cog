@@ -64,6 +64,7 @@ fn python_telemetry_enabled() -> bool {
     }
     (env_true("COG_TRACE_CONFIGURED", false) && env_true("COG_TRACE_ENABLED", true))
         || (env_true("COG_METRICS_CONFIGURED", false) && env_true("COG_METRICS_ENABLED", true))
+        || (env_true("COG_LOGS_CONFIGURED", false) && env_true("COG_LOGS_ENABLED", true))
 }
 
 fn runtime_metrics_config_from_python(

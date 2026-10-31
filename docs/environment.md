@@ -224,22 +224,26 @@ $ COG_LOG_LEVEL=debug docker run -p 5000:5000 my-model
 
 ### OpenTelemetry
 
-Tracing and metrics must first be enabled under `observability` in `cog.yaml`. Runtime settings may disable an enabled image but cannot enable a signal that did not opt in.
+Tracing, metrics, and logs must first be enabled under `observability` in `cog.yaml`. Runtime settings may disable an enabled image but cannot enable a signal that did not opt in.
 
 | Variable                              | Purpose                                        |
 | ------------------------------------- | ---------------------------------------------- |
 | `COG_TRACE_ENABLED`                   | Set to `false` to disable tracing at runtime.  |
 | `COG_METRICS_ENABLED`                 | Set to `false` to disable metrics at runtime.  |
+| `COG_LOGS_ENABLED`                    | Set to `false` to disable logs at runtime.     |
 | `OTEL_SDK_DISABLED`                   | Hard-disable OpenTelemetry SDK initialization. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`         | Default collector endpoint for both signals.   |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`         | Default collector endpoint for all signals.    |
 | `OTEL_EXPORTER_OTLP_PROTOCOL`         | Default protocol: `http/protobuf` or `grpc`.   |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`  | Trace-specific collector endpoint.             |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | Metric-specific collector endpoint.            |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`    | Log-specific collector endpoint.               |
 | `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`  | Trace-specific protocol override.              |
 | `OTEL_EXPORTER_OTLP_METRICS_PROTOCOL` | Metric-specific protocol override.             |
+| `OTEL_EXPORTER_OTLP_LOGS_PROTOCOL`    | Log-specific protocol override.                |
 | `OTEL_EXPORTER_OTLP_HEADERS`          | Collector authentication headers.              |
 | `OTEL_TRACES_EXPORTER`                | Set to `none` to disable trace export.         |
 | `OTEL_METRICS_EXPORTER`               | Set to `none` to disable metric export.        |
+| `OTEL_LOGS_EXPORTER`                  | Set to `none` to disable log export.           |
 | `OTEL_RESOURCE_ATTRIBUTES`            | Resource attributes as `key=value` pairs.      |
 | `OTEL_SERVICE_NAME`                   | Service name, default `cog`.                   |
 | `OTEL_TRACES_SAMPLER`                 | Runtime sampler override.                      |
@@ -248,7 +252,7 @@ Tracing and metrics must first be enabled under `observability` in `cog.yaml`. R
 
 When an enabled default signal has no endpoint, Cog logs one warning and continues without that provider. A custom Python provider configured by `observability.config` may still use another exporter or no exporter. Delivery failures from Cog's built-in exporters never change prediction results; custom processors and exporters are model-owned code.
 
-`COG_OBSERVABILITY_*`, `COG_TRACE_*`, `COG_METRICS_*`, and `OTEL_*` are reserved from the general `cog.yaml` `environment` list. `COG_OBSERVABILITY_CONFIG` is internal and points to the validated file staged in the image. Supply supported `COG_TRACE_*`, `COG_METRICS_*`, and `OTEL_*` settings to the running container instead.
+`COG_OBSERVABILITY_*`, `COG_TRACE_*`, `COG_METRICS_*`, `COG_LOGS_*`, and `OTEL_*` are reserved from the general `cog.yaml` `environment` list. `COG_OBSERVABILITY_CONFIG` is internal and points to the validated file staged in the image. Supply supported `COG_TRACE_*`, `COG_METRICS_*`, `COG_LOGS_*`, and `OTEL_*` settings to the running container instead.
 
 ### `COG_THROTTLE_RESPONSE_INTERVAL`
 

@@ -1,17 +1,22 @@
+import contextlib
 import importlib.util
 import inspect
 import logging
 import os
 import sys
+import threading
+import time
 import uuid
 from collections.abc import Callable
 from contextvars import Token
 from types import ModuleType
 from typing import Mapping
 
-from opentelemetry import metrics, trace
+from opentelemetry import _logs, metrics, trace
+from opentelemetry.attributes import _VALID_ANY_VALUE_TYPES
 from opentelemetry.context import (
     Context,
+    get_current,
 )
 from opentelemetry.context import (
     attach as attach_context,
@@ -19,6 +24,9 @@ from opentelemetry.context import (
 from opentelemetry.context import (
     detach as detach_context,
 )
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs._internal import std_to_otel
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import OTELResourceDetector, Resource
@@ -35,6 +43,7 @@ from opentelemetry.sdk.trace.sampling import (
 )
 from opentelemetry.trace import ProxyTracerProvider
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from opentelemetry.util.types import AnyValue
 
 from ._version import __version__
 from .telemetry import RuntimeMetricsConfig
@@ -43,24 +52,35 @@ _CUSTOM_CONFIG_PATH = "/.cog/telemetry.py"
 _logger = logging.getLogger(__name__)
 _tracer_provider: TracerProvider | None = None
 _meter_provider: MeterProvider | None = None
+_logger_provider: LoggerProvider | None = None
 _runtime_metrics_config = RuntimeMetricsConfig()
+_original_call_handlers = logging.Logger.callHandlers
+_exporting_log = threading.local()
+# Python level names that differ from OTel severity text.
+_SEVERITY_TEXT = {"WARNING": "WARN", "CRITICAL": "FATAL"}
 
 
 def install_providers() -> RuntimeMetricsConfig:
-    global _meter_provider, _runtime_metrics_config, _tracer_provider
+    global _logger_provider, _meter_provider, _runtime_metrics_config, _tracer_provider
 
-    if _tracer_provider is not None or _meter_provider is not None:
+    if (
+        _tracer_provider is not None
+        or _meter_provider is not None
+        or _logger_provider is not None
+    ):
         return _runtime_metrics_config
 
     traces_enabled = _traces_enabled()
     metrics_enabled = _metrics_enabled()
-    if not traces_enabled and not metrics_enabled:
+    logs_enabled = _logs_enabled()
+    if not traces_enabled and not metrics_enabled and not logs_enabled:
         return _runtime_metrics_config
 
     module: ModuleType | None = None
     _runtime_metrics_config = RuntimeMetricsConfig()
     tracer_provider: TracerProvider | None = None
     meter_provider: MeterProvider | None = None
+    logger_provider: LoggerProvider | None = None
     try:
         module = _load_config_from_env() if _has_custom_config() else None
         if module is not None and metrics_enabled:
@@ -71,6 +91,9 @@ def install_providers() -> RuntimeMetricsConfig:
         )
         meter_provider = (
             _build_meter_provider(module, resource) if metrics_enabled else None
+        )
+        logger_provider = (
+            _build_logger_provider(module, resource) if logs_enabled else None
         )
 
         _validate_tracer_provider_collision(tracer_provider)
@@ -90,12 +113,23 @@ def install_providers() -> RuntimeMetricsConfig:
                 )
             _meter_provider = meter_provider
 
+        if logger_provider is not None:
+            _logs.set_logger_provider(logger_provider)
+            if _logs.get_logger_provider() is not logger_provider:
+                raise RuntimeError(
+                    "Failed to install Cog's OpenTelemetry LoggerProvider"
+                )
+            _logger_provider = logger_provider
+            logging.Logger.callHandlers = _call_handlers_and_export  # type: ignore[method-assign]
+
         _configure_instrumentation(module)
     except Exception:
         if tracer_provider is not _tracer_provider:
             _shutdown_provider(tracer_provider, "tracing")
         if meter_provider is not _meter_provider:
             _shutdown_provider(meter_provider, "metrics")
+        if logger_provider is not _logger_provider:
+            _shutdown_provider(logger_provider, "logs")
         shutdown()
         raise
 
@@ -119,19 +153,76 @@ def detach(token: Token[Context] | None) -> None:
 
 
 def shutdown() -> None:
-    global _meter_provider, _tracer_provider
+    global _logger_provider, _meter_provider, _tracer_provider
 
     tracer_provider = _tracer_provider
     meter_provider = _meter_provider
+    logger_provider = _logger_provider
     _tracer_provider = None
     _meter_provider = None
+    _logger_provider = None
+    if logging.Logger.callHandlers is _call_handlers_and_export:
+        logging.Logger.callHandlers = _original_call_handlers  # type: ignore[method-assign]
 
     _shutdown_provider(tracer_provider, "tracing")
     _shutdown_provider(meter_provider, "metrics")
+    _shutdown_provider(logger_provider, "logs")
+
+
+def _call_handlers_and_export(self: logging.Logger, record: logging.LogRecord) -> None:
+    # Runs after the logger's disabled and filter checks and before handlers, so
+    # export follows the model's logging config without adding a handler. A
+    # root handler would stop logging.lastResort and make basicConfig() a no-op.
+    _export_log_record(record)
+    _original_call_handlers(self, record)
+
+
+def _export_log_record(record: logging.LogRecord) -> None:
+    provider = _logger_provider
+    if (
+        provider is None
+        or record.name.startswith("opentelemetry")
+        or getattr(_exporting_log, "active", False)
+        # OTel SDK export threads: an exporter's HTTP or gRPC client logging a
+        # failed export would otherwise queue another record for export.
+        or threading.current_thread().name.startswith("Otel")
+    ):
+        return
+    _exporting_log.active = True
+    try:
+        # Logging an export failure here would re-enter this hook.
+        with contextlib.suppress(Exception):
+            provider.get_logger(record.name).emit(
+                _logs.LogRecord(
+                    timestamp=int(record.created * 1e9),
+                    observed_timestamp=time.time_ns(),
+                    context=get_current(),
+                    severity_text=_SEVERITY_TEXT.get(
+                        record.levelname, record.levelname
+                    ),
+                    severity_number=std_to_otel(record.levelno),
+                    body=_log_body(record),
+                    # A staticmethod, so this reuses the SDK's attribute mapping
+                    # without constructing the deprecated handler.
+                    attributes=LoggingHandler._get_attributes(record),
+                )
+            )
+    finally:
+        _exporting_log.active = False
+
+
+def _log_body(record: logging.LogRecord) -> AnyValue:
+    # Matches the SDK handler: a non-string msg without format args, such as a
+    # dict, stays structured instead of being converted to a string.
+    if record.args or isinstance(record.msg, str):
+        return record.getMessage()
+    if isinstance(record.msg, _VALID_ANY_VALUE_TYPES):
+        return record.msg
+    return str(record.msg)
 
 
 def _shutdown_provider(
-    provider: TracerProvider | MeterProvider | None, signal: str
+    provider: TracerProvider | MeterProvider | LoggerProvider | None, signal: str
 ) -> None:
     if provider is None:
         return
@@ -151,6 +242,10 @@ def _traces_enabled() -> bool:
 
 def _metrics_enabled() -> bool:
     return _enabled("COG_METRICS_CONFIGURED", "COG_METRICS_ENABLED")
+
+
+def _logs_enabled() -> bool:
+    return _enabled("COG_LOGS_CONFIGURED", "COG_LOGS_ENABLED")
 
 
 def _enabled(configured_name: str, enabled_name: str) -> bool:
@@ -247,6 +342,26 @@ def _build_meter_provider(
     return provider
 
 
+def _build_logger_provider(
+    module: ModuleType | None, resource: Resource
+) -> LoggerProvider | None:
+    factory = getattr(module, "create_logger_provider", None) if module else None
+    if factory is None:
+        try:
+            return _create_default_logger_provider(resource)
+        except Exception:
+            _logger.exception("Invalid OpenTelemetry logs configuration; logs disabled")
+            return None
+    if not callable(factory):
+        raise RuntimeError("telemetry.py create_logger_provider must be callable")
+    provider = _call_provider_factory(factory, resource)
+    if not isinstance(provider, LoggerProvider):
+        raise RuntimeError(
+            "telemetry.py create_logger_provider must return LoggerProvider"
+        )
+    return provider
+
+
 def _call_provider_factory(
     factory: Callable[..., object], resource: Resource
 ) -> object:
@@ -328,6 +443,35 @@ def _create_default_meter_provider(resource: Resource) -> MeterProvider | None:
     except Exception:
         reader.shutdown()
         raise
+
+
+def _create_default_logger_provider(resource: Resource) -> LoggerProvider | None:
+    if os.environ.get("OTEL_LOGS_EXPORTER", "otlp") == "none":
+        return None
+    endpoint, append_path = _endpoint("logs")
+    if endpoint is None:
+        return None
+    protocol = _protocol("logs")
+    if protocol in {"http", "http/protobuf"}:
+        from opentelemetry.exporter.otlp.proto.http._log_exporter import (
+            OTLPLogExporter as HttpOTLPLogExporter,
+        )
+
+        exporter = HttpOTLPLogExporter(
+            endpoint=_http_endpoint(endpoint, append_path, "logs")
+        )
+    elif protocol == "grpc":
+        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (
+            OTLPLogExporter as GrpcOTLPLogExporter,
+        )
+
+        exporter = GrpcOTLPLogExporter(endpoint=endpoint)
+    else:
+        raise RuntimeError(f"Unsupported OTLP protocol: {protocol}")
+
+    provider = LoggerProvider(resource=resource, shutdown_on_exit=False)
+    provider.add_log_record_processor(BatchLogRecordProcessor(exporter))
+    return provider
 
 
 def _endpoint(signal: str) -> tuple[str | None, bool]:
