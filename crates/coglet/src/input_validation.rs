@@ -209,7 +209,7 @@ impl InputValidator {
             }
 
             // Type/constraint errors on specific fields
-            let path = error.instance_path.to_string();
+            let path = error.instance_path().to_string();
             let field = path.trim_start_matches('/');
             let field_name = if field.is_empty() {
                 "__root__".to_string()
@@ -436,6 +436,74 @@ mod tests {
     fn no_schema_returns_none() {
         let schema = json!({"components": {"schemas": {}}});
         assert!(InputValidator::from_openapi_schema(&schema).is_none());
+    }
+
+    #[test]
+    fn validates_input_constraints() {
+        let cases = [
+            (
+                json!({"type": "integer", "minimum": 1, "maximum": 10}),
+                json!(10),
+                json!(11),
+            ),
+            (
+                json!({"type": "string", "minLength": 2, "maxLength": 4}),
+                json!("abcd"),
+                json!("abcde"),
+            ),
+            (
+                json!({"type": "string", "pattern": "^[a-z]+$"}),
+                json!("abc"),
+                json!("abc1"),
+            ),
+            (
+                json!({"anyOf": [{"type": "integer"}, {"type": "string"}]}),
+                json!(42),
+                json!(true),
+            ),
+        ];
+
+        for (property, valid, invalid) in cases {
+            let schema = make_schema(json!({
+                "type": "object",
+                "properties": {"value": property},
+                "required": ["value"]
+            }));
+            let validator = InputValidator::from_openapi_schema(&schema).unwrap();
+            assert!(validator.validate(&json!({"value": valid})).is_ok());
+            let errors = validator.validate(&json!({"value": invalid})).unwrap_err();
+            assert_eq!(errors.len(), 1);
+            assert_eq!(errors[0].field, "value");
+            assert_eq!(errors[0].error_type, "value_error");
+        }
+    }
+
+    #[test]
+    fn reports_missing_fields_and_array_item_errors() {
+        let schema = make_schema(json!({
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string"},
+                "seed": {"type": "integer"},
+                "items": {"type": "array", "items": {"type": "integer"}}
+            },
+            "required": ["prompt", "seed"]
+        }));
+        let validator = InputValidator::from_openapi_schema(&schema).unwrap();
+        let errors = validator
+            .validate(&json!({"items": [1, "invalid"]}))
+            .unwrap_err();
+        assert_eq!(errors.len(), 3);
+        for field in ["prompt", "seed"] {
+            let error = errors.iter().find(|error| error.field == field).unwrap();
+            assert_eq!(error.msg, "Field required");
+            assert_eq!(error.error_type, "value_error.missing");
+        }
+        let error = errors
+            .iter()
+            .find(|error| error.field == "items/1")
+            .unwrap();
+        assert_eq!(error.error_type, "value_error");
     }
 
     #[test]
