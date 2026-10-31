@@ -9,3 +9,5 @@ observability:
   traces:
     enabled: true
     sampler: parentbased_always_on
+  metrics:
+    enabled: true

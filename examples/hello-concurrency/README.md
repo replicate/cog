@@ -17,11 +17,11 @@ This combined with the async setup and run methods in `run.py` allows Cog to run
 4 concurrent predictions. If Cog reaches the max concurrency threshold it will reject subsequent
 predictions with a `409 Conflict` response.
 
-### Tracing with Honeycomb
+### Tracing and metrics with Honeycomb
 
-Cog loads `telemetry.py` before importing the model. Its `create_tracer_provider()` function configures resource attributes, sampling, span limits, and exporters for Python spans. The model adds spans with the standard `opentelemetry.trace` API.
+Cog loads `telemetry.py` before importing the model. Its provider factories configure model spans and metrics, while `configure_runtime_metrics()` selects fixed Cog runtime instruments. The model uses the standard `opentelemetry.trace` and `opentelemetry.metrics` APIs.
 
-Set a Honeycomb API key in your shell, then pass the OTLP configuration at runtime:
+Set a Honeycomb API key in your shell, then pass its OTLP configuration at runtime:
 
 ```shell
 export HONEYCOMB_API_KEY=your-api-key
@@ -35,7 +35,7 @@ cog run \
   -i interval=1
 ```
 
-The `parentbased_always_on` sampler preserves an upstream trace's sampling decision and samples predictions that start a new trace locally.
+The `parentbased_always_on` sampler preserves an upstream trace's sampling decision and samples predictions that start a new trace locally. `model.output_tokens` is a model-owned OpenTelemetry counter; `current_scope().record_metric()` continues to populate the prediction response separately.
 
 To print Python spans locally without an OTLP endpoint, run:
 

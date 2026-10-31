@@ -10,6 +10,8 @@ pub mod bridge;
 mod fd_redirect;
 pub mod orchestrator;
 pub mod permit;
+#[cfg(feature = "tracing")]
+pub mod runtime_metrics;
 pub mod service;
 mod setup_log_accumulator;
 #[cfg(feature = "tracing")]

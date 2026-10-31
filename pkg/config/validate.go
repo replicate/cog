@@ -85,15 +85,25 @@ func validateObservability(cfg *configFile, opts *validateOptions, result *Valid
 	}
 	if cfg.Observability.Config != nil {
 		validateObservabilityConfig(*cfg.Observability.Config, opts, result)
-		if cfg.Observability.Traces == nil || cfg.Observability.Traces.Enabled == nil || !*cfg.Observability.Traces.Enabled {
-			result.AddError(&ValidationError{Field: "observability.config", Value: *cfg.Observability.Config, Message: "requires observability.traces.enabled to be true"})
+		if !observabilityFileAnyTelemetryEnabled(cfg.Observability) {
+			result.AddError(&ValidationError{Field: "observability.config", Value: *cfg.Observability.Config, Message: "requires observability.traces.enabled or observability.metrics.enabled to be true"})
 		}
 	}
-	if cfg.Observability.Traces == nil {
-		return
+	if cfg.Observability.Traces != nil {
+		validateTracing(cfg.Observability.Traces, result)
 	}
+	if cfg.Observability.Metrics != nil && cfg.Observability.Metrics.Enabled == nil {
+		result.AddError(&ValidationError{Field: "observability.metrics.enabled", Message: "is required"})
+	}
+}
 
-	traces := cfg.Observability.Traces
+func observabilityFileAnyTelemetryEnabled(observability *observabilityFile) bool {
+	return observability != nil &&
+		((observability.Traces != nil && observability.Traces.Enabled != nil && *observability.Traces.Enabled) ||
+			(observability.Metrics != nil && observability.Metrics.Enabled != nil && *observability.Metrics.Enabled))
+}
+
+func validateTracing(traces *tracingFile, result *ValidationResult) {
 	if traces.Enabled == nil {
 		result.AddError(&ValidationError{Field: "observability.traces.enabled", Message: "is required"})
 	}
