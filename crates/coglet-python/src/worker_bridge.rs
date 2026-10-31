@@ -203,6 +203,20 @@ pub struct PythonPredictHandler {
 }
 
 impl PythonPredictHandler {
+    fn install_telemetry(&self, module: &Bound<'_, PyModule>) -> Result<(), SetupError> {
+        let installed = module.call_method0("install_providers");
+        let config = module
+            .call_method0("get_runtime_metrics_config")
+            .map_err(|error| SetupError::setup(error.to_string()))?;
+        *self
+            .runtime_metrics
+            .lock()
+            .expect("runtime_metrics mutex poisoned") =
+            Some(runtime_metrics_config_from_python(&config)?);
+        installed.map_err(|error| SetupError::setup(error.to_string()))?;
+        Ok(())
+    }
+
     /// Create a handler in prediction mode.
     pub fn new(predictor_ref: String, max_concurrency: usize) -> Result<Self, SetupError> {
         let (loop_obj, thread) = Self::init_async_loop()?;
@@ -381,14 +395,7 @@ impl PredictHandler for PythonPredictHandler {
                 let telemetry_module = py
                     .import("cog._telemetry")
                     .map_err(|error| SetupError::setup(error.to_string()))?;
-                let config = telemetry_module
-                    .call_method0("install_providers")
-                    .map_err(|error| SetupError::setup(error.to_string()))?;
-                *self
-                    .runtime_metrics
-                    .lock()
-                    .expect("runtime_metrics mutex poisoned") =
-                    Some(runtime_metrics_config_from_python(&config)?);
+                self.install_telemetry(&telemetry_module)?;
             }
             let _trace_guard = PythonTraceGuard::enter(py, carrier.as_ref())
                 .map_err(|error| SetupError::internal(error.to_string()))?;
@@ -931,6 +938,39 @@ sys.modules.setdefault('requests', requests)
         std::fs::write(&path, source).expect("failed to write test predictor");
         let predictor_ref = format!("{}:Predictor", path.display());
         (dir, predictor_ref)
+    }
+
+    #[test]
+    fn telemetry_failure_preserves_runtime_metric_opt_out() {
+        Python::initialize();
+        Python::attach(|py| {
+            let module = PyModule::from_code(
+                py,
+                c"\
+from types import SimpleNamespace
+
+def install_providers():
+    raise RuntimeError('instrumentation failed')
+
+def get_runtime_metrics_config():
+    return SimpleNamespace(enabled=False, disabled=[SimpleNamespace(value='setup_duration')])
+",
+                c"telemetry_test.py",
+                c"telemetry_test",
+            )
+            .expect("test module should load");
+            let handler = PythonPredictHandler::new("predict.py:Predictor".to_string(), 1)
+                .expect("handler should initialize");
+            let error = handler
+                .install_telemetry(&module)
+                .expect_err("instrumentation should fail");
+            assert!(error.to_string().contains("instrumentation failed"));
+            let config = handler
+                .runtime_metrics_config()
+                .expect("failed setup should retain runtime metrics configuration");
+            assert!(!config.enabled);
+            assert_eq!(config.disabled, vec![RuntimeMetric::SetupDuration]);
+        });
     }
 
     // Runtime guard: an operator/env override of COG_MAX_CONCURRENCY > 1 must

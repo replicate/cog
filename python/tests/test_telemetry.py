@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _run_script(script: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
@@ -311,3 +313,129 @@ _telemetry.install_providers()
     )
     assert result.returncode == 0, result.stderr
     assert not marker.exists()
+
+
+@pytest.mark.parametrize("failure", ["factory", "instrumentation"])
+@pytest.mark.parametrize("enabled", [True, False])
+def test_runtime_metric_opt_out_survives_initialization_failure(
+    tmp_path: Path, failure: str, enabled: bool
+) -> None:
+    config = tmp_path / "telemetry.py"
+    config.write_text(
+        f"""
+from cog.telemetry import RuntimeMetric, RuntimeMetricsConfig
+from opentelemetry.sdk.metrics import MeterProvider
+
+def configure_runtime_metrics():
+    return RuntimeMetricsConfig(enabled={enabled!r}, disabled={{RuntimeMetric.SETUP_DURATION}})
+
+def create_meter_provider(resource):
+    if {failure!r} == "factory":
+        raise RuntimeError("factory failed")
+    return MeterProvider(shutdown_on_exit=False)
+
+def configure_instrumentation():
+    raise RuntimeError("instrumentation failed")
+"""
+    )
+    result = _run_script(
+        f"""
+import os
+os.environ.update({{
+    "COG_METRICS_CONFIGURED": "true",
+    "COG_OBSERVABILITY_CONFIG": {str(config)!r},
+}})
+from cog import _telemetry
+from cog.telemetry import RuntimeMetric
+_telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
+try:
+    _telemetry.install_providers()
+except RuntimeError as error:
+    assert str(error) == {failure + " failed"!r}, str(error)
+else:
+    raise AssertionError("initialization should fail")
+config = _telemetry.get_runtime_metrics_config()
+assert config.enabled is {enabled!r}
+assert config.disabled == {{RuntimeMetric.SETUP_DURATION}}
+assert _telemetry._meter_provider is None
+"""
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("signal", ["TRACE", "METRICS"])
+def test_signal_boolean_environment_contract(signal: str) -> None:
+    result = _run_script(
+        f"""
+import os
+from cog import _telemetry
+configured = "COG_{signal}_CONFIGURED"
+enabled = "COG_{signal}_ENABLED"
+check = _telemetry._{"traces" if signal == "TRACE" else "metrics"}_enabled
+assert not check()
+os.environ[configured] = "true"
+assert check()
+for value in ["1", "true", "yes", "TRUE", "Yes"]:
+    os.environ[enabled] = value
+    assert check(), value
+for value in ["0", "false", "no", "FALSE", "No", "unexpected", "", " true "]:
+    os.environ[enabled] = value
+    assert not check(), value
+os.environ[enabled] = "true"
+for value in ["unexpected", ""]:
+    os.environ[configured] = value
+    assert not check(), value
+os.environ[configured] = "true"
+for value in ["true", "unexpected", ""]:
+    os.environ["OTEL_SDK_DISABLED"] = value
+    assert not check(), value
+os.environ["OTEL_SDK_DISABLED"] = "false"
+assert check()
+"""
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("signal", ["TRACE", "METRICS"])
+def test_only_enabled_signal_creates_provider(tmp_path: Path, signal: str) -> None:
+    config = tmp_path / "telemetry.py"
+    config.write_text(
+        f"""
+from cog.telemetry import RuntimeMetricsConfig
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.trace import TracerProvider
+
+def create_tracer_provider(resource):
+    assert {signal!r} == "TRACE"
+    return TracerProvider(shutdown_on_exit=False)
+
+def create_meter_provider(resource):
+    assert {signal!r} == "METRICS"
+    return MeterProvider(shutdown_on_exit=False)
+
+def configure_runtime_metrics():
+    assert {signal!r} == "METRICS"
+    return RuntimeMetricsConfig(enabled=False)
+"""
+    )
+    result = _run_script(
+        f"""
+import os
+os.environ.update({{
+    "COG_TRACE_CONFIGURED": "true",
+    "COG_METRICS_CONFIGURED": "true",
+    "COG_TRACE_ENABLED": {str(signal == "TRACE").lower()!r},
+    "COG_METRICS_ENABLED": {str(signal == "METRICS").lower()!r},
+    "COG_OBSERVABILITY_CONFIG": {str(config)!r},
+}})
+from cog import _telemetry
+_telemetry._CUSTOM_CONFIG_PATH = {str(config)!r}
+config = _telemetry.install_providers()
+assert (_telemetry._tracer_provider is not None) is {signal == "TRACE"!r}
+assert (_telemetry._meter_provider is not None) is {signal == "METRICS"!r}
+if {signal!r} == "METRICS":
+    assert not config.enabled
+_telemetry.shutdown()
+"""
+    )
+    assert result.returncode == 0, result.stderr

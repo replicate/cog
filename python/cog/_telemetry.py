@@ -58,13 +58,13 @@ def install_providers() -> RuntimeMetricsConfig:
         return _runtime_metrics_config
 
     module: ModuleType | None = None
-    runtime_metrics_config = RuntimeMetricsConfig()
+    _runtime_metrics_config = RuntimeMetricsConfig()
     tracer_provider: TracerProvider | None = None
     meter_provider: MeterProvider | None = None
     try:
         module = _load_config_from_env() if _has_custom_config() else None
         if module is not None and metrics_enabled:
-            runtime_metrics_config = _read_runtime_metrics_config(module)
+            _runtime_metrics_config = _read_runtime_metrics_config(module)
         resource = _base_resource()
         tracer_provider = (
             _build_tracer_provider(module, resource) if traces_enabled else None
@@ -91,9 +91,7 @@ def install_providers() -> RuntimeMetricsConfig:
             _meter_provider = meter_provider
 
         _configure_instrumentation(module)
-        _runtime_metrics_config = runtime_metrics_config
     except Exception:
-        _runtime_metrics_config = RuntimeMetricsConfig()
         if tracer_provider is not _tracer_provider:
             _shutdown_provider(tracer_provider, "tracing")
         if meter_provider is not _meter_provider:
@@ -101,6 +99,10 @@ def install_providers() -> RuntimeMetricsConfig:
         shutdown()
         raise
 
+    return _runtime_metrics_config
+
+
+def get_runtime_metrics_config() -> RuntimeMetricsConfig:
     return _runtime_metrics_config
 
 
@@ -148,24 +150,34 @@ def _has_custom_config() -> bool:
 
 
 def _traces_enabled() -> bool:
-    return _enabled("COG_TRACE_CONFIGURED", "COG_TRACE_ENABLED") and not _sdk_disabled()
+    return _enabled("COG_TRACE_CONFIGURED", "COG_TRACE_ENABLED")
 
 
 def _metrics_enabled() -> bool:
-    return (
-        _enabled("COG_METRICS_CONFIGURED", "COG_METRICS_ENABLED")
-        and not _sdk_disabled()
-    )
+    return _enabled("COG_METRICS_CONFIGURED", "COG_METRICS_ENABLED")
 
 
 def _enabled(configured_name: str, enabled_name: str) -> bool:
-    return os.environ.get(configured_name, "").lower() in {"1", "true", "yes"} and (
-        os.environ.get(enabled_name, "true").lower() not in {"0", "false", "no"}
-    )
+    try:
+        return (
+            _env_bool(configured_name, False)
+            and _env_bool(enabled_name, True)
+            and not _env_bool("OTEL_SDK_DISABLED", False)
+        )
+    except ValueError as error:
+        _logger.warning("%s; %s disabled", error, enabled_name)
+        return False
 
 
-def _sdk_disabled() -> bool:
-    return os.environ.get("OTEL_SDK_DISABLED", "false").lower() in {"1", "true", "yes"}
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    if value.lower() in {"1", "true", "yes"}:
+        return True
+    if value.lower() in {"0", "false", "no"}:
+        return False
+    raise ValueError(f"{name} must be true or false")
 
 
 def _load_config_from_env() -> ModuleType:
