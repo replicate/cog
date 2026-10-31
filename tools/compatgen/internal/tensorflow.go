@@ -18,7 +18,7 @@ func FetchTensorFlowCompatibilityMatrix() ([]config.TFCompatibility, error) {
 	url := "https://www.tensorflow.org/install/source"
 	minCudaVersion := strconv.Itoa(config.MinimumMajorCudaVersion)
 
-	resp, err := soup.Get(url)
+	resp, err := fetchURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to download %s: %w", url, err)
 	}

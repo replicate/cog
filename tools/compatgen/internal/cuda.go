@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/anaskhan96/soup"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -49,7 +48,7 @@ func FetchCUDABaseImages(ctx context.Context) ([]config.CUDABaseImage, error) {
 func fetchCUDABaseImageTags(url string) ([]string, error) {
 	tags := []string{}
 
-	resp, err := soup.Get(url)
+	resp, err := fetchURL(url)
 	if err != nil {
 		return tags, fmt.Errorf("Failed to download %s: %w", url, err)
 	}

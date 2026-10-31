@@ -75,8 +75,6 @@ extra:
   social:
     - icon: simple/github
       link: https://github.com/replicate/cog
-    - icon: simple/discord
-      link: https://discord.gg/replicate
     - icon: simple/x
       link: https://x.com/replicate
     - icon: simple/youtube

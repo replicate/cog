@@ -227,7 +227,7 @@ func fetchPreviousTorchVersions(compats []config.TorchCompatibility) ([]config.T
 	// because we don't know what versions of torch, torchvision, and torchaudio are compatible with each other.
 
 	url := "https://pytorch.org/get-started/previous-versions/"
-	resp, err := soup.Get(url)
+	resp, err := fetchURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to download %s: %w", url, err)
 	}
@@ -445,7 +445,7 @@ func FindCompatiblePythonVersions(torchVersion string, torchVisionVersion string
 }
 
 func fetchTorchPackagesFromURL(url string) ([]TorchPackage, error) {
-	resp, err := soup.Get(url)
+	resp, err := fetchURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to download %s: %w", url, err)
 	}
