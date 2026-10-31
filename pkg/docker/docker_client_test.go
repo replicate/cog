@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/registry"
+	mobycontainer "github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -310,7 +310,7 @@ func TestDockerClient(t *testing.T) {
 					testRegistry.ImageRef("alpine:latest"),
 					// print "line $i" N times then exit, where $i is the line number
 					testcontainers.WithCmd("sh", "-c", "for i in $(seq 1 5); do echo \"$i\"; sleep 0.1; done"),
-					testcontainers.WithConfigModifier(func(config *container.Config) {
+					testcontainers.WithConfigModifier(func(config *mobycontainer.Config) {
 						config.Tty = tty
 					}),
 				)

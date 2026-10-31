@@ -3,6 +3,7 @@ package registry_testhelpers
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -11,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/go-connections/nat"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/moby/moby/api/types/container"
+	mobynetwork "github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/registry"
@@ -74,8 +75,8 @@ func StartTestRegistryWithCleanup(ctx context.Context, opts ...Option) (*Registr
 				WithStartupTimeout(10 * time.Second),
 		),
 		testcontainers.WithHostConfigModifier(func(hostConfig *container.HostConfig) {
-			hostConfig.PortBindings = map[nat.Port][]nat.PortBinding{
-				nat.Port("5000/tcp"): {{HostIP: "0.0.0.0", HostPort: strconv.Itoa(port)}},
+			hostConfig.PortBindings = mobynetwork.PortMap{
+				mobynetwork.MustParsePort("5000/tcp"): {{HostIP: netip.IPv4Unspecified(), HostPort: strconv.Itoa(port)}},
 			}
 		}),
 	}

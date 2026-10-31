@@ -76,7 +76,7 @@ tracing-subscriber.workspace = true
 opentelemetry = { version = "=0.32.0", default-features = false, features = ["trace"], optional = true }
 opentelemetry-jaeger-propagator = { version = "=0.32.0", default-features = false, optional = true }
 opentelemetry-otlp = { version = "=0.32.0", default-features = false, optional = true }
-opentelemetry_sdk = { version = "=0.32.0", default-features = false, features = ["trace"], optional = true }
+opentelemetry_sdk = { version = "=0.32.1", default-features = false, features = ["trace"], optional = true }
 tracing-opentelemetry = { version = "=0.33.0", default-features = false, optional = true }
 
 [target.'cfg(unix)'.dependencies]
@@ -88,4 +88,4 @@ tempfile = "3"
 wiremock = "0.6"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-opentelemetry_sdk = { version = "=0.32.0", default-features = false, features = ["testing", "trace"] }
+opentelemetry_sdk = { version = "=0.32.1", default-features = false, features = ["testing", "trace"] }
