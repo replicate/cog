@@ -267,7 +267,7 @@ jobs:
             artifact-suffix: linux-arm64
             manylinux: auto
             zig: true
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             artifact-suffix: macos-arm64
             manylinux: "off"
@@ -303,7 +303,7 @@ jobs:
     needs: [verify-tag, build-sdk, build-coglet-wheels]
     # macOS arm64 runner: native clang for darwin targets, zig for linux targets.
     # CGo required for go-tree-sitter (static Python schema parser).
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     env:
       CGO_ENABLED: "1"
