@@ -553,8 +553,13 @@ impl Prediction {
     ///
     /// Builds the current state as a JSON payload and sends it via the
     /// stored WebhookSender. Spawns a tokio task — does not block.
+    ///
+    /// The payload holds all logs and outputs so far, so it's only built if
+    /// the event passes the filter and throttle.
     fn fire_webhook(&self, event: WebhookEventType) {
-        if let Some(ref webhook) = self.webhook {
+        if let Some(ref webhook) = self.webhook
+            && webhook.should_send(event)
+        {
             let payload = self.build_webhook_payload();
             webhook.send(event, &payload);
         }
@@ -728,6 +733,79 @@ mod tests {
         pred.append_output(serde_json::json!("chunk1"));
         pred.append_output(serde_json::json!("chunk2"));
         assert_eq!(pred.outputs().len(), 2);
+    }
+
+    /// Regression test for #3219: a streaming prediction used to send one
+    /// `output` webhook per chunk, each carrying the full logs.
+    #[tokio::test]
+    async fn output_webhooks_are_throttled_and_terminal_has_everything() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        for status in ["succeeded", "failed", "canceled"] {
+            crate::install_crypto_provider();
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(200))
+                .mount(&server)
+                .await;
+            let config = crate::webhook::WebhookConfig {
+                response_interval: std::time::Duration::from_secs(10),
+                ..Default::default()
+            };
+            let webhook = WebhookSender::new(format!("{}/webhook", server.uri()), config).unwrap();
+            let mut pred = Prediction::new("pred_3219".to_string(), Some(webhook));
+
+            pred.set_processing();
+            let big_log = "A".repeat(100_000);
+            pred.append_log(&big_log);
+            for _ in 0..100 {
+                pred.append_output(serde_json::json!("tok "));
+            }
+            match status {
+                "succeeded" => {
+                    let outputs = pred.take_outputs();
+                    pred.set_succeeded(PredictionOutput::Stream(outputs));
+                }
+                "failed" => pred.set_failed("boom".to_string()),
+                _ => pred.set_canceled(),
+            }
+
+            let payloads = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    let payloads: Vec<serde_json::Value> = server
+                        .received_requests()
+                        .await
+                        .unwrap()
+                        .iter()
+                        .map(|r| serde_json::from_slice(&r.body).unwrap())
+                        .collect();
+                    if payloads.iter().any(|p| p["status"] == status) {
+                        return payloads;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap_or_else(|_| panic!("{status}: terminal webhook was not received"));
+
+            // The start webhook opens the throttle window; every output and
+            // log event inside it is dropped. Only the terminal one follows.
+            assert_eq!(
+                payloads.len(),
+                2,
+                "{status}: got {} webhooks",
+                payloads.len()
+            );
+            assert!(payloads.iter().any(|p| p["status"] == "processing"));
+            let terminal = payloads.iter().find(|p| p["status"] == status).unwrap();
+            assert_eq!(terminal["logs"], big_log, "{status}");
+            assert_eq!(
+                terminal["output"].as_array().map(Vec::len),
+                Some(100),
+                "{status}"
+            );
+        }
     }
 
     #[tokio::test]
