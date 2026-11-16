@@ -640,6 +640,28 @@ cog run [image] [flags]
       --use-replicate-token          Pass REPLICATE_API_TOKEN from local environment into the model context
 ```
 
+## `cog scan`
+
+Scan every layer (including deleted files) and the image config. Never builds or pulls an image. An incomplete scan fails instead of reporting clean.
+
+```
+cog scan IMAGE [flags]
+```
+
+**Examples**
+
+```
+  cog scan my-image:latest
+  cog scan my-image:latest --json
+```
+
+**Options**
+
+```
+  -h, --help   help for scan
+      --json   Print versioned JSON findings (without secret values)
+```
+
 ## `cog serve`
 
 Run an HTTP server.
