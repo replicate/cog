@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	// The official github.com/gitleaks/gitleaks repository retains this module path.
@@ -19,16 +20,17 @@ import (
 const (
 	maxFileBytes  = 8 << 20
 	maxTotalBytes = 8 << 30
-	maxLayerBytes = 2 << 30
+	maxLayerBytes = maxTotalBytes
 	maxEntries    = 1000000
 )
 
 // Finding deliberately omits the secret, matching text, and original filename.
 // Paths are hashes because filenames themselves can contain credentials.
 type Finding struct {
-	Path string `json:"path"`
-	Rule string `json:"rule"`
-	Line int    `json:"line"`
+	Path       string `json:"path"`
+	Rule       string `json:"rule"`
+	Line       int    `json:"line"`
+	SourcePath string `json:"-"`
 }
 
 type budget struct{ remaining int64 }
@@ -55,19 +57,34 @@ func Archive(r io.Reader) ([]Finding, error) {
 	}
 	detector.Redact = 100
 
+	// Spool entries until manifest.json identifies the config and layer paths.
+	// Docker save may put content-addressed blobs before the manifest.
+	spool, err := os.CreateTemp("", "cog-scan-*")
+	if err != nil {
+		return nil, fmt.Errorf("incomplete scan: create archive spool: %w", err)
+	}
+	defer func() {
+		_ = spool.Close()
+		_ = os.Remove(spool.Name()) //nolint:gosec // path returned by CreateTemp, not archive input
+	}()
+	type entry struct {
+		name         string
+		offset, size int64
+	}
 	var (
-		b        = &budget{remaining: maxTotalBytes}
-		outer    = &countReader{r: r, b: b}
-		tr       = tar.NewReader(outer)
-		seen     = map[string]bool{}
-		manifest []struct {
+		archiveBudget = &budget{remaining: maxTotalBytes}
+		layerBudget   = &budget{remaining: maxTotalBytes}
+		outer         = &countReader{r: r, b: archiveBudget}
+		tr            = tar.NewReader(outer)
+		seen          = map[string]entry{}
+		order         []entry
+		manifest      []struct {
 			Config string
 			Layers []string
 		}
 		findings []Finding
-		entries  = 0
+		entries  int
 	)
-
 	for {
 		h, e := tr.Next()
 		if e == io.EOF {
@@ -89,41 +106,32 @@ func Archive(r io.Reader) ([]Finding, error) {
 		if h.Typeflag != tar.TypeReg {
 			continue
 		}
-		if seen[h.Name] {
+		if _, ok := seen[h.Name]; ok {
 			return nil, errors.New("incomplete scan: duplicate archive entry")
 		}
-		seen[h.Name] = true
-		switch {
-		case h.Name == "manifest.json":
+		if h.Name == "manifest.json" {
 			data, e := readFile(tr, h.Size)
 			if e != nil {
 				return nil, e
 			}
-			appendFindings(detector, data, "manifest", &findings)
+			appendFindings(detector, data, "manifest.json", "manifest", 1, &findings, nil)
 			if e = json.Unmarshal(data, &manifest); e != nil {
 				return nil, errors.New("incomplete scan: invalid manifest")
 			}
-		case strings.HasSuffix(h.Name, "/layer.tar") || strings.HasSuffix(h.Name, ".tar"):
-			if h.Size > maxLayerBytes {
-				return nil, errors.New("incomplete scan: layer byte limit exceeded")
-			}
-			label := "layer " + safePath(h.Name)
-			if e = scanLayer(tr, h.Size, label, detector, b, &findings); e != nil {
-				return nil, e
-			}
-		case strings.HasSuffix(h.Name, ".json"):
-			data, e := readFile(tr, h.Size)
-			if e != nil {
-				return nil, e
-			}
-			appendFindings(detector, data, "config "+safePath(h.Name), &findings)
-		default:
-			data, e := readFile(tr, h.Size)
-			if e != nil {
-				return nil, e
-			}
-			appendFindings(detector, data, "metadata "+safePath(h.Name), &findings)
+			seen[h.Name] = entry{name: h.Name}
+			continue
 		}
+		offset, e := spool.Seek(0, io.SeekCurrent)
+		if e != nil {
+			return nil, fmt.Errorf("incomplete scan: spool offset: %w", e)
+		}
+		written, e := io.CopyN(spool, tr, h.Size)
+		if e != nil || written != h.Size {
+			return nil, errors.New("incomplete scan: truncated image entry")
+		}
+		item := entry{name: h.Name, offset: offset, size: h.Size}
+		seen[h.Name] = item
+		order = append(order, item)
 	}
 	if _, err := io.Copy(io.Discard, outer); err != nil {
 		return nil, errors.New("incomplete scan: image archive byte limit exceeded")
@@ -131,16 +139,43 @@ func Archive(r io.Reader) ([]Finding, error) {
 	if len(manifest) == 0 {
 		return nil, errors.New("incomplete scan: missing image manifest")
 	}
+	configs, layers := map[string]bool{}, map[string]bool{}
 	for _, m := range manifest {
-		if !strings.HasSuffix(m.Config, ".json") || !seen[m.Config] {
+		if m.Config == "" || m.Config == "manifest.json" {
 			return nil, errors.New("incomplete scan: missing image config")
 		}
+		if _, ok := seen[m.Config]; !ok {
+			return nil, errors.New("incomplete scan: missing image config")
+		}
+		configs[m.Config] = true
 		for _, l := range m.Layers {
-			if !strings.HasSuffix(l, ".tar") || !seen[l] {
+			if _, ok := seen[l]; !ok || l == "manifest.json" {
 				return nil, errors.New("incomplete scan: missing layer")
+			}
+			layers[l] = true
+		}
+	}
+	for _, item := range order {
+		section := io.NewSectionReader(spool, item.offset, item.size)
+		switch {
+		case layers[item.name]:
+			if item.size > maxLayerBytes {
+				return nil, errors.New("incomplete scan: layer byte limit exceeded")
+			}
+			if e := scanLayer(section, item.size, "layer "+safePath(item.name), detector, layerBudget, &findings); e != nil {
+				return nil, e
+			}
+		case configs[item.name]:
+			if e := scanFile(section, item.size, item.name, "config "+safePath(item.name), detector, &findings); e != nil {
+				return nil, e
+			}
+		default:
+			if e := scanFile(section, item.size, item.name, "metadata "+safePath(item.name), detector, &findings); e != nil {
+				return nil, e
 			}
 		}
 	}
+
 	return findings, nil
 }
 
@@ -149,7 +184,7 @@ func scanHeader(d *detect.Detector, h *tar.Header, label string, out *[]Finding)
 	if err != nil || len(data) > maxFileBytes {
 		return errors.New("incomplete scan: oversized or invalid archive header")
 	}
-	appendFindings(d, data, label, out)
+	appendFindings(d, data, h.Name, label, 1, out, nil)
 	return nil
 }
 
@@ -163,11 +198,67 @@ func readFile(r io.Reader, n int64) ([]byte, error) {
 	}
 	return data, nil
 }
-func appendFindings(d *detect.Detector, data []byte, path string, out *[]Finding) {
-	// Gitleaks v8 requires Fragment to set the first line of in-memory content.
-	for _, f := range d.Detect(detect.Fragment{Raw: string(data), StartLine: 1}) { //nolint:staticcheck // v8 marks Fragment deprecated ahead of v9
-		*out = append(*out, Finding{Path: path, Rule: f.RuleID, Line: f.StartLine})
+func appendFindings(d *detect.Detector, data []byte, source, path string, line int, out *[]Finding, duplicates map[string]bool) {
+	// Gitleaks needs the original path for path-only and path-scoped rules.
+	for _, f := range d.Detect(detect.Fragment{Raw: string(data), FilePath: source, StartLine: line}) { //nolint:staticcheck // v8 marks Fragment deprecated ahead of v9
+		key := fmt.Sprintf("%s:%s:%d:%d:%s", path, f.RuleID, f.StartLine, f.StartColumn, f.Match)
+		if duplicates != nil && duplicates[key] {
+			continue
+		}
+		if duplicates != nil {
+			duplicates[key] = true
+		}
+		*out = append(*out, Finding{Path: path, Rule: f.RuleID, Line: f.StartLine, SourcePath: source})
 	}
+}
+
+// scanFile reads bounded windows aligned to complete lines. A line longer than
+// the window fails closed rather than silently dropping a possible finding.
+func scanFile(r io.Reader, n int64, source, label string, d *detect.Detector, out *[]Finding) error {
+	const overlap = 64 << 10
+	remaining := n
+	pending := make([]byte, 0, maxFileBytes)
+	prefix := []byte(nil)
+	line := 1
+	duplicates := map[string]bool{}
+	for remaining > 0 {
+		capacity := maxFileBytes - len(pending)
+		if capacity == 0 {
+			return errors.New("incomplete scan: line exceeds scanning window")
+		}
+		if int64(capacity) > remaining {
+			capacity = int(remaining)
+		}
+		start := len(pending)
+		pending = append(pending, make([]byte, capacity)...)
+		got, e := io.ReadFull(r, pending[start:])
+		if e != nil || got != capacity {
+			return errors.New("incomplete scan: truncated file")
+		}
+		remaining -= int64(got)
+		if remaining == 0 {
+			appendFindings(d, append(prefix, pending...), source, label, line, out, duplicates)
+			return nil
+		}
+		cut := strings.LastIndexByte(string(pending), '\n') + 1
+		if cut == 0 {
+			return errors.New("incomplete scan: line exceeds scanning window")
+		}
+		chunk := append(append([]byte(nil), prefix...), pending[:cut]...)
+		appendFindings(d, chunk, source, label, line, out, duplicates)
+		// Retain complete trailing lines so bounded multiline matches spanning
+		// adjacent windows can still be detected.
+		keep := cut - overlap
+		keep = max(keep, 0)
+		if keep > 0 {
+			keep = strings.IndexByte(string(pending[keep:cut]), '\n') + keep + 1
+		}
+		line += strings.Count(string(prefix), "\n") + strings.Count(string(pending[:keep]), "\n")
+		prefix = append(prefix[:0], pending[keep:cut]...)
+		pending = append(pending[:0], pending[cut:]...)
+	}
+	appendFindings(d, prefix, source, label, line, out, duplicates)
+	return nil
 }
 func scanLayer(r io.Reader, n int64, label string, d *detect.Detector, b *budget, out *[]Finding) error {
 	var (
@@ -220,11 +311,9 @@ func scanLayer(r io.Reader, n int64, label string, d *detect.Detector, b *budget
 			}
 			continue
 		}
-		data, err := readFile(tr, h.Size)
-		if err != nil {
+		if err := scanFile(tr, h.Size, h.Name, label+":"+safePath(h.Name), d, out); err != nil {
 			return err
 		}
-		appendFindings(d, data, label+":"+safePath(h.Name), out)
 	}
 	if counted.err != nil {
 		return counted.err

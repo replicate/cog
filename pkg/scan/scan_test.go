@@ -8,6 +8,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -110,7 +113,7 @@ func TestScanProviderShapedKeys(t *testing.T) {
 			require.Contains(t, rules, tt.rule)
 			require.Contains(t, findings, Finding{
 				Path: "layer " + safePath("layer/layer.tar") + ":" + safePath("app/.env"),
-				Rule: tt.rule, Line: 1,
+				Rule: tt.rule, Line: 1, SourcePath: "app/.env",
 			})
 		})
 	}
@@ -140,7 +143,7 @@ func TestScanIncomplete(t *testing.T) {
 		name string
 		data []byte
 	}{
-		{"oversize file", imageData(t, tarData(t, map[string][]byte{"big": bytes.Repeat([]byte("x"), maxFileBytes+1)}), []byte("{}"))},
+
 		{"invalid layer", imageData(t, []byte("not a tar"), []byte("{}"))},
 		{"missing manifest", tarData(t, map[string][]byte{"config.json": []byte("{}")})},
 	}
@@ -152,4 +155,104 @@ func TestScanIncomplete(t *testing.T) {
 	}
 	_, err := Archive(io.LimitReader(bytes.NewReader(imageData(t, tarData(t, map[string][]byte{"a": []byte("b")}), []byte("{}"))), 100))
 	require.ErrorContains(t, err, "incomplete scan")
+}
+
+// A real docker save uses content-addressed blobs, not layer.tar paths.
+func TestScanRejectsManifestAsLayer(t *testing.T) {
+	manifest := []byte(`[{"Config":"config.json","Layers":["manifest.json"]}]`)
+	archive := tarData(t, map[string][]byte{"manifest.json": manifest, "config.json": []byte("{}")})
+	_, err := Archive(bytes.NewReader(archive))
+	require.ErrorContains(t, err, "missing layer")
+}
+
+func TestScanBlobsBeforeManifest(t *testing.T) {
+	layer := tarData(t, map[string][]byte{"secrets/token.txt": []byte(testSecret)})
+	manifest := []byte(`[ {"Config":"blobs/sha256/config", "Layers":["blobs/sha256/layer"]} ]`)
+	var archive bytes.Buffer
+	tw := tar.NewWriter(&archive)
+	for _, entry := range []struct {
+		name string
+		data []byte
+	}{
+		{"blobs/sha256/layer", layer}, {"blobs/sha256/config", []byte(`{"Env":["TOKEN=` + testSecret + `"]}`)}, {"manifest.json", manifest},
+	} {
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: entry.name, Mode: 0o600, Size: int64(len(entry.data))}))
+		_, err := tw.Write(entry.data)
+		require.NoError(t, err)
+	}
+	require.NoError(t, tw.Close())
+	findings, err := Archive(bytes.NewReader(archive.Bytes()))
+	require.NoError(t, err)
+	require.Contains(t, findings, Finding{Path: "layer " + safePath("blobs/sha256/layer") + ":" + safePath("secrets/token.txt"), Rule: "github-fine-grained-pat", Line: 1, SourcePath: "secrets/token.txt"})
+	require.Contains(t, findings, Finding{Path: "config " + safePath("blobs/sha256/config"), Rule: "github-fine-grained-pat", Line: 1, SourcePath: "blobs/sha256/config"})
+}
+
+func TestScanPathOnlyRuleRedactsName(t *testing.T) {
+	name := "keys/credential.p12"
+	findings, err := Archive(bytes.NewReader(imageData(t, tarData(t, map[string][]byte{name: []byte("not a secret")}), []byte("{}"))))
+	require.NoError(t, err)
+	require.Contains(t, findings, Finding{Path: "layer " + safePath("layer/layer.tar") + ":" + safePath(name), Rule: "pkcs12-file", SourcePath: name})
+	serialized, err := json.Marshal(findings)
+	require.NoError(t, err)
+	require.NotContains(t, string(serialized), name)
+}
+
+func TestScanLargeFileAndLineNumbers(t *testing.T) {
+	content := strings.Repeat("safe filler line\n", maxFileBytes/17+1) + testSecret + "\n"
+	findings, err := Archive(bytes.NewReader(imageData(t, tarData(t, map[string][]byte{"large.txt": []byte(content)}), []byte("{}"))))
+	require.NoError(t, err)
+	require.Contains(t, findings, Finding{Path: "layer " + safePath("layer/layer.tar") + ":" + safePath("large.txt"), Rule: "github-fine-grained-pat", Line: strings.Count(content, "\n"), SourcePath: "large.txt"})
+}
+
+func TestScanLargeFileAcrossMultipleWindows(t *testing.T) {
+	content := strings.Repeat("safe filler line\n", 1100000) + testSecret + "\n"
+	findings, err := Archive(bytes.NewReader(imageData(t, tarData(t, map[string][]byte{"multi.txt": []byte(content)}), []byte("{}"))))
+	require.NoError(t, err)
+	require.Contains(t, findings, Finding{Path: "layer " + safePath("layer/layer.tar") + ":" + safePath("multi.txt"), Rule: "github-fine-grained-pat", Line: 1100001, SourcePath: "multi.txt"})
+}
+
+func TestScanOversizedSingleLineFailsClosed(t *testing.T) {
+	layer := tarData(t, map[string][]byte{"long.txt": bytes.Repeat([]byte("x"), maxFileBytes+1)})
+	findings, err := Archive(bytes.NewReader(imageData(t, layer, []byte("{}"))))
+	require.ErrorContains(t, err, "line exceeds scanning window")
+	require.Nil(t, findings)
+}
+
+func TestScanSecretStraddlingWindow(t *testing.T) {
+	prefix := strings.Repeat("safe filler line\n", maxFileBytes/17)
+	// Put the token at the boundary of the first read window.
+	content := prefix + "TOKEN=" + testSecret + "\n" + strings.Repeat("safe filler line\n", 100)
+	findings, err := Archive(bytes.NewReader(imageData(t, tarData(t, map[string][]byte{"boundary.txt": []byte(content)}), []byte("{}"))))
+	require.NoError(t, err)
+	require.Contains(t, findings, Finding{Path: "layer " + safePath("layer/layer.tar") + ":" + safePath("boundary.txt"), Rule: "github-fine-grained-pat", Line: maxFileBytes/17 + 1, SourcePath: "boundary.txt"})
+}
+
+func TestScanDockerSaveWhenAvailable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Docker integration test")
+	}
+	images, err := exec.Command("docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}").Output()
+	if err != nil {
+		t.Skipf("Docker unavailable: %v", err)
+	}
+	var image string
+	for candidate := range strings.SplitSeq(string(images), "\n") {
+		if strings.HasPrefix(candidate, "alpine:") || strings.HasPrefix(candidate, "busybox:") {
+			image = candidate
+			break
+		}
+	}
+	if image == "" {
+		t.Skip("no small local Docker image; will not pull")
+	}
+	cmd := exec.Command("docker", "save", image)
+	f, err := os.CreateTemp(t.TempDir(), "docker-save-*")
+	require.NoError(t, err)
+	cmd.Stdout = f
+	require.NoError(t, cmd.Run())
+	_, err = f.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+	_, err = Archive(f)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
 }

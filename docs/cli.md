@@ -323,7 +323,7 @@ cog run [image] [flags]
 
 ## `cog scan`
 
-Scan every layer (including deleted files) and the image config. Never builds or pulls an image. An incomplete scan fails instead of reporting clean.
+Scan every layer (including deleted files) and the image config. Never builds or pulls an image. An incomplete scan fails instead of reporting clean. Exit 0 means clean, 2 means findings, and 1 means a scan error. Paths are hashed unless --show-paths is set.
 
 ```
 cog scan IMAGE [flags]
@@ -334,13 +334,15 @@ cog scan IMAGE [flags]
 ```
   cog scan my-image:latest
   cog scan my-image:latest --json
+  cog scan my-image:latest --show-paths
 ```
 
 **Options**
 
 ```
-  -h, --help   help for scan
-      --json   Print versioned JSON findings (without secret values)
+  -h, --help         help for scan
+      --json         Print versioned JSON findings (without secret values)
+      --show-paths   Reveal local image file paths, which may contain secrets
 ```
 
 ## `cog serve`
