@@ -162,6 +162,38 @@ func TestScanIncomplete(t *testing.T) {
 }
 
 // A real docker save uses content-addressed blobs, not layer.tar paths.
+func TestScanRejectsTrailingImageArchiveData(t *testing.T) {
+	layer := tarData(t, map[string][]byte{"hello.txt": []byte("hello")})
+	archive := append(imageData(t, layer, []byte("{}")), []byte(testSecret)...)
+	findings, err := Archive(bytes.NewReader(archive))
+	require.ErrorContains(t, err, "incomplete scan")
+	require.Nil(t, findings)
+}
+
+func TestScanRejectsTrailingLayerData(t *testing.T) {
+	layer := tarData(t, map[string][]byte{"hello.txt": []byte("hello")})
+	for _, tt := range []struct {
+		name string
+		data []byte
+	}{
+		{name: "uncompressed", data: append(append([]byte(nil), layer...), []byte(testSecret)...)},
+		{name: "gzip", data: func() []byte {
+			var compressed bytes.Buffer
+			gz := gzip.NewWriter(&compressed)
+			_, err := gz.Write(append(append([]byte(nil), layer...), []byte(testSecret)...))
+			require.NoError(t, err)
+			require.NoError(t, gz.Close())
+			return compressed.Bytes()
+		}()},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			findings, err := Archive(bytes.NewReader(imageData(t, tt.data, []byte("{}"))))
+			require.ErrorContains(t, err, "incomplete scan")
+			require.Nil(t, findings)
+		})
+	}
+}
+
 func TestScanRejectsManifestAsLayer(t *testing.T) {
 	manifest := []byte(`[{"Config":"config.json","Layers":["manifest.json"]}]`)
 	archive := tarData(t, map[string][]byte{"manifest.json": manifest, "config.json": []byte("{}")})

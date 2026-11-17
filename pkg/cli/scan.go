@@ -34,18 +34,18 @@ func newScanCommandWithOpener(open imageOpener) *cobra.Command {
 			if opener == nil {
 				docker, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 				if err != nil {
-					return errors.New("cannot connect to Docker")
+					return fmt.Errorf("cannot connect to Docker: %w", err)
 				}
 				defer docker.Close()
 				opener = func(ctx context.Context, image string) (io.ReadCloser, error) {
 					inspected, err := docker.ImageInspect(ctx, image)
 					if err != nil {
-						return nil, errors.New("image not found locally or Docker is unavailable (build or pull it explicitly before scanning)")
+						return nil, fmt.Errorf("inspect local image (build or pull it explicitly before scanning): %w", err)
 					}
 					// Save the inspected image by immutable ID so a concurrent tag change cannot switch it.
 					stream, err := docker.ImageSave(ctx, []string{inspected.ID})
 					if err != nil {
-						return nil, errors.New("could not export local image")
+						return nil, fmt.Errorf("could not export local image: %w", err)
 					}
 					return stream, nil
 				}

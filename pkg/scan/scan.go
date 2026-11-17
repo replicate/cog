@@ -226,8 +226,12 @@ func Archive(r io.Reader) ([]Finding, error) {
 		seen[h.Name] = item
 		order = append(order, item)
 	}
-	if _, err := io.Copy(io.Discard, outer); err != nil {
+	trailing, err := io.Copy(io.Discard, outer)
+	if err != nil {
 		return nil, errors.New("incomplete scan: image archive byte limit exceeded")
+	}
+	if trailing != 0 {
+		return nil, errors.New("incomplete scan: trailing image archive data")
 	}
 	if len(manifest) == 0 {
 		return nil, errors.New("incomplete scan: missing image manifest")
@@ -425,8 +429,12 @@ func scanLayer(r io.Reader, n int64, label string, d *detect.Detector, b *budget
 		return counted.err
 	}
 	// Consume and validate the complete compressed stream (including gzip checksum).
-	if _, err := io.Copy(io.Discard, counted); err != nil {
+	trailing, err := io.Copy(io.Discard, counted)
+	if err != nil {
 		return errors.New("incomplete scan: truncated or oversized layer")
+	}
+	if trailing != 0 {
+		return errors.New("incomplete scan: trailing layer data")
 	}
 	if counted.err != nil {
 		return counted.err

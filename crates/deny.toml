@@ -19,6 +19,15 @@ ignore = [
     "RUSTSEC-2025-0098",  # unic-ucd-version
     "RUSTSEC-2025-0100",  # unic-ucd-ident
 
+    # Unmaintained chrono: used by coglet for health timestamps and by
+    # pyo3-stub-gen. All versions are affected; migrating both users to
+    # jiff/time requires changes beyond a dependency upgrade.
+    "RUSTSEC-2026-0543",  # chrono
+
+    # Unmaintained pin-utils: pulled in by hyper (HTTP stack). All available
+    # versions are affected; removing it requires an upstream hyper change.
+    "RUSTSEC-2026-0441",  # pin-utils
+
     # pyo3 vulnerabilities fixed in 0.29.0, but we are pinned to 0.27 because our
     # transitive deps numpy (<=0.28) and pyo3-async-runtimes (<=0.28) only support
     # pyo3 ^0.28 and have no pyo3 0.29-compatible release yet. Neither vulnerable
