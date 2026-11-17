@@ -5,6 +5,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	// The official github.com/gitleaks/gitleaks repository retains this module path.
 	"github.com/zricethezav/gitleaks/v8/detect"
@@ -33,14 +35,103 @@ type Finding struct {
 	SourcePath string `json:"-"`
 }
 
-type budget struct{ remaining int64 }
+type budget struct {
+	mu        sync.Mutex
+	remaining int64
+}
+
+func (b *budget) left() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.remaining
+}
 
 func (b *budget) take(n int64) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if n > b.remaining {
 		return errors.New("incomplete scan: total byte limit exceeded")
 	}
 	b.remaining -= n
 	return nil
+}
+
+// Gitleaks loads its default config through process-global Viper state.
+var detectorConfigMu sync.Mutex
+
+func newDetector() (*detect.Detector, error) {
+	detectorConfigMu.Lock()
+	defer detectorConfigMu.Unlock()
+	d, err := detect.NewDetectorDefaultConfig()
+	if err != nil {
+		return nil, err
+	}
+	d.Redact = 100
+	return d, nil
+}
+
+// scanJobs keeps detector state local to each worker and stores results by job
+// index. On any failure it stops dispatching, waits for workers, and discards
+// partial findings rather than reporting an incomplete scan as clean.
+func scanJobs(count int, newWorker func() (func(int) ([]Finding, error), error)) ([]Finding, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	jobs := make(chan int)
+	failures := make(chan error, 1)
+	var once sync.Once
+	fail := func(err error) {
+		once.Do(func() {
+			failures <- err
+			cancel()
+		})
+	}
+	results := make([][]Finding, count)
+	var wg sync.WaitGroup
+	for range min(count, 8) {
+		wg.Go(func() {
+			scan, err := newWorker()
+			if err != nil {
+				fail(err)
+				return
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case i, ok := <-jobs:
+					if !ok {
+						return
+					}
+					findings, err := scan(i)
+					if err != nil {
+						fail(err)
+						return
+					}
+					results[i] = findings
+				}
+			}
+		})
+	}
+dispatch:
+	for i := range count {
+		select {
+		case <-ctx.Done():
+			break dispatch
+		case jobs <- i:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	select {
+	case err := <-failures:
+		return nil, err
+	default:
+	}
+	var findings []Finding
+	for _, result := range results {
+		findings = append(findings, result...)
+	}
+	return findings, nil
 }
 
 func safePath(s string) string {
@@ -51,11 +142,10 @@ func safePath(s string) string {
 // Archive scans a Docker save stream. Any skipped, malformed, or oversized input
 // fails closed: findings from an incomplete scan are never returned as a clean result.
 func Archive(r io.Reader) ([]Finding, error) {
-	detector, err := detect.NewDetectorDefaultConfig()
+	detector, err := newDetector()
 	if err != nil {
 		return nil, fmt.Errorf("initialize scanner: %w", err)
 	}
-	detector.Redact = 100
 
 	// Spool entries until manifest.json identifies the config and layer paths.
 	// Docker save may put content-addressed blobs before the manifest.
@@ -67,10 +157,12 @@ func Archive(r io.Reader) ([]Finding, error) {
 		_ = spool.Close()
 		_ = os.Remove(spool.Name()) //nolint:gosec // path returned by CreateTemp, not archive input
 	}()
+
 	type entry struct {
 		name         string
 		offset, size int64
 	}
+
 	var (
 		archiveBudget = &budget{remaining: maxTotalBytes}
 		layerBudget   = &budget{remaining: maxTotalBytes}
@@ -85,6 +177,7 @@ func Archive(r io.Reader) ([]Finding, error) {
 		findings []Finding
 		entries  int
 	)
+
 	for {
 		h, e := tr.Next()
 		if e == io.EOF {
@@ -155,28 +248,34 @@ func Archive(r io.Reader) ([]Finding, error) {
 			layers[l] = true
 		}
 	}
-	for _, item := range order {
-		section := io.NewSectionReader(spool, item.offset, item.size)
-		switch {
-		case layers[item.name]:
-			if item.size > maxLayerBytes {
-				return nil, errors.New("incomplete scan: layer byte limit exceeded")
-			}
-			if e := scanLayer(section, item.size, "layer "+safePath(item.name), detector, layerBudget, &findings); e != nil {
-				return nil, e
-			}
-		case configs[item.name]:
-			if e := scanFile(section, item.size, item.name, "config "+safePath(item.name), detector, &findings); e != nil {
-				return nil, e
-			}
-		default:
-			if e := scanFile(section, item.size, item.name, "metadata "+safePath(item.name), detector, &findings); e != nil {
-				return nil, e
-			}
+	entryFindings, err := scanJobs(len(order), func() (func(int) ([]Finding, error), error) {
+		workerDetector, err := newDetector()
+		if err != nil {
+			return nil, fmt.Errorf("initialize scanner: %w", err)
 		}
+		return func(i int) ([]Finding, error) {
+			item := order[i]
+			section := io.NewSectionReader(spool, item.offset, item.size)
+			var out []Finding
+			var scanErr error
+			switch {
+			case layers[item.name]:
+				if item.size > maxLayerBytes {
+					return nil, errors.New("incomplete scan: layer byte limit exceeded")
+				}
+				scanErr = scanLayer(section, item.size, "layer "+safePath(item.name), workerDetector, layerBudget, &out)
+			case configs[item.name]:
+				scanErr = scanFile(section, item.size, item.name, "config "+safePath(item.name), workerDetector, &out)
+			default:
+				scanErr = scanFile(section, item.size, item.name, "metadata "+safePath(item.name), workerDetector, &out)
+			}
+			return out, scanErr
+		}, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	return findings, nil
+	return append(findings, entryFindings...), nil
 }
 
 func scanHeader(d *detect.Detector, h *tar.Header, label string, out *[]Finding) error {
@@ -216,11 +315,14 @@ func appendFindings(d *detect.Detector, data []byte, source, path string, line i
 // the window fails closed rather than silently dropping a possible finding.
 func scanFile(r io.Reader, n int64, source, label string, d *detect.Detector, out *[]Finding) error {
 	const overlap = 64 << 10
-	remaining := n
-	pending := make([]byte, 0, maxFileBytes)
-	prefix := []byte(nil)
-	line := 1
-	duplicates := map[string]bool{}
+	var (
+		remaining  = n
+		pending    = make([]byte, 0, maxFileBytes)
+		prefix     = []byte(nil)
+		line       = 1
+		duplicates = map[string]bool{}
+	)
+
 	for remaining > 0 {
 		capacity := maxFileBytes - len(pending)
 		if capacity == 0 {
@@ -260,6 +362,7 @@ func scanFile(r io.Reader, n int64, source, label string, d *detect.Detector, ou
 	appendFindings(d, prefix, source, label, line, out, duplicates)
 	return nil
 }
+
 func scanLayer(r io.Reader, n int64, label string, d *detect.Detector, b *budget, out *[]Finding) error {
 	var (
 		lr       = &io.LimitedReader{R: r, N: n}
@@ -280,9 +383,12 @@ func scanLayer(r io.Reader, n int64, label string, d *detect.Detector, b *budget
 		reader = gz
 	}
 	// Count decompressed bytes as well as compressed bytes to bound expansion.
-	counted := &countReader{r: reader, b: b}
-	tr := tar.NewReader(counted)
-	entries := 0
+	var (
+		counted = &countReader{r: reader, b: b}
+		tr      = tar.NewReader(counted)
+		entries = 0
+	)
+
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -341,8 +447,8 @@ func (c *countReader) Read(p []byte) (int, error) {
 	if c.err != nil {
 		return 0, c.err
 	}
-	if int64(len(p)) > c.b.remaining+1 {
-		p = p[:c.b.remaining+1]
+	if available := c.b.left(); int64(len(p)) > available+1 {
+		p = p[:available+1]
 	}
 	n, e := c.r.Read(p)
 	if err := c.b.take(int64(n)); err != nil {

@@ -7,11 +7,15 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -255,4 +259,130 @@ func TestScanDockerSaveWhenAvailable(t *testing.T) {
 	_, err = Archive(f)
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
+}
+
+// The jobs use a barrier so a serial scanner cannot accidentally pass this test.
+func TestScanJobsConcurrentAndBounded(t *testing.T) {
+	const jobs = 24
+	var active, peak atomic.Int32
+	started := make(chan struct{}, 8)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(release) })
+	result := make(chan struct {
+		findings []Finding
+		err      error
+	}, 1)
+	go func() {
+		findings, err := scanJobs(jobs, func() (func(int) ([]Finding, error), error) {
+			return func(i int) ([]Finding, error) {
+				n := active.Add(1)
+				defer active.Add(-1)
+				for old := peak.Load(); n > old; old = peak.Load() {
+					if peak.CompareAndSwap(old, n) {
+						break
+					}
+				}
+				if i < 8 {
+					started <- struct{}{}
+				}
+				<-release
+				return []Finding{{Line: i}}, nil
+			}, nil
+		})
+		result <- struct {
+			findings []Finding
+			err      error
+		}{findings, err}
+	}()
+	for range 8 {
+		select {
+		case <-started:
+		case <-time.After(10 * time.Second):
+			require.FailNow(t, "eight jobs did not run concurrently")
+		}
+	}
+	releaseOnce.Do(func() { close(release) })
+	got := <-result
+	require.NoError(t, got.err)
+	require.EqualValues(t, 8, peak.Load())
+	require.Len(t, got.findings, jobs)
+	for i, f := range got.findings {
+		require.Equal(t, i, f.Line, "results must follow input order")
+	}
+}
+
+func TestScanJobsFailureDoesNotReturnClean(t *testing.T) {
+	findings, err := scanJobs(24, func() (func(int) ([]Finding, error), error) {
+		return func(i int) ([]Finding, error) {
+			if i == 0 {
+				return nil, errors.New("incomplete scan: bad layer")
+			}
+			return []Finding{{Line: i}}, nil
+		}, nil
+	})
+	require.ErrorContains(t, err, "bad layer")
+	require.Nil(t, findings)
+}
+
+func TestScanJobsInitializationFailure(t *testing.T) {
+	findings, err := scanJobs(24, func() (func(int) ([]Finding, error), error) {
+		return nil, errors.New("detector failed")
+	})
+	require.ErrorContains(t, err, "detector failed")
+	require.Nil(t, findings)
+}
+
+func TestSharedBudgetConcurrent(t *testing.T) {
+	b := &budget{remaining: 100}
+	var wg sync.WaitGroup
+	var succeeded atomic.Int32
+	for range 40 {
+		wg.Go(func() {
+			if b.take(1) == nil {
+				succeeded.Add(1)
+			}
+		})
+	}
+	wg.Wait()
+	require.EqualValues(t, 40, succeeded.Load())
+	require.EqualValues(t, 60, b.left())
+	require.ErrorContains(t, b.take(61), "total byte limit exceeded")
+	require.EqualValues(t, 60, b.left(), "failed reservations must not consume budget")
+}
+
+func TestScanArchiveEntryOrderWithMetadata(t *testing.T) {
+	layer := tarData(t, map[string][]byte{"token": []byte(testSecret)})
+	manifest := []byte(`[{"Config":"config.json","Layers":["layer.tar"]}]`)
+	var archive bytes.Buffer
+	tw := tar.NewWriter(&archive)
+	for _, item := range []struct {
+		name string
+		data []byte
+	}{
+		{"metadata.txt", []byte(testSecret)},
+		{"layer.tar", layer},
+		{"config.json", []byte(testSecret)},
+		{"manifest.json", manifest},
+	} {
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: item.name, Mode: 0o600, Size: int64(len(item.data))}))
+		_, err := tw.Write(item.data)
+		require.NoError(t, err)
+	}
+	require.NoError(t, tw.Close())
+	for range 3 {
+		findings, err := Archive(bytes.NewReader(archive.Bytes()))
+		require.NoError(t, err)
+		var paths []string
+		for _, f := range findings {
+			if f.Rule == "github-fine-grained-pat" {
+				paths = append(paths, f.Path)
+			}
+		}
+		require.Equal(t, []string{
+			"metadata " + safePath("metadata.txt"),
+			"layer " + safePath("layer.tar") + ":" + safePath("token"),
+			"config " + safePath("config.json"),
+		}, paths)
+	}
 }
