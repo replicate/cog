@@ -242,6 +242,26 @@ func TestValidateObservabilityMetrics(t *testing.T) {
 	}
 }
 
+func TestValidateObservabilityLogs(t *testing.T) {
+	tests := []struct {
+		name       string
+		logs       *logsFile
+		wantErrors bool
+	}{
+		{name: "enabled", logs: &logsFile{Enabled: new(true)}},
+		{name: "disabled", logs: &logsFile{Enabled: new(false)}},
+		{name: "missing enabled", logs: &logsFile{}, wantErrors: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := &configFile{Observability: &observabilityFile{Logs: test.logs}}
+			result := ValidateConfigFile(cfg)
+			require.Equal(t, test.wantErrors, result.HasErrors(), "errors: %v", result.Errors)
+		})
+	}
+}
+
 func TestValidateObservabilityConfig(t *testing.T) {
 	projectDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "telemetry.py"), []byte("# telemetry"), 0o644))
@@ -254,12 +274,14 @@ func TestValidateObservabilityConfig(t *testing.T) {
 		configPath string
 		traces     *tracingFile
 		metrics    *metricsFile
+		logs       *logsFile
 		wantError  string
 	}{
 		{name: "valid", configPath: "telemetry.py", traces: &tracingFile{Enabled: new(true)}},
 		{name: "metrics only", configPath: "telemetry.py", metrics: &metricsFile{Enabled: new(true)}},
-		{name: "no signal enabled", configPath: "telemetry.py", wantError: "requires observability.traces.enabled or observability.metrics.enabled to be true"},
-		{name: "all signals disabled", configPath: "telemetry.py", traces: &tracingFile{Enabled: new(false)}, wantError: "requires observability.traces.enabled or observability.metrics.enabled to be true"},
+		{name: "logs only", configPath: "telemetry.py", logs: &logsFile{Enabled: new(true)}},
+		{name: "no signal enabled", configPath: "telemetry.py", wantError: "requires observability.traces.enabled, observability.metrics.enabled, or observability.logs.enabled to be true"},
+		{name: "all signals disabled", configPath: "telemetry.py", traces: &tracingFile{Enabled: new(false)}, wantError: "requires observability.traces.enabled, observability.metrics.enabled, or observability.logs.enabled to be true"},
 		{name: "absolute", configPath: filepath.Join(projectDir, "telemetry.py"), traces: &tracingFile{Enabled: new(true)}, wantError: "project-relative"},
 		{name: "parent component", configPath: "nested/../telemetry.py", traces: &tracingFile{Enabled: new(true)}, wantError: "project-relative"},
 		{name: "wrong extension", configPath: "telemetry.txt", traces: &tracingFile{Enabled: new(true)}, wantError: "ending in .py"},
@@ -269,7 +291,7 @@ func TestValidateObservabilityConfig(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			cfg := &configFile{Observability: &observabilityFile{Config: new(test.configPath), Traces: test.traces, Metrics: test.metrics}}
+			cfg := &configFile{Observability: &observabilityFile{Config: new(test.configPath), Traces: test.traces, Metrics: test.metrics, Logs: test.logs}}
 			result := ValidateConfigFile(cfg, WithProjectDir(projectDir))
 			if test.wantError == "" {
 				require.False(t, result.HasErrors(), "errors: %v", result.Errors)

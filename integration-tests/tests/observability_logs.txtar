@@ -1,0 +1,59 @@
+# A logs-only image loads a custom LoggerProvider before model import. Model
+# logging is exported once and still appears in the prediction's logs.
+cog build -t $TEST_IMAGE
+cog serve
+
+curl POST /predictions '{"input":{"value":"hello"}}'
+stdout '"output":"hello from CustomLoggerProvider, exported 1"'
+stdout 'model warning'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+run: "predict.py:Runner"
+observability:
+  config: telemetry.py
+  logs:
+    enabled: true
+
+-- telemetry.py --
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import (
+    InMemoryLogRecordExporter,
+    SimpleLogRecordProcessor,
+)
+
+exporter = InMemoryLogRecordExporter()
+
+
+class CustomLoggerProvider(LoggerProvider):
+    pass
+
+
+def create_logger_provider(resource) -> LoggerProvider:
+    provider = CustomLoggerProvider(resource=resource, shutdown_on_exit=False)
+    provider.add_log_record_processor(SimpleLogRecordProcessor(exporter))
+    return provider
+
+
+-- predict.py --
+import logging
+import sys
+
+from opentelemetry import _logs
+
+from cog import BaseRunner
+
+assert type(_logs.get_logger_provider()).__name__ == "CustomLoggerProvider"
+
+class Runner(BaseRunner):
+    def run(self, value: str) -> str:
+        logging.getLogger("model").warning("model warning")
+        exporter = sys.modules["_cog_telemetry"].exporter
+        exported = [
+            log
+            for log in exporter.get_finished_logs()
+            if log.log_record.body == "model warning"
+        ]
+        provider_name = type(_logs.get_logger_provider()).__name__
+        return f"{value} from {provider_name}, exported {len(exported)}"

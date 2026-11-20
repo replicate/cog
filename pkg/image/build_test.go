@@ -169,8 +169,9 @@ func TestAddObservabilityToCustomDockerfileImageUsesStagedConfig(t *testing.T) {
 	require.Contains(t, build.DockerfileContents, "USER root")
 	require.Contains(t, build.DockerfileContents, "USER \"1000:1000\"")
 	require.Equal(t, map[string]string{cogBuildContextName: "/tmp/build-cache"}, build.BuildContexts)
-	assert.NotContains(t, build.DockerfileContents, dockerfilepkg.PythonObservabilityCheck)
+	assert.NotContains(t, build.DockerfileContents, "_supports_observability")
 	assert.Contains(t, build.DockerfileContents, "ENV COG_METRICS_CONFIGURED=false")
+	assert.Contains(t, build.DockerfileContents, "ENV COG_LOGS_CONFIGURED=false")
 }
 
 func TestAddObservabilityToCustomDockerfileImageSupportsMetricsOnly(t *testing.T) {
@@ -188,11 +189,28 @@ func TestAddObservabilityToCustomDockerfileImageSupportsMetricsOnly(t *testing.T
 	assert.Contains(t, build.DockerfileContents, "COPY --from=cog_build telemetry.py /.cog/telemetry.py")
 	assert.Contains(t, build.DockerfileContents, "ENV COG_METRICS_CONFIGURED=true")
 	assert.Contains(t, build.DockerfileContents, "ENV COG_METRICS_ENABLED=true")
-	assert.Contains(t, build.DockerfileContents, dockerfilepkg.PythonObservabilityCheck)
+	assert.Contains(t, build.DockerfileContents, dockerfilepkg.PythonObservabilityCheck(observability))
 	assert.Contains(t, build.DockerfileContents, dockerfilepkg.PythonObservabilityCheckError)
 	assert.Contains(t, build.DockerfileContents, "ENV COG_TRACE_CONFIGURED=false")
 	assert.Contains(t, build.DockerfileContents, "USER root")
 	assert.Contains(t, build.DockerfileContents, "USER \"1000:1000\"")
+}
+
+func TestAddObservabilityToCustomDockerfileImageSupportsLogsOnly(t *testing.T) {
+	dockerCommand := &recordingCommand{MockCommand: dockertest.NewMockCommand()}
+	observability := &config.Observability{Logs: &config.Logs{Enabled: true}}
+
+	err := addObservabilityToCustomDockerfileImage(t.Context(), dockerCommand, "my-image", observability, "plain", "/tmp/build-cache")
+
+	require.NoError(t, err)
+	require.Len(t, dockerCommand.builds, 1)
+	build := dockerCommand.builds[0]
+	assert.Contains(t, build.DockerfileContents, dockerfilepkg.PythonObservabilityRequirements)
+	assert.Contains(t, build.DockerfileContents, "_supports_observability_logs")
+	assert.Contains(t, build.DockerfileContents, "ENV COG_LOGS_CONFIGURED=true")
+	assert.Contains(t, build.DockerfileContents, "ENV COG_LOGS_ENABLED=true")
+	assert.Contains(t, build.DockerfileContents, "ENV COG_TRACE_CONFIGURED=false")
+	assert.Contains(t, build.DockerfileContents, "ENV COG_METRICS_CONFIGURED=false")
 }
 
 func TestAddObservabilityToCustomDockerfileImageDisablesInheritedTelemetry(t *testing.T) {

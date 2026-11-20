@@ -125,6 +125,8 @@ fn init_worker_tracing(
         EnvFilter::new(filter_str)
     };
 
+    // No OTel logs layer here: the parent exports these events after
+    // WorkerTracingLayer relays them, so exporting here too would duplicate them.
     let worker_layer = WorkerTracingLayer::new(tx);
 
     #[cfg(feature = "tracing")]

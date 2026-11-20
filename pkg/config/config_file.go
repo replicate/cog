@@ -69,6 +69,7 @@ type observabilityFile struct {
 	Config  *string      `json:"config,omitempty" yaml:"config,omitempty"`
 	Traces  *tracingFile `json:"traces,omitempty" yaml:"traces,omitempty"`
 	Metrics *metricsFile `json:"metrics,omitempty" yaml:"metrics,omitempty"`
+	Logs    *logsFile    `json:"logs,omitempty" yaml:"logs,omitempty"`
 }
 
 type tracingFile struct {
@@ -80,6 +81,10 @@ type tracingFile struct {
 }
 
 type metricsFile struct {
+	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+}
+
+type logsFile struct {
 	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 }
 
@@ -148,6 +153,40 @@ func (m *metricsFile) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("metrics must be a boolean or object: %w", err)
 	}
 	*m = metricsFile(raw)
+	return nil
+}
+
+// UnmarshalYAML accepts a boolean shorthand or the full logs object.
+func (l *logsFile) UnmarshalYAML(unmarshal func(any) error) error {
+	var enabled bool
+	if err := unmarshal(&enabled); err == nil {
+		l.Enabled = &enabled
+		return nil
+	}
+
+	type rawLogsFile logsFile
+	var raw rawLogsFile
+	if err := unmarshal(&raw); err != nil {
+		return fmt.Errorf("logs must be a boolean or mapping: %w", err)
+	}
+	*l = logsFile(raw)
+	return nil
+}
+
+// UnmarshalJSON accepts a boolean shorthand or the full logs object.
+func (l *logsFile) UnmarshalJSON(data []byte) error {
+	var enabled bool
+	if err := json.Unmarshal(data, &enabled); err == nil {
+		l.Enabled = &enabled
+		return nil
+	}
+
+	type rawLogsFile logsFile
+	var raw rawLogsFile
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("logs must be a boolean or object: %w", err)
+	}
+	*l = logsFile(raw)
 	return nil
 }
 
