@@ -5,10 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"testing"
 
+	"github.com/replicate/cog/pkg/model"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,10 +28,74 @@ func scanTestTar(t *testing.T, files map[string][]byte) []byte {
 	return b.Bytes()
 }
 
-func TestScanCommandNeedsImage(t *testing.T) {
-	cmd := newScanCommand()
-	cmd.SetArgs(nil)
-	require.Error(t, cmd.Execute())
+func TestScanCommandDispatch(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		args   []string
+		builds int
+		image  string
+	}{
+		{"current project", nil, 1, "sha256:built"},
+		{"dot project", []string{"."}, 1, "sha256:built"},
+		{"local image", []string{"local:test"}, 0, "local:test"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			archive := scanTestTar(t, map[string][]byte{"config.json": []byte("{}"), "manifest.json": []byte(`[{"Config":"config.json","Layers":[]}]`)})
+			builds := 0
+			var scanned string
+			cmd := newScanCommandWithBuilder(func(_ context.Context, image string) (io.ReadCloser, error) {
+				scanned = image
+				return io.NopCloser(bytes.NewReader(archive)), nil
+			}, func(cmd *cobra.Command) (*model.Model, error) {
+				builds++
+				_, err := io.WriteString(cmd.ErrOrStderr(), "build log\n")
+				require.NoError(t, err)
+				return &model.Model{Image: &model.ImageArtifact{Reference: "mutable:tag", Digest: "sha256:built"}}, nil
+			})
+			var out, diagnostics bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&diagnostics)
+			cmd.SetArgs(append(tt.args, "--json"))
+			require.NoError(t, cmd.Execute())
+			require.Equal(t, tt.builds, builds)
+			require.Equal(t, tt.image, scanned)
+			require.JSONEq(t, `{"version":1,"findings":[]}`, out.String())
+			if tt.builds > 0 {
+				require.Contains(t, diagnostics.String(), "build log")
+			}
+		})
+	}
+}
+
+func TestScanBuildErrorStopsScan(t *testing.T) {
+	buildErr := errors.New("build failed")
+	scanned := false
+	cmd := newScanCommandWithBuilder(func(context.Context, string) (io.ReadCloser, error) {
+		scanned = true
+		return nil, errors.New("unexpected scan")
+	}, func(*cobra.Command) (*model.Model, error) { return nil, buildErr })
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--json"})
+	require.ErrorIs(t, cmd.Execute(), buildErr)
+	require.False(t, scanned)
+	require.Empty(t, out.String())
+}
+
+func TestScanProjectBuildFlags(t *testing.T) {
+	cmd := newScanCommandWithBuilder(nil, func(cmd *cobra.Command) (*model.Model, error) {
+		opts := buildOptionsFromFlags(cmd, "test", nil)
+		require.Equal(t, []string{"id=token,src=token.txt"}, opts.Secrets)
+		require.True(t, opts.NoCache)
+		require.Equal(t, "plain", opts.ProgressOutput)
+		require.Equal(t, "custom.yaml", configFilename)
+		return nil, errors.New("stop after flags")
+	})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{".", "--secret", "id=token,src=token.txt", "--no-cache", "--config", "custom.yaml", "--progress", "plain"})
+	require.ErrorContains(t, cmd.Execute(), "stop after flags")
 }
 
 func TestScanCommandWritesHumanResultsToStdout(t *testing.T) {
