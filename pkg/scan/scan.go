@@ -20,10 +20,11 @@ import (
 )
 
 const (
-	maxFileBytes  = 8 << 20
-	maxTotalBytes = 8 << 30
-	maxLayerBytes = maxTotalBytes
-	maxEntries    = 1000000
+	manifestFilename = "manifest.json"
+	maxFileBytes     = 8 << 20
+	maxTotalBytes    = 8 << 30
+	maxLayerBytes    = maxTotalBytes
+	maxEntries       = 1000000
 )
 
 // Finding deliberately omits the secret, matching text, and original filename.
@@ -202,12 +203,12 @@ func Archive(r io.Reader) ([]Finding, error) {
 		if _, ok := seen[h.Name]; ok {
 			return nil, errors.New("incomplete scan: duplicate archive entry")
 		}
-		if h.Name == "manifest.json" {
+		if h.Name == manifestFilename {
 			data, e := readFile(tr, h.Size)
 			if e != nil {
 				return nil, e
 			}
-			appendFindings(detector, data, "manifest.json", "manifest", 1, &findings, nil)
+			appendFindings(detector, data, manifestFilename, "manifest", 1, &findings, nil)
 			if e = json.Unmarshal(data, &manifest); e != nil {
 				return nil, errors.New("incomplete scan: invalid manifest")
 			}
@@ -238,7 +239,7 @@ func Archive(r io.Reader) ([]Finding, error) {
 	}
 	configs, layers := map[string]bool{}, map[string]bool{}
 	for _, m := range manifest {
-		if m.Config == "" || m.Config == "manifest.json" {
+		if m.Config == "" || m.Config == manifestFilename {
 			return nil, errors.New("incomplete scan: missing image config")
 		}
 		if _, ok := seen[m.Config]; !ok {
@@ -246,7 +247,7 @@ func Archive(r io.Reader) ([]Finding, error) {
 		}
 		configs[m.Config] = true
 		for _, l := range m.Layers {
-			if _, ok := seen[l]; !ok || l == "manifest.json" {
+			if _, ok := seen[l]; !ok || l == manifestFilename {
 				return nil, errors.New("incomplete scan: missing layer")
 			}
 			layers[l] = true
