@@ -5,7 +5,7 @@ import asyncio
 import logging
 import time
 
-from opentelemetry import trace
+from opentelemetry import metrics, trace
 
 from cog import (
     AsyncConcatenateIterator,
@@ -23,6 +23,8 @@ logging.basicConfig(
 )
 
 tracer = trace.get_tracer(__name__)
+meter = metrics.get_meter(__name__)
+output_tokens = meter.create_counter("model.output_tokens")
 
 
 class Runner(BaseRunner):
@@ -76,6 +78,7 @@ class Runner(BaseRunner):
 
             logging.info(f"emit_metric: output_tokens={total}")
             current_scope().record_metric("output_tokens", total)
+            output_tokens.add(total)
             span.set_attribute("metrics.output_tokens", total)
 
             duration = time.time() - start_time

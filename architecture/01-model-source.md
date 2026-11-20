@@ -36,16 +36,18 @@ concurrency:
   max: 1
 ```
 
-| Field                   | Purpose                                     |
-| ----------------------- | ------------------------------------------- |
-| `build.python_version`  | Python interpreter version (3.10-3.13)      |
-| `build.gpu`             | Enable CUDA support                         |
-| `build.python_packages` | pip packages to install                     |
-| `build.system_packages` | apt packages to install                     |
-| `build.run`             | Arbitrary shell commands during build       |
-| `run`                   | Path to runner class (`module:ClassName`)   |
-| `concurrency.max`       | Max concurrent predictions (requires async) |
-| `observability.config`  | Optional Python tracer-provider factory     |
+| Field                   | Purpose                                                   |
+| ----------------------- | --------------------------------------------------------- |
+| `build.python_version`  | Python interpreter version (3.10-3.13)                    |
+| `build.gpu`             | Enable CUDA support                                       |
+| `build.python_packages` | pip packages to install                                   |
+| `build.system_packages` | apt packages to install                                   |
+| `build.run`             | Arbitrary shell commands during build                     |
+| `run`                   | Path to runner class (`module:ClassName`)                 |
+| `concurrency.max`       | Max concurrent predictions (requires async)               |
+| `observability.traces`  | Opt-in OpenTelemetry framework tracing                    |
+| `observability.metrics` | Opt-in runtime and model OpenTelemetry metrics            |
+| `observability.config`  | Optional Python provider and runtime metric configuration |
 
 The [Build System](./05-build-system.md) uses this configuration to produce an image containing all necessary dependencies, libraries, and the correct Python/CUDA versions.
 

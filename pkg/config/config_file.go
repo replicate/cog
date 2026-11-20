@@ -66,8 +66,9 @@ type concurrencyFile struct {
 }
 
 type observabilityFile struct {
-	Config *string      `json:"config,omitempty" yaml:"config,omitempty"`
-	Traces *tracingFile `json:"traces,omitempty" yaml:"traces,omitempty"`
+	Config  *string      `json:"config,omitempty" yaml:"config,omitempty"`
+	Traces  *tracingFile `json:"traces,omitempty" yaml:"traces,omitempty"`
+	Metrics *metricsFile `json:"metrics,omitempty" yaml:"metrics,omitempty"`
 }
 
 type tracingFile struct {
@@ -76,6 +77,78 @@ type tracingFile struct {
 	SamplerArg        *string `json:"sampler_arg,omitempty" yaml:"sampler_arg,omitempty"`
 	TraceHeader       *string `json:"trace_header,omitempty" yaml:"trace_header,omitempty"`
 	TraceHeaderFormat *string `json:"trace_header_format,omitempty" yaml:"trace_header_format,omitempty"`
+}
+
+type metricsFile struct {
+	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+}
+
+// UnmarshalYAML accepts a boolean shorthand or the full tracing object.
+func (t *tracingFile) UnmarshalYAML(unmarshal func(any) error) error {
+	var enabled bool
+	if err := unmarshal(&enabled); err == nil {
+		t.Enabled = &enabled
+		return nil
+	}
+
+	type rawTracingFile tracingFile
+	var raw rawTracingFile
+	if err := unmarshal(&raw); err != nil {
+		return fmt.Errorf("traces must be a boolean or mapping: %w", err)
+	}
+	*t = tracingFile(raw)
+	return nil
+}
+
+// UnmarshalJSON accepts a boolean shorthand or the full tracing object.
+func (t *tracingFile) UnmarshalJSON(data []byte) error {
+	var enabled bool
+	if err := json.Unmarshal(data, &enabled); err == nil {
+		t.Enabled = &enabled
+		return nil
+	}
+
+	type rawTracingFile tracingFile
+	var raw rawTracingFile
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("traces must be a boolean or object: %w", err)
+	}
+	*t = tracingFile(raw)
+	return nil
+}
+
+// UnmarshalYAML accepts a boolean shorthand or the full metrics object.
+func (m *metricsFile) UnmarshalYAML(unmarshal func(any) error) error {
+	var enabled bool
+	if err := unmarshal(&enabled); err == nil {
+		m.Enabled = &enabled
+		return nil
+	}
+
+	type rawMetricsFile metricsFile
+	var raw rawMetricsFile
+	if err := unmarshal(&raw); err != nil {
+		return fmt.Errorf("metrics must be a boolean or mapping: %w", err)
+	}
+	*m = metricsFile(raw)
+	return nil
+}
+
+// UnmarshalJSON accepts a boolean shorthand or the full metrics object.
+func (m *metricsFile) UnmarshalJSON(data []byte) error {
+	var enabled bool
+	if err := json.Unmarshal(data, &enabled); err == nil {
+		m.Enabled = &enabled
+		return nil
+	}
+
+	type rawMetricsFile metricsFile
+	var raw rawMetricsFile
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("metrics must be a boolean or object: %w", err)
+	}
+	*m = metricsFile(raw)
+	return nil
 }
 
 // UnmarshalYAML implements custom YAML unmarshaling for runItemFile

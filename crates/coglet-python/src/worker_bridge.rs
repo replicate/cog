@@ -7,7 +7,7 @@ use std::thread::JoinHandle;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use coglet_core::bridge::protocol::SlotId;
+use coglet_core::bridge::protocol::{RuntimeMetric, RuntimeMetricsConfig, SlotId};
 use coglet_core::worker::{PredictHandler, PredictResult, SetupError, SlotSender};
 
 use crate::predictor::PythonPredictor;
@@ -58,25 +58,45 @@ fn env_true(name: &str, default: bool) -> bool {
     })
 }
 
-fn python_tracing_enabled() -> bool {
-    if !env_true("COG_TRACE_CONFIGURED", false)
-        || !env_true("COG_TRACE_ENABLED", true)
-        || env_true("OTEL_SDK_DISABLED", false)
-    {
+fn python_telemetry_enabled() -> bool {
+    if env_true("OTEL_SDK_DISABLED", false) {
         return false;
     }
-    if std::env::var_os("COG_OBSERVABILITY_CONFIG").is_some() {
-        return true;
-    }
-    if std::env::var("OTEL_TRACES_EXPORTER").as_deref() == Ok("none") {
-        return false;
-    }
-    [
-        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
-        "OTEL_EXPORTER_OTLP_ENDPOINT",
-    ]
-    .iter()
-    .any(|name| std::env::var(name).is_ok_and(|value| !value.trim().is_empty()))
+    (env_true("COG_TRACE_CONFIGURED", false) && env_true("COG_TRACE_ENABLED", true))
+        || (env_true("COG_METRICS_CONFIGURED", false) && env_true("COG_METRICS_ENABLED", true))
+}
+
+fn runtime_metrics_config_from_python(
+    config: &Bound<'_, PyAny>,
+) -> Result<RuntimeMetricsConfig, SetupError> {
+    let enabled = config
+        .getattr("enabled")
+        .and_then(|value| value.extract::<bool>())
+        .map_err(|error| SetupError::setup(error.to_string()))?;
+    let disabled = config
+        .getattr("disabled")
+        .and_then(|values| values.try_iter())
+        .map_err(|error| SetupError::setup(error.to_string()))?
+        .map(|value| {
+            let value = value.map_err(|error| SetupError::setup(error.to_string()))?;
+            let name = value
+                .getattr("value")
+                .and_then(|value| value.extract::<String>())
+                .map_err(|error| SetupError::setup(error.to_string()))?;
+            match name.as_str() {
+                "prediction_count" => Ok(RuntimeMetric::PredictionCount),
+                "prediction_rejected" => Ok(RuntimeMetric::PredictionRejected),
+                "prediction_active" => Ok(RuntimeMetric::PredictionActive),
+                "prediction_duration" => Ok(RuntimeMetric::PredictionDuration),
+                "setup_duration" => Ok(RuntimeMetric::SetupDuration),
+                "slot_count" => Ok(RuntimeMetric::SlotCount),
+                _ => Err(SetupError::setup(format!(
+                    "unsupported runtime metric selector {name:?}"
+                ))),
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(RuntimeMetricsConfig { enabled, disabled })
 }
 
 fn current_trace_carrier() -> Option<HashMap<String, String>> {
@@ -179,9 +199,24 @@ pub struct PythonPredictHandler {
     /// Handle to the asyncio loop thread for joining on shutdown.
     async_thread: Mutex<Option<JoinHandle<()>>>,
     max_concurrency: usize,
+    runtime_metrics: Mutex<Option<RuntimeMetricsConfig>>,
 }
 
 impl PythonPredictHandler {
+    fn install_telemetry(&self, module: &Bound<'_, PyModule>) -> Result<(), SetupError> {
+        let installed = module.call_method0("install_providers");
+        let config = module
+            .call_method0("get_runtime_metrics_config")
+            .map_err(|error| SetupError::setup(error.to_string()))?;
+        *self
+            .runtime_metrics
+            .lock()
+            .expect("runtime_metrics mutex poisoned") =
+            Some(runtime_metrics_config_from_python(&config)?);
+        installed.map_err(|error| SetupError::setup(error.to_string()))?;
+        Ok(())
+    }
+
     /// Create a handler in prediction mode.
     pub fn new(predictor_ref: String, max_concurrency: usize) -> Result<Self, SetupError> {
         let (loop_obj, thread) = Self::init_async_loop()?;
@@ -193,6 +228,7 @@ impl PythonPredictHandler {
             async_loop: Mutex::new(Some(loop_obj)),
             async_thread: Mutex::new(Some(thread)),
             max_concurrency,
+            runtime_metrics: Mutex::new(None),
         })
     }
 
@@ -207,6 +243,7 @@ impl PythonPredictHandler {
             async_loop: Mutex::new(Some(loop_obj)),
             async_thread: Mutex::new(Some(thread)),
             max_concurrency,
+            runtime_metrics: Mutex::new(None),
         })
     }
 
@@ -354,13 +391,11 @@ impl PredictHandler for PythonPredictHandler {
     async fn setup(&self) -> Result<(), SetupError> {
         Python::attach(|py| {
             let carrier = current_trace_carrier();
-            if python_tracing_enabled() {
-                let trace_module = py
-                    .import("cog._trace")
+            if python_telemetry_enabled() {
+                let telemetry_module = py
+                    .import("cog._telemetry")
                     .map_err(|error| SetupError::setup(error.to_string()))?;
-                trace_module
-                    .call_method0("install_provider")
-                    .map_err(|error| SetupError::setup(error.to_string()))?;
+                self.install_telemetry(&telemetry_module)?;
             }
             let _trace_guard = PythonTraceGuard::enter(py, carrier.as_ref())
                 .map_err(|error| SetupError::internal(error.to_string()))?;
@@ -404,6 +439,13 @@ impl PredictHandler for PythonPredictHandler {
 
     fn is_train(&self) -> bool {
         self.mode == HandlerMode::Train
+    }
+
+    fn runtime_metrics_config(&self) -> Option<RuntimeMetricsConfig> {
+        self.runtime_metrics
+            .lock()
+            .expect("runtime_metrics mutex poisoned")
+            .clone()
     }
 
     async fn predict(
@@ -793,12 +835,9 @@ impl PredictHandler for PythonPredictHandler {
     }
 
     async fn shutdown(&self) {
-        if !python_tracing_enabled() {
-            return;
-        }
         Python::attach(|py| {
-            if let Ok(trace_module) = py.import("cog._trace") {
-                let _ = trace_module.call_method0("shutdown");
+            if let Ok(telemetry_module) = py.import("cog._telemetry") {
+                let _ = telemetry_module.call_method0("shutdown");
             }
         });
     }
@@ -899,6 +938,39 @@ sys.modules.setdefault('requests', requests)
         std::fs::write(&path, source).expect("failed to write test predictor");
         let predictor_ref = format!("{}:Predictor", path.display());
         (dir, predictor_ref)
+    }
+
+    #[test]
+    fn telemetry_failure_preserves_runtime_metric_opt_out() {
+        Python::initialize();
+        Python::attach(|py| {
+            let module = PyModule::from_code(
+                py,
+                c"\
+from types import SimpleNamespace
+
+def install_providers():
+    raise RuntimeError('instrumentation failed')
+
+def get_runtime_metrics_config():
+    return SimpleNamespace(enabled=False, disabled=[SimpleNamespace(value='setup_duration')])
+",
+                c"telemetry_test.py",
+                c"telemetry_test",
+            )
+            .expect("test module should load");
+            let handler = PythonPredictHandler::new("predict.py:Predictor".to_string(), 1)
+                .expect("handler should initialize");
+            let error = handler
+                .install_telemetry(&module)
+                .expect_err("instrumentation should fail");
+            assert!(error.to_string().contains("instrumentation failed"));
+            let config = handler
+                .runtime_metrics_config()
+                .expect("failed setup should retain runtime metrics configuration");
+            assert!(!config.enabled);
+            assert_eq!(config.disabled, vec![RuntimeMetric::SetupDuration]);
+        });
     }
 
     // Runtime guard: an operator/env override of COG_MAX_CONCURRENCY > 1 must

@@ -158,6 +158,13 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 				config.Observability.Traces.TraceHeaderFormat = *traces.TraceHeaderFormat
 			}
 		}
+		if cfg.Observability.Metrics != nil {
+			metrics := cfg.Observability.Metrics
+			config.Observability.Metrics = &Metrics{}
+			if metrics.Enabled != nil {
+				config.Observability.Metrics.Enabled = *metrics.Enabled
+			}
+		}
 	}
 	config.Environment = cfg.Environment
 

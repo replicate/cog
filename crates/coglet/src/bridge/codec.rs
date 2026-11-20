@@ -106,6 +106,7 @@ mod tests {
         let resp = ControlResponse::Ready {
             slots,
             schema: None,
+            runtime_metrics: None,
         };
         codec.encode(resp, &mut buf).unwrap();
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
