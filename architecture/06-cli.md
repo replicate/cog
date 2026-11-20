@@ -10,6 +10,7 @@ The Cog CLI is a Go binary that provides commands for the full model lifecycle: 
 | ---------------- | ------------------------------------- |
 | `cog init`       | Bootstrap a new model project         |
 | `cog build`      | Create a container image              |
+| `cog scan`       | Scan a local image for likely secrets |
 | `cog run`        | Run a prediction in a container       |
 | `cog exec`       | Run arbitrary commands in a container |
 | `cog serve`      | Start HTTP server in a container      |
@@ -141,6 +142,19 @@ Key flags:
 - `--separate-weights`: Exclude weights from image (for separate upload)
 
 **Code**: `pkg/cli/build.go`, `pkg/image/build.go`
+
+### cog scan
+
+**Job**: Find likely secrets in a local container image before publishing it.
+
+```bash
+cog scan .                 # Build the current project, then scan
+cog scan my-model          # Scan an existing local image without building
+```
+
+With no argument or `.`, the command builds the current project and scans the resulting immutable image ID. With an image argument, it reads that image from the local Docker daemon without building or pulling. Neither mode pushes an image. Build progress goes to stderr so JSON scan results remain separate. Cog walks image layers, including files deleted by later layers, and checks image metadata. Gitleaks detects secret patterns, while Cog owns image parsing and the command's output. This division keeps detection separate from image transport and lets a future push gate reuse the scanner. A clean scan does not prove that the image contains no secrets.
+
+**Code**: `pkg/cli/` owns the command; `pkg/scan/` owns the image scanner.
 
 ## Deployment Commands
 
