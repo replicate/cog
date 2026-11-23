@@ -19,6 +19,13 @@ ignore = [
     "RUSTSEC-2025-0098",  # unic-ucd-version
     "RUSTSEC-2025-0100",  # unic-ucd-ident
 
+    # chrono is unmaintained and has no fixed release. Coglet uses it for RFC3339
+    # setup timestamps, and pyo3-stub-gen requires it non-optionally. This is an
+    # unmaintained advisory, not a known vulnerability. Remove this exception
+    # after migrating to a maintained time library and pyo3-stub-gen drops its
+    # chrono dependency.
+    "RUSTSEC-2026-0543",
+
     # pyo3 vulnerabilities fixed in 0.29.0, but we are pinned to 0.27 because our
     # transitive deps numpy (<=0.28) and pyo3-async-runtimes (<=0.28) only support
     # pyo3 ^0.28 and have no pyo3 0.29-compatible release yet. Neither vulnerable
