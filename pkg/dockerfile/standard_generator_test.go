@@ -1541,7 +1541,7 @@ func TestPythonObservabilityDependenciesAreOptIn(t *testing.T) {
 		},
 	}}
 	require.Contains(t, enabled.installPythonObservabilityDependencies(), PythonObservabilityRequirements)
-	assert.NotContains(t, enabled.installPythonObservabilityDependencies(), PythonObservabilityCheck)
+	assert.NotContains(t, enabled.installPythonObservabilityDependencies(), "_supports_observability")
 
 	enabled.strip = true
 	require.Contains(t, enabled.installPythonObservabilityDependencies(), StripDebugSymbolsCommand)
@@ -1553,6 +1553,29 @@ func TestPythonObservabilityDependenciesAreOptIn(t *testing.T) {
 		},
 	}}
 	require.Contains(t, metricsOnly.installPythonObservabilityDependencies(), PythonObservabilityRequirements)
-	assert.Contains(t, metricsOnly.installPythonObservabilityDependencies(), PythonObservabilityCheck)
+	assert.Contains(t, metricsOnly.installPythonObservabilityDependencies(), PythonObservabilityCheck(metricsOnly.Config.Observability))
 	assert.Contains(t, metricsOnly.installPythonObservabilityDependencies(), PythonObservabilityCheckError)
+	assert.NotContains(t, metricsOnly.installPythonObservabilityDependencies(), "_supports_observability_logs")
+
+	logsOnly := &StandardGenerator{Config: &config.Config{
+		Build: &config.Build{},
+		Observability: &config.Observability{
+			Logs: &config.Logs{Enabled: true},
+		},
+	}}
+	require.Contains(t, logsOnly.installPythonObservabilityDependencies(), PythonObservabilityRequirements)
+	assert.Contains(t, logsOnly.installPythonObservabilityDependencies(), "_supports_observability_logs")
+	assert.NotContains(t, logsOnly.installPythonObservabilityDependencies(), "_supports_observability_metrics")
+	assert.Contains(t, logsOnly.cogEnvVars(), `ENV COG_LOGS_CONFIGURED=true`)
+	assert.Contains(t, logsOnly.cogEnvVars(), `ENV COG_LOGS_ENABLED=true`)
+}
+
+func TestPythonObservabilityCheckRequiresEachEnabledSignal(t *testing.T) {
+	require.Empty(t, PythonObservabilityCheck(&config.Observability{Traces: &config.Tracing{Enabled: true}}))
+
+	check := PythonObservabilityCheck(&config.Observability{
+		Metrics: &config.Metrics{Enabled: true},
+		Logs:    &config.Logs{Enabled: true},
+	})
+	assert.Contains(t, check, "getattr(_impl, '_supports_observability_metrics', False) and getattr(_impl, '_supports_observability_logs', False)")
 }

@@ -1,8 +1,15 @@
 import os
 
 from opentelemetry.context import Context
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import (
+    BatchLogRecordProcessor,
+    ConsoleLogRecordExporter,
+    SimpleLogRecordProcessor,
+)
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
@@ -74,6 +81,20 @@ def create_meter_provider(resource: Resource) -> MeterProvider:
         resource=resource.merge(Resource({"model.name": "hello-concurrency"})),
         shutdown_on_exit=False,
     )
+
+
+def create_logger_provider(resource: Resource) -> LoggerProvider:
+    provider = LoggerProvider(
+        resource=resource.merge(Resource({"model.name": "hello-concurrency"})),
+        shutdown_on_exit=False,
+    )
+    if _has_export_endpoint("logs"):
+        provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
+    if os.getenv("OTEL_DEBUG_LOGS", "false").lower() == "true":
+        provider.add_log_record_processor(
+            SimpleLogRecordProcessor(ConsoleLogRecordExporter())
+        )
+    return provider
 
 
 def configure_runtime_metrics() -> RuntimeMetricsConfig:

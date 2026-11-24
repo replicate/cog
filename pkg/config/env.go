@@ -26,6 +26,7 @@ var environmentVariableDenyList = []string{
 	"COG_OBSERVABILITY_*",
 	"COG_TRACE_*",
 	"COG_METRICS_*",
+	"COG_LOGS_*",
 	"OTEL_*",
 	// Nvidia
 	"LIBRARY_PATH",

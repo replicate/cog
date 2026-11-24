@@ -1,14 +1,12 @@
 # Observability
 
-Cog can join incoming distributed traces, export fixed runtime metrics, and make standard OpenTelemetry APIs available to model code. Signals are opt-in and use OTLP, so they work with collectors and backends that support OpenTelemetry.
+Cog can join incoming distributed traces, export fixed runtime metrics, export logs, and make standard OpenTelemetry APIs available to model code. Signals are opt-in and use OTLP, so they work with collectors and backends that support OpenTelemetry.
 
-Cog has two telemetry ownership domains. The Rust parent owns fixed runtime metrics. The Python worker owns model-authored spans and metrics. Both can export to the same collector, but a Python provider never replaces the parent runtime provider.
-
-OpenTelemetry log export is not supported.
+Cog has two telemetry ownership domains. The Rust parent owns fixed runtime metrics and Cog's own log events. The Python worker owns model-authored spans, metrics, and logs. Both can export to the same collector, but a Python provider never replaces a parent provider.
 
 ## Enable telemetry
 
-Enable either signal with an object:
+Enable each signal with an object:
 
 ```yaml
 observability:
@@ -17,11 +15,13 @@ observability:
     sampler: parentbased_always_off
   metrics:
     enabled: true
+  logs:
+    enabled: true
 ```
 
-The boolean forms `traces: true` and `metrics: true` are accepted as shorthand.
+The boolean forms `traces: true`, `metrics: true`, and `logs: true` are accepted as shorthand.
 
-An image can enable either signal independently. Runtime configuration can disable an enabled signal, but cannot enable a signal omitted from the image.
+An image can enable each signal independently. Runtime configuration can disable an enabled signal, but cannot enable a signal omitted from the image.
 
 Configure the collector when running the image:
 
@@ -33,7 +33,7 @@ OTEL_SERVICE_NAME=cog
 
 Cog supports OTLP gRPC and HTTP/protobuf. Collector endpoints, authentication headers, certificates, and other `OTEL_*` values are runtime configuration and cannot be set through the general `cog.yaml` `environment` list.
 
-Framework telemetry starts only when the image opts in and a collector endpoint is present. `COG_TRACE_ENABLED=false` and `COG_METRICS_ENABLED=false` disable the entire matching signal, including custom Python providers. `OTEL_SDK_DISABLED=true` disables all signals. `OTEL_TRACES_EXPORTER=none` and `OTEL_METRICS_EXPORTER=none` disable only the matching built-in provider. An explicitly configured Python factory can still use a different exporter or no exporter.
+Framework telemetry starts only when the image opts in and a collector endpoint is present. `COG_TRACE_ENABLED=false`, `COG_METRICS_ENABLED=false`, and `COG_LOGS_ENABLED=false` disable the entire matching signal, including custom Python providers. `OTEL_SDK_DISABLED=true` disables all signals. `OTEL_TRACES_EXPORTER=none`, `OTEL_METRICS_EXPORTER=none`, and `OTEL_LOGS_EXPORTER=none` disable only the matching built-in provider. An explicitly configured Python factory can still use a different exporter or no exporter.
 
 ## Getting started with tracing
 
@@ -125,16 +125,21 @@ observability:
     enabled: true
   metrics:
     enabled: true
+  logs:
+    enabled: true
 ```
 
 Cog validates the file during configuration, copies it to a fixed path in the image, and loads it before importing the model. Provider factories are optional. A missing factory uses Cog's default provider for that signal. Factories receive Cog's base `Resource` and may merge or replace its attributes. Existing zero-argument `create_tracer_provider()` factories remain supported.
 
 ```python
 from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
@@ -157,6 +162,12 @@ def create_meter_provider(resource: Resource) -> MeterProvider:
         resource=resource,
         shutdown_on_exit=False,
     )
+
+
+def create_logger_provider(resource: Resource) -> LoggerProvider:
+    provider = LoggerProvider(resource=resource, shutdown_on_exit=False)
+    provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
+    return provider
 
 
 def configure_instrumentation() -> None:
@@ -225,6 +236,36 @@ def configure_runtime_metrics() -> RuntimeMetricsConfig:
 ```
 
 Set `enabled=False` to disable all current and future built-in Cog metrics. This does not disable the Python `MeterProvider`, so model metrics can still export.
+
+## Logs
+
+`logs.enabled: true` exports two kinds of log records:
+
+- Model records from Python's `logging` module, exported by the worker. Each record keeps its severity, logger name (as the instrumentation scope), message, source location, exception details, and `extra` fields as attributes. When tracing is enabled, records written during a prediction carry its trace and span IDs.
+- Cog's own runtime events, such as prediction start and completion, setup progress, and errors, exported by the parent. Worker runtime events are relayed through the parent and keep only their message.
+
+Model code needs no OpenTelemetry imports:
+
+```python
+import logging
+
+log = logging.getLogger(__name__)
+
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> str:
+        result = self.model(prompt)
+        log.info("generated", extra={"prompt_tokens": result.prompt_tokens})
+        return result.text
+```
+
+Cog does not change log levels. A record is exported only if the model's logging configuration lets it through, so with Python's defaults only `WARNING` and above are exported. Call `logging.basicConfig(level=logging.INFO)` or set a logger's level to export more. Records from disabled loggers or removed by a logger's filters are not exported.
+
+Export does not add a logging handler. Output that reaches stderr today, including the prediction's `logs` field, is unchanged, and `logging.basicConfig()` behaves as before. Text written with `print()` or directly to stdout or stderr is not exported.
+
+Put values you want to filter or group on in `extra`. Attributes are queryable in every backend. A message that is a dict or list with no format arguments, such as `log.info({"cache": "miss"})`, is exported as a structured body, matching the OpenTelemetry SDK handler, but backends differ in whether they index body fields.
+
+`extra` fields and exception tracebacks are exported verbatim. Avoid logging inputs, credentials, or other sensitive data you do not want in your collector.
 
 ## Streaming predictions
 
@@ -342,7 +383,7 @@ Cog provides defaults for `service.version` and the process-local `service.insta
 - Unreachable collector: Cog's built-in exporters retry or drop without failing predictions.
 - Malformed parent context: ignore it and continue.
 - Worker shutdown: flush and shut down parent and worker providers with bounded best effort; call custom Python provider cleanup synchronously.
-- Forced termination, crashes, and OOM: final spans may be lost.
+- Forced termination, crashes, and OOM: final spans and log records may be lost.
 
 If metrics telemetry configuration fails before the worker sends `Ready`, and the runtime metric exporter is configured, Cog uses the default runtime metric selection only long enough to record the failed setup result. The failed configuration cannot supply its own selections.
 

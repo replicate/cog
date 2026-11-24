@@ -31,8 +31,7 @@ const uvPip = "uv pip"
 const observabilityConfigBuildPath = "telemetry.py"
 const observabilityConfigRuntimePath = "/.cog/telemetry.py"
 const PythonObservabilityRequirements = "opentelemetry-api==1.44.0 opentelemetry-sdk==1.44.0 opentelemetry-exporter-otlp-proto-http==1.44.0 opentelemetry-exporter-otlp-proto-grpc==1.44.0"
-const PythonObservabilityCheck = `python -c "import cog._telemetry; from coglet import _impl; raise SystemExit(0 if getattr(_impl, '_supports_observability_metrics', False) else 1)"`
-const PythonObservabilityCheckError = "OpenTelemetry metrics require matching cog and coglet builds with metrics support"
+const PythonObservabilityCheckError = "OpenTelemetry metrics and logs require matching cog and coglet builds that support them"
 const uvBreakSystemPackages = "--break-system-packages"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
@@ -416,6 +415,12 @@ func (g *StandardGenerator) cogEnvVars() []string {
 			`ENV COG_METRICS_ENABLED=true`,
 		)
 	}
+	if g.Config.Observability != nil && g.Config.Observability.Logs != nil && g.Config.Observability.Logs.Enabled {
+		envs = append(envs,
+			`ENV COG_LOGS_CONFIGURED=true`,
+			`ENV COG_LOGS_ENABLED=true`,
+		)
+	}
 	return envs
 }
 
@@ -771,10 +776,26 @@ func (g *StandardGenerator) installPythonObservabilityDependencies() string {
 	if g.strip {
 		install += " && " + StripDebugSymbolsCommand
 	}
-	if g.Config.Observability.Metrics != nil && g.Config.Observability.Metrics.Enabled {
-		install += " && (" + PythonObservabilityCheck + " || (echo \"" + PythonObservabilityCheckError + "\" >&2; exit 1))"
+	if check := PythonObservabilityCheck(g.Config.Observability); check != "" {
+		install += " && (" + check + " || (echo \"" + PythonObservabilityCheckError + "\" >&2; exit 1))"
 	}
 	return install
+}
+
+// PythonObservabilityCheck returns a command that fails when the installed
+// coglet lacks support for an enabled signal, or "" when no check is needed.
+func PythonObservabilityCheck(observability *config.Observability) string {
+	var checks []string
+	if observability.Metrics != nil && observability.Metrics.Enabled {
+		checks = append(checks, "getattr(_impl, '_supports_observability_metrics', False)")
+	}
+	if observability.Logs != nil && observability.Logs.Enabled {
+		checks = append(checks, "getattr(_impl, '_supports_observability_logs', False)")
+	}
+	if len(checks) == 0 {
+		return ""
+	}
+	return `python -c "import cog._telemetry; from coglet import _impl; raise SystemExit(0 if ` + strings.Join(checks, " and ") + ` else 1)"`
 }
 
 // installCogFromPyPI installs the cog SDK from PyPI.

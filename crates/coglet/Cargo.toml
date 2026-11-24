@@ -14,6 +14,7 @@ categories.workspace = true
 default = ["tracing", "tracing-grpc"]
 tracing = [
     "dep:opentelemetry",
+    "dep:opentelemetry-appender-tracing",
     "dep:opentelemetry-jaeger-propagator",
     "dep:opentelemetry-otlp",
     "dep:opentelemetry_sdk",
@@ -22,6 +23,7 @@ tracing = [
     "opentelemetry-otlp/reqwest-blocking-client",
     "opentelemetry-otlp/trace",
     "opentelemetry-otlp/metrics",
+    "opentelemetry-otlp/logs",
 ]
 tracing-grpc = [
     "tracing",
@@ -74,10 +76,11 @@ rustls.workspace = true
 # Observability
 tracing.workspace = true
 tracing-subscriber.workspace = true
-opentelemetry = { version = "=0.32.0", default-features = false, features = ["trace", "metrics"], optional = true }
+opentelemetry = { version = "=0.32.0", default-features = false, features = ["trace", "metrics", "logs"], optional = true }
+opentelemetry-appender-tracing = { version = "=0.32.0", default-features = false, optional = true }
 opentelemetry-jaeger-propagator = { version = "=0.32.0", default-features = false, optional = true }
 opentelemetry-otlp = { version = "=0.32.0", default-features = false, optional = true }
-opentelemetry_sdk = { version = "=0.32.0", default-features = false, features = ["trace", "metrics"], optional = true }
+opentelemetry_sdk = { version = "=0.32.0", default-features = false, features = ["trace", "metrics", "logs"], optional = true }
 tracing-opentelemetry = { version = "=0.33.0", default-features = false, optional = true }
 
 [target.'cfg(unix)'.dependencies]
@@ -89,4 +92,4 @@ tempfile = "3"
 wiremock = "0.6"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-opentelemetry_sdk = { version = "=0.32.0", default-features = false, features = ["testing", "trace", "metrics"] }
+opentelemetry_sdk = { version = "=0.32.0", default-features = false, features = ["testing", "trace", "metrics", "logs"] }

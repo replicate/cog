@@ -82,5 +82,8 @@ class Runner(BaseRunner):
             span.set_attribute("metrics.output_tokens", total)
 
             duration = time.time() - start_time
-            logging.info(f"completed prediction in {duration} seconds")
+            logging.info(
+                f"completed prediction in {duration} seconds",
+                extra={"model.output_tokens": total},
+            )
             span.set_attribute("model.predict_time_seconds", duration)

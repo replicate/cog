@@ -391,7 +391,9 @@ Opt-in OpenTelemetry tracing uses a provider in the parent process, a provider i
 
 Metrics use separate ownership. The parent creates the runtime MeterProvider after worker setup and exports fixed prediction, rejection, setup, and slot-state measurements. The Python worker creates the model MeterProvider for arbitrary model-owned instruments. It returns a runtime metric configuration in its `Ready` control message so the parent can omit selected fixed instruments before recording terminal setup status.
 
-Models may provide `observability.config`, which Cog validates and stages at a fixed image path. During worker setup, Cog loads that module, creates selected Python tracer and meter providers, validates them, installs them globally, and then calls optional `configure_instrumentation()` before predictor import. Cog owns provider flush and shutdown. Configuration failures stop model setup because the user explicitly selected that module.
+Logs follow the same split. The parent attaches an OpenTelemetry appender to its `tracing` subscriber and exports Cog's own events, including worker events relayed over the control channel; it skips the events that re-emit model stdout and stderr. The worker exports Python `logging` records by wrapping `logging.Logger.callHandlers`, which runs after logger level, disabled, and filter checks but adds no handler, so `lastResort` and `basicConfig()` behave as before.
+
+Models may provide `observability.config`, which Cog validates and stages at a fixed image path. During worker setup, Cog loads that module, creates selected Python tracer, meter, and logger providers, validates them, installs them globally, and then calls optional `configure_instrumentation()` before predictor import. Cog owns provider flush and shutdown. Configuration failures stop model setup because the user explicitly selected that module.
 
 The framework trace covers HTTP handling, validation, the logical prediction lifetime, worker execution, input preparation, predictor invocation, output upload, and setup. Model code creates ordinary child spans through `opentelemetry.trace`.
 
@@ -415,6 +417,7 @@ If the healthcheck fails, the HTTP `/health-check` endpoint returns `UNHEALTHY` 
 | `COG_SETUP_TIMEOUT`              | none    | Setup timeout in seconds (0 is ignored)            |
 | `COG_TRACE_ENABLED`              | image   | `true` in tracing-enabled images; absent otherwise |
 | `COG_METRICS_ENABLED`            | image   | `true` in metrics-enabled images; absent otherwise |
+| `COG_LOGS_ENABLED`               | image   | `true` in logs-enabled images; absent otherwise    |
 | `COG_OBSERVABILITY_CONFIG`       | none    | Internal path to staged Python telemetry config    |
 | `COG_THROTTLE_RESPONSE_INTERVAL` | 0.5s    | Webhook response throttling interval               |
 | `LOG_FORMAT`                     | json    | Set to `console` for human-readable log output     |
