@@ -137,21 +137,21 @@ impl WebhookSender {
         &self.url
     }
 
-    fn should_send(&self, event: WebhookEventType) -> bool {
+    /// Whether a non-terminal `send` for this event would go out now: the event
+    /// passes the filter and the throttle interval has elapsed.
+    ///
+    /// Callers can check this before building the payload, which holds all
+    /// logs and outputs so far.
+    ///
+    /// `output` and `logs` events share the throttle, as in the Python and Go
+    /// runtimes. Payloads are full snapshots, so a dropped event loses no data:
+    /// the next webhook, or the terminal one, has it.
+    pub(crate) fn should_send(&self, event: WebhookEventType) -> bool {
         if !self.config.events_filter.contains(&event) {
             return false;
         }
 
         if event.is_terminal() {
-            return true;
-        }
-
-        // Output events are never throttled: they are high-value (contain actual
-        // prediction results), relatively infrequent (one per output chunk/file),
-        // and in the old Python runtime were effectively unthrottled because file
-        // uploads were synchronous.  Throttling them causes the director to miss
-        // intermediate output data.
-        if matches!(event, WebhookEventType::Output) {
             return true;
         }
 
@@ -569,13 +569,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_output_not_throttled() {
+    async fn send_output_throttled() {
         let server = MockServer::start().await;
 
         Mock::given(method("POST"))
             .and(path("/webhook"))
             .respond_with(ResponseTemplate::new(200))
-            .expect(2)
+            .expect(1)
             .mount(&server)
             .await;
 
@@ -586,17 +586,49 @@ mod tests {
         };
         let sender = WebhookSender::new(url, config).unwrap();
 
-        // Output events bypass throttling — both should be sent
         sender.send(
             WebhookEventType::Output,
-            &serde_json::json!({"output": "1"}),
+            &serde_json::json!({"output": ["1"]}),
         );
+        // Second send should be throttled
         sender.send(
             WebhookEventType::Output,
-            &serde_json::json!({"output": "2"}),
+            &serde_json::json!({"output": ["1", "2"]}),
         );
 
         tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    #[test]
+    fn should_send_throttles_output_and_logs_together() {
+        let config = WebhookConfig {
+            response_interval: Duration::from_secs(10),
+            ..test_config()
+        };
+        let sender = WebhookSender::new("http://localhost/webhook".to_string(), config).unwrap();
+
+        assert!(sender.should_send(WebhookEventType::Output));
+        sender.update_last_sent();
+
+        assert!(!sender.should_send(WebhookEventType::Output));
+        assert!(!sender.should_send(WebhookEventType::Logs));
+        assert!(sender.should_send(WebhookEventType::Completed));
+    }
+
+    #[test]
+    fn should_send_respects_filter() {
+        let config = WebhookConfig {
+            events_filter: [WebhookEventType::Start, WebhookEventType::Completed]
+                .into_iter()
+                .collect(),
+            ..test_config()
+        };
+        let sender = WebhookSender::new("http://localhost/webhook".to_string(), config).unwrap();
+
+        assert!(sender.should_send(WebhookEventType::Start));
+        assert!(!sender.should_send(WebhookEventType::Output));
+        assert!(!sender.should_send(WebhookEventType::Logs));
+        assert!(sender.should_send(WebhookEventType::Completed));
     }
 
     #[tokio::test]
