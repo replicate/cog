@@ -210,11 +210,21 @@ fn submit_async_coroutine(
     Ok(future.unbind())
 }
 
+/// Tell the parent the return value is a list, generator, or iterator, so it
+/// publishes each item as it arrives instead of waiting for the final output.
+fn start_stream(slot_sender: &SlotSender) -> Result<(), PredictionError> {
+    slot_sender
+        .start_stream()
+        .map_err(|e| PredictionError::Failed(format!("Failed to start output stream: {}", e)))
+}
+
 /// Send a single output item over IPC, routing file outputs to disk.
 ///
 /// For Path outputs (os.PathLike): sends the existing file path via send_file_output.
 /// For IOBase outputs: reads bytes, writes to output_dir via write_file_output.
 /// For everything else: processes through make_encodeable + upload_files, then send_output.
+///
+/// Call `start_stream` before sending the first item.
 fn send_output_item(
     py: Python<'_>,
     item: &Bound<'_, PyAny>,
@@ -973,6 +983,7 @@ impl PythonPredictor {
             .try_iter()
             .map_err(|e| PredictionError::Failed(format!("Failed to iterate generator: {}", e)))?;
 
+        start_stream(slot_sender)?;
         for item in iter {
             let item = item.map_err(|e| {
                 if is_cancelation_exception(py, &e) {
@@ -1061,12 +1072,14 @@ impl PythonPredictor {
         // go through the FileOutput IPC path for upload instead of being
         // base64-encoded inline by process_output.
         if let Ok(list) = result.cast::<pyo3::types::PyList>() {
+            start_stream(slot_sender)?;
             for item in list.iter() {
                 send_output_item(py, &item, json_module, slot_sender)?;
             }
             return Ok(PredictionOutput::Stream(vec![]));
         }
         if let Ok(tuple) = result.cast::<pyo3::types::PyTuple>() {
+            start_stream(slot_sender)?;
             for item in tuple.iter() {
                 send_output_item(py, &item, json_module, slot_sender)?;
             }
@@ -1197,6 +1210,7 @@ impl PythonPredictor {
         // Process output
         let output = if is_async_gen {
             // Result is a pre-collected list — stream each item over IPC
+            start_stream(slot_sender)?;
             if let Ok(list) = result.extract::<Vec<Bound<'_, PyAny>>>() {
                 for item in list {
                     send_output_item(py, &item, &json_module, slot_sender)?;

@@ -2,6 +2,7 @@
 //!
 //! Implements the cog webhook protocol:
 //! - Throttling (default 500ms between non-terminal updates)
+//! - Webhooks for a prediction delivered in order, terminal last
 //! - Terminal webhooks retried with exponential backoff
 //! - WEBHOOK_AUTH_TOKEN bearer authentication
 //! - Events filtering (start, output, logs, completed)
@@ -14,10 +15,12 @@
 //!   poison - worst case is we lose throttle tracking, which is acceptable.
 
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use thiserror::Error;
+use tokio::sync::Notify;
+use tokio::task::JoinHandle;
 
 use serde::{Deserialize, Serialize};
 
@@ -93,6 +96,81 @@ pub struct WebhookSender {
     client: reqwest::Client,
     last_sent: Mutex<Instant>,
     trace_context: TraceContext,
+    queue: Arc<WebhookQueue>,
+}
+
+/// Sends non-terminal webhooks one at a time from a single task, so they
+/// arrive in order and before the terminal webhook. Spawning a task per
+/// request would let a later request, including the terminal one, reach the
+/// receiver first.
+///
+/// Each payload is a full snapshot of the prediction, so only the newest
+/// request not yet sent matters. A new request replaces the one waiting, and
+/// `send_terminal` drops whatever is still waiting.
+#[derive(Default)]
+struct WebhookQueue {
+    state: Mutex<QueueState>,
+    ready: Notify,
+}
+
+#[derive(Default)]
+struct QueueState {
+    /// The newest request not yet sent.
+    pending: Option<reqwest::RequestBuilder>,
+    /// Runs `send_queued`. Started by the first non-terminal webhook.
+    task: Option<JoinHandle<()>>,
+    /// Set when `send_terminal` starts or the sender is dropped. Later
+    /// non-terminal webhooks are dropped.
+    closed: bool,
+}
+
+impl WebhookQueue {
+    fn lock(&self) -> std::sync::MutexGuard<'_, QueueState> {
+        // Recover from poison - fields are only ever replaced whole
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Stop sending, drop the waiting request and return the task so the
+    /// caller can wait for the request in flight.
+    fn close(&self) -> Option<JoinHandle<()>> {
+        let task = {
+            let mut state = self.lock();
+            state.closed = true;
+            state.pending = None;
+            state.task.take()
+        };
+        self.ready.notify_one();
+        task
+    }
+}
+
+async fn send_queued(queue: Arc<WebhookQueue>) {
+    loop {
+        let request = {
+            let mut state = queue.lock();
+            if state.closed {
+                return;
+            }
+            state.pending.take()
+        };
+        match request {
+            Some(request) => {
+                if let Err(e) = request.send().await {
+                    tracing::warn!(error = %e, "Failed to send webhook (non-terminal)");
+                }
+            }
+            // notify_one stores a permit, so a request queued since the
+            // check above isn't missed.
+            None => queue.ready.notified().await,
+        }
+    }
+}
+
+impl Drop for WebhookSender {
+    fn drop(&mut self) {
+        // Lets the task exit; a request in flight still finishes.
+        self.queue.close();
+    }
 }
 
 impl WebhookSender {
@@ -130,6 +208,7 @@ impl WebhookSender {
             // Allow immediate first send
             last_sent: Mutex::new(Instant::now() - Duration::from_secs(10)),
             trace_context,
+            queue: Arc::default(),
         })
     }
 
@@ -182,7 +261,10 @@ impl WebhookSender {
         request
     }
 
-    /// Send a non-terminal webhook (fire and forget, no retry).
+    /// Queue a non-terminal webhook (fire and forget, no retry).
+    ///
+    /// Webhooks are sent one at a time, in order. If an earlier one is still
+    /// waiting to be sent, this one replaces it.
     pub fn send(&self, event: WebhookEventType, payload: &serde_json::Value) {
         if !self.should_send(event) {
             return;
@@ -191,15 +273,31 @@ impl WebhookSender {
         let request = self.build_request(payload);
         self.update_last_sent();
 
-        tokio::spawn(async move {
-            if let Err(e) = request.send().await {
-                tracing::warn!(error = %e, "Failed to send webhook (non-terminal)");
-            }
-        });
+        let mut state = self.queue.lock();
+        if state.closed {
+            tracing::debug!("Dropping non-terminal webhook sent after the terminal webhook");
+            return;
+        }
+        state.pending = Some(request);
+        if state.task.is_none() {
+            state.task = Some(tokio::spawn(send_queued(Arc::clone(&self.queue))));
+        }
+        drop(state);
+        self.queue.ready.notify_one();
     }
 
     /// Send a terminal webhook with exponential backoff retries.
+    ///
+    /// Waits for a non-terminal webhook already in flight so the terminal one
+    /// is always delivered last. A non-terminal webhook still waiting is
+    /// dropped; the terminal payload has the newer state.
     pub async fn send_terminal(&self, event: WebhookEventType, payload: &serde_json::Value) {
+        if let Some(task) = self.queue.close()
+            && let Err(e) = task.await
+        {
+            tracing::warn!(error = %e, "Webhook queue task failed");
+        }
+
         if !self.config.events_filter.contains(&event) {
             return;
         }
@@ -381,7 +479,7 @@ impl WebhookSender {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{body_partial_json, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     /// Install the ring crypto provider once for all webhook tests.
@@ -591,12 +689,158 @@ mod tests {
             WebhookEventType::Output,
             &serde_json::json!({"output": "1"}),
         );
+        wait_for_requests(&server, 1).await;
         sender.send(
             WebhookEventType::Output,
             &serde_json::json!({"output": "2"}),
         );
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        wait_for_requests(&server, 2).await;
+    }
+
+    async fn received_payloads(server: &MockServer) -> Vec<serde_json::Value> {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| serde_json::from_slice(&r.body).unwrap())
+            .collect()
+    }
+
+    async fn wait_for_requests(server: &MockServer, count: usize) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while server.received_requests().await.unwrap().len() < count {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("webhook was not received");
+    }
+
+    async fn mount_slow_non_terminal_webhooks(server: &MockServer, delay: Duration) {
+        Mock::given(method("POST"))
+            .and(body_partial_json(
+                serde_json::json!({"status": "processing"}),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_delay(delay))
+            .mount(server)
+            .await;
+        Mock::given(method("POST"))
+            .and(body_partial_json(
+                serde_json::json!({"status": "succeeded"}),
+            ))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn send_terminal_waits_for_in_flight_webhook() {
+        let server = MockServer::start().await;
+        let delay = Duration::from_millis(300);
+        mount_slow_non_terminal_webhooks(&server, delay).await;
+        let sender =
+            WebhookSender::new(format!("{}/webhook", server.uri()), test_config()).unwrap();
+
+        let started = Instant::now();
+        sender.send(
+            WebhookEventType::Output,
+            &serde_json::json!({"status": "processing"}),
+        );
+        wait_for_requests(&server, 1).await;
+        sender
+            .send_terminal(
+                WebhookEventType::Completed,
+                &serde_json::json!({"status": "succeeded"}),
+            )
+            .await;
+
+        assert!(
+            started.elapsed() >= delay,
+            "terminal webhook was sent before the in-flight webhook finished"
+        );
+        let statuses: Vec<_> = received_payloads(&server)
+            .await
+            .into_iter()
+            .map(|p| p["status"].clone())
+            .collect();
+        assert_eq!(statuses, ["processing", "succeeded"]);
+    }
+
+    #[tokio::test]
+    async fn send_replaces_webhook_waiting_behind_in_flight_one() {
+        let server = MockServer::start().await;
+        mount_slow_non_terminal_webhooks(&server, Duration::from_millis(100)).await;
+        let sender =
+            WebhookSender::new(format!("{}/webhook", server.uri()), test_config()).unwrap();
+
+        sender.send(
+            WebhookEventType::Output,
+            &serde_json::json!({"status": "processing", "n": 0}),
+        );
+        wait_for_requests(&server, 1).await;
+        for n in 1..3 {
+            sender.send(
+                WebhookEventType::Output,
+                &serde_json::json!({"status": "processing", "n": n}),
+            );
+        }
+        wait_for_requests(&server, 2).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(
+            received_payloads(&server).await,
+            [
+                serde_json::json!({"status": "processing", "n": 0}),
+                serde_json::json!({"status": "processing", "n": 2}),
+            ]
+        );
+        sender
+            .send_terminal(
+                WebhookEventType::Completed,
+                &serde_json::json!({"status": "succeeded"}),
+            )
+            .await;
+    }
+
+    #[tokio::test]
+    async fn send_terminal_drops_waiting_webhook() {
+        let server = MockServer::start().await;
+        mount_slow_non_terminal_webhooks(&server, Duration::from_millis(100)).await;
+        let sender =
+            WebhookSender::new(format!("{}/webhook", server.uri()), test_config()).unwrap();
+
+        sender.send(
+            WebhookEventType::Output,
+            &serde_json::json!({"status": "processing", "n": 0}),
+        );
+        wait_for_requests(&server, 1).await;
+        sender.send(
+            WebhookEventType::Output,
+            &serde_json::json!({"status": "processing", "n": 1}),
+        );
+        sender
+            .send_terminal(
+                WebhookEventType::Completed,
+                &serde_json::json!({"status": "succeeded"}),
+            )
+            .await;
+        // Nothing is sent after the terminal webhook.
+        sender.send(
+            WebhookEventType::Output,
+            &serde_json::json!({"status": "processing", "n": 2}),
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(
+            received_payloads(&server).await,
+            [
+                serde_json::json!({"status": "processing", "n": 0}),
+                serde_json::json!({"status": "succeeded"}),
+            ]
+        );
     }
 
     #[tokio::test]

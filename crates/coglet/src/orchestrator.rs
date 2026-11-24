@@ -1018,6 +1018,9 @@ async fn run_event_loop(
                     "Starting prediction"
                 );
                 tracing::debug!(%slot_id, %prediction_id, "Registered prediction");
+                if output_is_array && let Some(mut p) = try_lock_prediction(&prediction) {
+                    p.mark_streaming();
+                }
                 predictions.insert(slot_id, prediction);
                 let pending_cancel = pending_cancellations.remove(&prediction_id);
                 let _ = registered_ack.send(());
@@ -1092,6 +1095,21 @@ async fn run_event_loop(
                         let poisoned = if let Some(pred) = predictions.get(&slot_id) {
                             if let Some(mut p) = try_lock_prediction(pred) {
                                 p.set_metric(name, value, mode);
+                                false
+                            } else {
+                                true
+                            }
+                        } else {
+                            false
+                        };
+                        if poisoned {
+                            predictions.remove(&slot_id);
+                        }
+                    }
+                    Ok(SlotResponse::StreamStarted) => {
+                        let poisoned = if let Some(pred) = predictions.get(&slot_id) {
+                            if let Some(mut p) = try_lock_prediction(pred) {
+                                p.mark_streaming();
                                 false
                             } else {
                                 true
@@ -1356,6 +1374,7 @@ async fn run_event_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::webhook::{WebhookConfig, WebhookSender};
     use serde_json::json;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1370,6 +1389,14 @@ mod tests {
 
     impl TestPrediction {
         async fn new(upload_url: String, output_is_array: bool) -> Self {
+            Self::with_webhook(upload_url, output_is_array, None).await
+        }
+
+        async fn with_webhook(
+            upload_url: String,
+            output_is_array: bool,
+            webhook: Option<WebhookSender>,
+        ) -> Self {
             let _ = rustls::crypto::ring::default_provider().install_default();
             // Keep the control pipe open without requiring a Python worker.
             let mut worker = Command::new("cat")
@@ -1402,7 +1429,10 @@ mod tests {
                 Some(upload_url),
                 output_is_array,
             ));
-            let prediction = Arc::new(StdMutex::new(Prediction::new("upload-test".into(), None)));
+            let prediction = Arc::new(StdMutex::new(Prediction::new(
+                "upload-test".into(),
+                webhook,
+            )));
             prediction.lock().unwrap().set_processing();
             let (idle_sender, idle_receiver) = tokio::sync::oneshot::channel();
             let (registered_ack, registered_rx) = tokio::sync::oneshot::channel();
@@ -1689,6 +1719,121 @@ mod tests {
 
         assert_eq!(response["status"], "canceled", "{response}");
         assert!(response["error"].is_null());
+    }
+
+    /// Serve output uploads with `202 Accepted` and record webhooks.
+    async fn upload_and_webhook_server() -> (MockServer, WebhookSender) {
+        crate::install_crypto_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(
+                ResponseTemplate::new(202)
+                    .insert_header("Location", "https://example.com/outputs/output.wav"),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/webhook"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let config = WebhookConfig {
+            response_interval: Duration::ZERO,
+            max_retries: 0,
+            ..Default::default()
+        };
+        let webhook = WebhookSender::new(format!("{}/webhook", server.uri()), config).unwrap();
+        (server, webhook)
+    }
+
+    /// Wait for the terminal webhook, then return every webhook in arrival order.
+    async fn received_webhooks(server: &MockServer) -> Vec<serde_json::Value> {
+        let webhooks = || async {
+            server
+                .received_requests()
+                .await
+                .unwrap()
+                .into_iter()
+                .filter(|r| r.url.path() == "/webhook")
+                .map(|r| serde_json::from_slice::<serde_json::Value>(&r.body).unwrap())
+                .collect::<Vec<_>>()
+        };
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !webhooks().await.iter().any(|w| w["status"] == "succeeded") {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("terminal webhook was not received");
+        // Give a late webhook time to arrive.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        webhooks().await
+    }
+
+    #[tokio::test]
+    async fn single_file_output_is_only_sent_in_terminal_webhook() {
+        let (server, webhook) = upload_and_webhook_server().await;
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("output.wav");
+        std::fs::write(&file, b"audio").unwrap();
+        let mut prediction = TestPrediction::with_webhook(server.uri(), false, Some(webhook)).await;
+        prediction.file_output(&file).await;
+
+        let response = prediction.finish(false).await;
+
+        assert_eq!(response["output"], "https://example.com/outputs/output.wav");
+        let webhooks = received_webhooks(&server).await;
+        let (terminal, earlier) = webhooks.split_last().unwrap();
+        for webhook in earlier {
+            assert_eq!(webhook["status"], "processing", "{webhook}");
+            assert!(webhook.get("output").is_none(), "{webhook}");
+        }
+        assert_eq!(terminal["status"], "succeeded");
+        assert_eq!(terminal["output"], "https://example.com/outputs/output.wav");
+    }
+
+    #[tokio::test]
+    async fn streamed_outputs_are_sent_in_output_webhooks() {
+        let (server, webhook) = upload_and_webhook_server().await;
+        let mut prediction = TestPrediction::with_webhook(server.uri(), false, Some(webhook)).await;
+        prediction
+            .writer
+            .send(SlotResponse::StreamStarted)
+            .await
+            .unwrap();
+        prediction
+            .writer
+            .send(SlotResponse::OutputChunk {
+                output: json!("chunk"),
+                index: 0,
+            })
+            .await
+            .unwrap();
+        // Finishing now would drop the output webhook if it hasn't started.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !server.received_requests().await.unwrap().iter().any(|r| {
+                serde_json::from_slice::<serde_json::Value>(&r.body)
+                    .is_ok_and(|w| w["output"] == json!(["chunk"]))
+            }) {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("output webhook was not received");
+
+        let response = prediction.finish(true).await;
+
+        assert_eq!(response["output"], json!(["chunk"]));
+        let webhooks = received_webhooks(&server).await;
+        let (terminal, earlier) = webhooks.split_last().unwrap();
+        assert!(
+            earlier
+                .iter()
+                .any(|w| w["status"] == "processing" && w["output"] == json!(["chunk"])),
+            "{webhooks:?}"
+        );
+        assert_eq!(terminal["status"], "succeeded");
+        assert_eq!(terminal["output"], json!(["chunk"]));
     }
 
     // ── wrap_outputs: schema says array (output_is_array = true) ──
