@@ -28,7 +28,7 @@ from typing import (
     TypeVar,
 )
 
-import requests
+from ._download import fetch_input
 
 # Constants for filename handling
 FILENAME_ILLEGAL_CHARS = set("\u0000/")
@@ -129,7 +129,7 @@ class URLFile(io.IOBase):
     URL that can survive pickling/unpickling.
     """
 
-    __slots__ = ("__target__", "__url__", "name")
+    __slots__ = ("__target__", "__response__", "__url__", "name")
 
     def __init__(self, url: str, filename: Optional[str] = None) -> None:
         parsed = urllib.parse.urlparse(url)
@@ -168,13 +168,21 @@ class URLFile(io.IOBase):
 
     # Proxy getattr/setattr/delattr through to the response object.
     def __setattr__(self, name: str, value: Any) -> None:
-        if hasattr(type(self), name):
+        # IOBase accesses its closed flag through Python attribute hooks.
+        # Keep that bookkeeping local so close() never starts a download.
+        if name == "__IOBase_closed" or hasattr(type(self), name):
             object.__setattr__(self, name, value)
         else:
             setattr(self.__wrapped__, name, value)
 
     def __getattr__(self, name: str) -> Any:
-        if name in ("__target__", "__wrapped__", "__url__"):
+        if name in (
+            "__target__",
+            "__response__",
+            "__wrapped__",
+            "__url__",
+            "__IOBase_closed",
+        ):
             raise AttributeError(name)
         elif name == "name":
             return object.__getattribute__(self, "name")
@@ -190,8 +198,20 @@ class URLFile(io.IOBase):
     def __iter__(self) -> Iterator[bytes]:
         return iter(self.__wrapped__)
 
+    def close(self) -> None:
+        """Close an existing response without triggering a lazy download."""
+        try:
+            response = object.__getattribute__(self, "__response__")
+        except AttributeError:
+            pass
+        else:
+            response.close()
+        super().close()
+
     @property
     def __wrapped__(self) -> Any:
+        if self.closed:
+            raise ValueError("I/O operation on closed input download")
         try:
             return object.__getattribute__(self, "__target__")
         except AttributeError:
@@ -202,9 +222,8 @@ class URLFile(io.IOBase):
         if ua:
             headers["User-Agent"] = ua
 
-        resp = requests.get(url, stream=True, timeout=10, headers=headers)
-        resp.raise_for_status()
-        resp.raw.decode_content = True
+        resp = fetch_input(url, headers)
+        object.__setattr__(self, "__response__", resp)
         object.__setattr__(self, "__target__", resp.raw)
         return resp.raw
 
@@ -284,11 +303,20 @@ class URLPath(pathlib.PosixPath):
     def convert(self) -> "Path":
         """Download the URL content to a temporary file and return its Path."""
         if self._path is None:
-            # pylint: disable=consider-using-with
-            dest = tempfile.NamedTemporaryFile(suffix=self.filename, delete=False)
-            shutil.copyfileobj(self.fileobj, dest)
-            dest.close()
-            self._path = Path(dest.name)
+            dest_name = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    suffix=self.filename, delete=False
+                ) as dest:
+                    dest_name = dest.name
+                    shutil.copyfileobj(self.fileobj, dest)
+                self._path = Path(dest_name)
+            except BaseException:
+                if dest_name is not None:
+                    os.unlink(dest_name)
+                raise
+            finally:
+                self.fileobj.close()
         return self._path
 
     def unlink(self, missing_ok: bool = False) -> None:
