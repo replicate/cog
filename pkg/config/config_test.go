@@ -780,6 +780,33 @@ func TestBuildRunItemDictJSON(t *testing.T) {
 	require.Equal(t, "/mnt/data", buildWrapper.Build.Run[0].Mounts[0].Target)
 }
 
+func TestPythonRequirementsKeepsEnvironmentMarkersOnPinnedPackages(t *testing.T) {
+	tmpDir := t.TempDir()
+	err := os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`colorama==0.4.6 ; sys_platform == 'win32'
+pywin32==306 ; sys_platform == "win32" \
+    --hash=sha256:06d3420a5155ba65f0b72f2699b5bacf3109f36acbe8923765c22938a69dfc8d
+numpy==1.26.4 ; python_version >= "3.10"
+requests==2.32.3`), 0o644)
+	require.NoError(t, err)
+
+	config := &Config{
+		Build: &Build{
+			PythonVersion:      "3.10",
+			PythonRequirements: "requirements.txt",
+		},
+	}
+	err = config.Complete(tmpDir)
+	require.NoError(t, err)
+
+	requirements, err := config.PythonRequirementsForArch("linux", "amd64", []string{})
+	require.NoError(t, err)
+	expected := `colorama==0.4.6 ; sys_platform == 'win32'
+pywin32==306 ; sys_platform == "win32"
+numpy==1.26.4 ; python_version >= "3.10"
+requests==2.32.3`
+	require.Equal(t, expected, requirements)
+}
+
 func TestTorchWithExistingExtraIndexURL(t *testing.T) {
 	config := &Config{
 		Build: &Build{
