@@ -153,6 +153,10 @@ class PrimitiveType(Enum):
             return match
 
         try:
+            # cog.Path matches identity above. PathLike stays PATH so
+            # pathlib.Path *return* values still encode as file URIs.
+            # File inputs must be cog.Path; cog build rejects pathlib.Path
+            # on inputs in the Go schema generator.
             if tpe is os.PathLike or (
                 isinstance(tpe, type) and issubclass(tpe, os.PathLike)  # type: ignore[arg-type]
             ):
