@@ -1,0 +1,35 @@
+# Test Go code against the latest version of all dependencies.
+# Catches upstream breakage early without forcing dependency churn on every PR.
+# Runs daily — failures are informational, not gating.
+# See https://words.filippo.io/dependabot for rationale.
+name: Go latest deps
+
+on:
+  schedule:
+    # Daily at 10:22 UTC
+    - cron: "22 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-latest-deps:
+    name: Test with latest deps
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Update all dependencies to latest
+        run: go get -u -t ./...
+      - name: Tidy
+        run: go mod tidy
+      - name: Run tests
+        run: go test -short -timeout 1200s -parallel 5 ./...
