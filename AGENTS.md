@@ -235,10 +235,10 @@ The CLI follows a command pattern with subcommands. The main components are:
 ### Python SDK Architecture
 
 - `python/cog/` - Core SDK
-  - `base_predictor.py` - Base class for model predictors
+  - `predictor.py` - `BasePredictor`, the base class for model predictors
   - `types.py` - Input/output type definitions
-  - `server/` - HTTP/queue server implementation
-  - `command/` - Runner implementations for predict/train
+  - `coder.py` - Custom type encoding/decoding for predictor inputs and outputs
+  - `server/` - HTTP server implementation
 
 ### Coglet Architecture (Rust)
 
@@ -314,7 +314,7 @@ Skills are invoked automatically by agents when a matching task is detected. See
 - `cog.yaml` - User-facing model configuration
 - `pkg/config/config.go` - Go code for parsing and validating `cog.yaml`
 - `pkg/config/data/config_schema_v1.0.json` - JSON schema for `cog.yaml`
-- `python/cog/base_predictor.py` - Predictor interface
+- `python/cog/predictor.py` - Predictor interface (`BasePredictor`)
 - `crates/Cargo.toml` - Rust workspace configuration (version must match VERSION.txt)
 - `crates/README.md` - Coglet architecture overview
 - `mise.toml` - Task definitions for development workflow
