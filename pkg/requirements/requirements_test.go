@@ -104,6 +104,15 @@ func TestReadRequirementsStripComments(t *testing.T) {
 	require.Equal(t, []string{"torch==2.5.1", "torchvision==2.5.1"}, requirements)
 }
 
+func TestSplitPinnedPythonRequirementDottedName(t *testing.T) {
+	name, version, findLinks, extraIndexURLs, err := SplitPinnedPythonRequirement("ruamel.yaml==0.18.6")
+	require.NoError(t, err)
+	require.Equal(t, "ruamel.yaml", name)
+	require.Equal(t, "0.18.6", version)
+	require.Empty(t, findLinks)
+	require.Empty(t, extraIndexURLs)
+}
+
 func TestReadRequirementsComplex(t *testing.T) {
 	srcDir := t.TempDir()
 	reqFile := path.Join(srcDir, "requirements.txt")
