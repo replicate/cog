@@ -3,6 +3,7 @@ package python
 import (
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	sitter "github.com/smacker/go-tree-sitter"
 
@@ -76,27 +77,149 @@ func parseDefaultValue(node *sitter.Node, source []byte) (schema.DefaultValue, b
 	return schema.DefaultValue{}, false
 }
 
+// parseStringLiteral returns the value of a Python string literal as Python evaluates it:
+// prefixes and quotes are removed, escape sequences are decoded (except in raw strings),
+// and implicitly concatenated literals ("a" "b") are joined. Bytes and f-strings are not
+// static str values and are rejected.
 func parseStringLiteral(node *sitter.Node, source []byte) (string, bool) {
+	switch node.Type() {
+	case "concatenated_string":
+		var b strings.Builder
+		for _, child := range NamedChildren(node) {
+			s, ok := parseStringLiteral(child, source)
+			if !ok {
+				return "", false
+			}
+			b.WriteString(s)
+		}
+		return b.String(), true
+	case "string":
+	default:
+		return "", false
+	}
+
 	text := Content(node, source)
-	if strings.HasPrefix(text, `"""`) || strings.HasPrefix(text, `'''`) {
-		if len(text) >= 6 {
-			return text[3 : len(text)-3], true
-		}
+	prefixLen := 0
+	for prefixLen < len(text) && strings.IndexByte("rRuUbBfF", text[prefixLen]) >= 0 {
+		prefixLen++
+	}
+	prefix := strings.ToLower(text[:prefixLen])
+	if strings.ContainsAny(prefix, "bf") {
 		return "", false
 	}
-	if strings.HasPrefix(text, `"`) || strings.HasPrefix(text, `'`) {
-		if len(text) >= 2 {
-			return text[1 : len(text)-1], true
-		}
+	body := text[prefixLen:]
+
+	var quote string
+	switch {
+	case strings.HasPrefix(body, `"""`), strings.HasPrefix(body, `'''`):
+		quote = body[:3]
+	case strings.HasPrefix(body, `"`), strings.HasPrefix(body, `'`):
+		quote = body[:1]
+	default:
 		return "", false
 	}
-	if strings.HasPrefix(text, `r"`) || strings.HasPrefix(text, `r'`) {
-		if len(text) >= 3 {
-			return text[2 : len(text)-1], true
-		}
+	if len(body) < 2*len(quote) || !strings.HasSuffix(body, quote) {
 		return "", false
 	}
-	return "", false
+	body = body[len(quote) : len(body)-len(quote)]
+
+	if strings.Contains(prefix, "r") {
+		return body, true
+	}
+	return unescapePythonString(body), true
+}
+
+// pythonHexEscapeWidths maps a hex escape letter to its digit count (\xhh, \uhhhh, \Uhhhhhhhh).
+var pythonHexEscapeWidths = map[byte]int{'x': 2, 'u': 4, 'U': 8}
+
+// pythonSimpleEscapes maps single-character escapes to the byte they stand for.
+var pythonSimpleEscapes = map[byte]byte{
+	'\\': '\\', '\'': '\'', '"': '"',
+	'n': '\n', 't': '\t', 'r': '\r',
+	'a': '\a', 'b': '\b', 'f': '\f', 'v': '\v',
+}
+
+// unescapePythonString decodes the backslash escapes of a non-raw Python string literal
+// body. Unrecognized escapes keep their backslash, as they do in Python.
+func unescapePythonString(body string) string {
+	if !strings.Contains(body, `\`) {
+		return body
+	}
+	var b strings.Builder
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		if c != '\\' || i+1 >= len(body) {
+			b.WriteByte(c)
+			continue
+		}
+		next := body[i+1]
+		if decoded, ok := pythonSimpleEscapes[next]; ok {
+			b.WriteByte(decoded)
+			i++
+			continue
+		}
+		switch {
+		case next == '\n':
+			// A backslash before a newline continues the literal on the next line.
+			i++
+		case next == '\r':
+			i++
+			if i+1 < len(body) && body[i+1] == '\n' {
+				i++
+			}
+		case next >= '0' && next <= '7':
+			end := i + 1
+			for end < len(body) && end < i+4 && body[end] >= '0' && body[end] <= '7' {
+				end++
+			}
+			n, _ := parseEscapeDigits(body[i+1:end], 8)
+			b.WriteRune(n)
+			i = end - 1
+		case pythonHexEscapeWidths[next] > 0:
+			start := i + 2
+			end := start + pythonHexEscapeWidths[next]
+			if end > len(body) {
+				b.WriteByte(c)
+				continue
+			}
+			n, ok := parseEscapeDigits(body[start:end], 16)
+			if !ok {
+				b.WriteByte(c)
+				continue
+			}
+			b.WriteRune(n)
+			i = end - 1
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// parseEscapeDigits parses the octal or hex digits of an escape sequence into a rune.
+func parseEscapeDigits(digits string, base rune) (rune, bool) {
+	var r rune
+	for _, d := range digits {
+		var v rune
+		switch {
+		case d >= '0' && d <= '9':
+			v = d - '0'
+		case d >= 'a' && d <= 'f':
+			v = d - 'a' + 10
+		case d >= 'A' && d <= 'F':
+			v = d - 'A' + 10
+		default:
+			return 0, false
+		}
+		if v >= base {
+			return 0, false
+		}
+		r = r*base + v
+		if r > utf8.MaxRune {
+			return 0, false
+		}
+	}
+	return r, true
 }
 
 func parseNumberLiteral(node *sitter.Node, source []byte) (float64, bool) {
